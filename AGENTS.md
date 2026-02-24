@@ -52,6 +52,7 @@ CREATE INDEX IF NOT EXISTS idx_name ON documents(name);
     - `-b, --base-dir <path>` - Target directory (default: current directory `.`)
     - `-f, --force` - Force re-index all files (ignore mtime)
     - `-v, --verbose` - Show detailed output
+    - `-w, --watch` - Watch for file changes and re-index automatically
 
 ### Command: `query`
 - **Behavior**: Query indexed files with SQL-like expressions.
@@ -60,16 +61,22 @@ CREATE INDEX IF NOT EXISTS idx_name ON documents(name);
     - Support `file.*` namespace for native table columns (path, folder, name, ext, size, ctime, mtime, content, tags, links, backlinks, embeds)
     - Support `note.*` namespace for user-defined frontmatter properties (e.g., `note.alias` → `json_extract(properties, '$.alias')`)
     - Support shorthand notation: unprefixed identifiers resolve to native columns first, then frontmatter properties
-    - Support comparison operators: `==`, `!=`, `>`, `<`, `>=`, `<=`, `=~` (pattern match)
+    - Support comparison operators: `==`, `!=`, `>`, `<`, `>=`, `<=`, `=~` (pattern match), and `=` (single equals)
     - Support logical operators: `and`, `or` with proper precedence (and has higher precedence than or)
     - Support `has()` function for array containment checks
     - Compile queries to DuckDB SQL for execution
     - Timestamps displayed in human-readable format (YYYY-MM-DD HH:MM:SS)
 - **Options**:
-    - `-q, --query <expression>` - Query expression (required)
+    - `<query>` - Query expression (positional argument, required)
     - `-o, --output-format <type>` - Output: table, json, list (default: table)
     - `-l, --limit <n>` - Max results (default: 1000)
     - `-f, --output-fields <fields>` - Fields to select (default: file.path, file.mtime)
+
+### Command: `new`
+- **Behavior**: Create a new markdown note with optional template.
+- **Options**:
+    - `<name>` - Note name (positional argument, required)
+    - `-t, --template <name>` - Template name to use (optional)
 
 ## 5. Implementation Details
 
@@ -205,8 +212,23 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    Index { ... },
-    Query { ... },
+    Index { force, verbose, watch },
+    Query { query, format, limit, fields },
+    New { name, template },
+}
+```
+
+### 5.6 File Watcher (watcher.rs)
+Using `notify` and `notify-debouncer-mini` for file monitoring:
+```rust
+pub struct FileWatcher {
+    debouncer: notify_debouncer_mini::Debouncer<RecommendedWatcher>,
+    rx: mpsc::Receiver<Result<Vec<DebouncedEvent>, notify::Error>>,
+}
+
+impl FileWatcher {
+    pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> { ... }
+    pub fn wait_for_changes_with_kind(&self) -> Result<Vec<(PathBuf, DebouncedEventKind)>, ...> { ... }
 }
 ```
 
@@ -238,7 +260,7 @@ See [README.md](./README.md#project-structure) for the complete project structur
 - Core indexing functionality
 - Query system (SQL-like expressions)
 - Field-based queries (file.*, note.*, shorthand)
-- Query operators (==, !=, >, <, >=, <=, =~)
+- Query operators (==, !=, >, <, >=, <=, =~, =)
 - Logical operators (and, or) with precedence
 - has() function for array containment
 - Multiple output formats (table, json, list)
@@ -246,9 +268,13 @@ See [README.md](./README.md#project-structure) for the complete project structur
 - Rust migration complete
 - CLI with clap derive macros
 - Incremental updates via mtime comparison
+- File watching mode (--watch) for auto-reindexing
+- Note creation with templates (new command)
+- Single equals operator (=) support
+- Database lock release in watch mode for concurrent queries
 
 ### Technical Debt / Future Improvements
-- ✅ ~~Add unit tests for tokenizer, parser, and compiler~~ (Completed - 84 tests added)
+- ✅ ~~Add unit tests for tokenizer, parser, and compiler~~ (Completed - 102 tests total)
 - Add integration tests for full query pipeline
 - Benchmark performance against 10,000 files goal
 - Consider parallel processing for indexing
@@ -257,15 +283,16 @@ See [README.md](./README.md#project-structure) for the complete project structur
 
 ### Test Coverage Summary
 
-**Unit Tests Implemented (97 tests total):**
+**Unit Tests Implemented (102 tests total):**
 
 | Module | Tests | Coverage |
 |--------|-------|----------|
 | `tokenizer.rs` | 13 | Field tokenization, operators, literals, functions, parentheses |
-| `parser.rs` | 12 | Expression parsing, operators, grouping, precedence |
+| `parser.rs` | 13 | Expression parsing, operators, grouping, precedence, single equals |
 | `compiler.rs` | 17 | SQL generation, field resolution, all operators |
 | `extractor.rs` | 18 | Frontmatter, tags, wiki-links, embeds, edge cases |
 | `db.rs` | 12 | Database operations, queries, CRUD |
 | `scanner.rs` | 10 | File scanning, indexing, backlinks, subdirectories |
+| `watcher.rs` | 5 | File monitoring, create/modify/delete detection |
 | `query/mod.rs` | 10 | Output formatting (table, JSON, list) |
 | `main.rs` | 4 | CLI options, default values, parsing |

@@ -77,7 +77,7 @@ impl Parser {
         let left = self.parse_primary();
 
         if let Token::Operator(op) = self.current().clone() {
-            if ["==", "!=", ">", "<", ">=", "<=", "=~"].contains(&op.as_str()) {
+            if ["==", "!=", ">", "<", ">=", "<=", "=~", "="].contains(&op.as_str()) {
                 self.advance();
                 let right = self.parse_primary();
                 return AstNode::Binary {
@@ -258,7 +258,7 @@ mod tests {
 
     #[test]
     fn test_parse_all_operators() {
-        let operators = vec!["==", "!=", ">", "<", ">=", "<=", "=~"];
+        let operators = vec!["==", "!=", ">", "<", ">=", "<=", "=~", "="];
         for op in operators {
             let query = format!("file.size {} 100", op);
             let ast = parse(&query);

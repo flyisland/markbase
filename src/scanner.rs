@@ -1,7 +1,7 @@
 use crate::db::{Database, Document};
 use crate::extractor::Extractor;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 use walkdir::WalkDir;
 
@@ -10,67 +10,117 @@ pub fn index_directory(
     db: &Database,
     force: bool,
     verbose: bool,
+    paths: Option<Vec<PathBuf>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut count = 0;
     let mut all_docs: Vec<Document> = Vec::new();
 
-    for entry in WalkDir::new(dir)
-        .follow_links(true)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
-        let path = entry.path();
-        if path.is_file() && path.extension().map_or(false, |ext| ext == "md") {
-            let path_str = path.canonicalize()?.to_string_lossy().to_string();
-
-            if !force {
-                if let Some(db_mtime) = db.get_mtime(&path_str)? {
-                    let file_mtime = fs::metadata(path)?
-                        .modified()?
-                        .duration_since(UNIX_EPOCH)?
-                        .as_secs() as i64;
-                    if file_mtime <= db_mtime {
-                        continue;
+    if let Some(specific_paths) = paths {
+        for path in specific_paths {
+            if path.is_file() && path.extension().map_or(false, |ext| ext == "md") {
+                match index_single_file(&path, db, force, verbose) {
+                    Ok(Some(doc)) => {
+                        all_docs.push(doc);
+                        count += 1;
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        if verbose {
+                            eprintln!("Error indexing {}: {}", path.display(), e);
+                        }
                     }
                 }
             }
-
-            let metadata = fs::metadata(path)?;
-            let file_name = path.file_name().unwrap().to_string_lossy().to_string();
-            let parent = path.parent().unwrap().to_string_lossy().to_string();
-
-            let content = fs::read_to_string(path)?;
-            let extracted = Extractor::extract(&content);
-
-            let size = metadata.len();
-            let ctime = metadata.created()?.duration_since(UNIX_EPOCH)?.as_secs() as i64;
-            let mtime = metadata.modified()?.duration_since(UNIX_EPOCH)?.as_secs() as i64;
-
-            let doc = Document {
-                path: path_str,
-                folder: parent,
-                name: file_name.trim_end_matches(".md").to_string(),
-                ext: "md".to_string(),
-                size,
-                ctime,
-                mtime,
-                content: extracted.full_content,
-                tags: extracted.tags,
-                links: extracted.links,
-                backlinks: vec![],
-                embeds: extracted.embeds,
-                properties: extracted.frontmatter,
-            };
-
-            db.upsert_document(&doc)?;
-            if verbose {
-                println!("Indexed: {}", doc.path);
+        }
+    } else {
+        for entry in WalkDir::new(dir)
+            .follow_links(true)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let path = entry.path();
+            if path.is_file() && path.extension().map_or(false, |ext| ext == "md") {
+                match index_single_file(path, db, force, verbose) {
+                    Ok(Some(doc)) => {
+                        all_docs.push(doc);
+                        count += 1;
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        if verbose {
+                            eprintln!("Error indexing {}: {}", path.display(), e);
+                        }
+                    }
+                }
             }
-            all_docs.push(doc.clone());
-            count += 1;
         }
     }
 
+    update_backlinks(db, &all_docs)?;
+
+    println!("Indexed {} files", count);
+    Ok(())
+}
+
+fn index_single_file(
+    path: &Path,
+    db: &Database,
+    force: bool,
+    verbose: bool,
+) -> Result<Option<Document>, Box<dyn std::error::Error>> {
+    let path_str = path.canonicalize()?.to_string_lossy().to_string();
+
+    if !force {
+        if let Some(db_mtime) = db.get_mtime(&path_str)? {
+            let file_mtime = fs::metadata(path)?
+                .modified()?
+                .duration_since(UNIX_EPOCH)?
+                .as_secs() as i64;
+            if file_mtime <= db_mtime {
+                return Ok(None);
+            }
+        }
+    }
+
+    let metadata = fs::metadata(path)?;
+    let file_name = path.file_name().unwrap().to_string_lossy().to_string();
+    let parent = path.parent().unwrap().to_string_lossy().to_string();
+
+    let content = fs::read_to_string(path)?;
+    let extracted = Extractor::extract(&content);
+
+    let size = metadata.len();
+    let ctime = metadata.created()?.duration_since(UNIX_EPOCH)?.as_secs() as i64;
+    let mtime = metadata.modified()?.duration_since(UNIX_EPOCH)?.as_secs() as i64;
+
+    let doc = Document {
+        path: path_str,
+        folder: parent,
+        name: file_name.trim_end_matches(".md").to_string(),
+        ext: "md".to_string(),
+        size,
+        ctime,
+        mtime,
+        content: extracted.full_content,
+        tags: extracted.tags,
+        links: extracted.links,
+        backlinks: vec![],
+        embeds: extracted.embeds,
+        properties: extracted.frontmatter,
+    };
+
+    db.upsert_document(&doc)?;
+    if verbose {
+        println!("Indexed: {}", doc.path);
+    }
+
+    Ok(Some(doc))
+}
+
+fn update_backlinks(
+    db: &Database,
+    indexed_docs: &[Document],
+) -> Result<(), Box<dyn std::error::Error>> {
     let link_map = db.get_all_links()?;
     let mut backlinks: std::collections::HashMap<String, Vec<String>> =
         std::collections::HashMap::new();
@@ -84,7 +134,7 @@ pub fn index_directory(
         }
     }
 
-    for doc in &all_docs {
+    for doc in indexed_docs {
         if let Some(back_links) = backlinks.get(&doc.name) {
             let mut updated_doc = doc.clone();
             updated_doc.backlinks = back_links.clone();
@@ -92,7 +142,63 @@ pub fn index_directory(
         }
     }
 
-    println!("Indexed {} files", count);
+    Ok(())
+}
+
+#[allow(dead_code)]
+pub fn update_backlinks_for_file(
+    db: &Database,
+    file_name: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let link_map = db.get_all_links()?;
+    let mut backlinks: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+
+    for (path, links) in &link_map {
+        for link in links {
+            let link_name = link
+                .trim_end_matches(|c: char| c == '|' || c == '#')
+                .to_string();
+            backlinks.entry(link_name).or_default().push(path.clone());
+        }
+    }
+
+    if let Some(mut doc) = db.get_document_by_name(file_name)? {
+        doc.backlinks = backlinks.get(&doc.name).cloned().unwrap_or_default();
+        db.upsert_document(&doc)?;
+    }
+
+    Ok(())
+}
+
+pub fn update_backlinks_after_delete(
+    db: &Database,
+    deleted_name: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let link_map = db.get_all_links()?;
+    let mut backlinks: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+
+    for (path, links) in &link_map {
+        for link in links {
+            let link_name = link
+                .trim_end_matches(|c: char| c == '|' || c == '#')
+                .to_string();
+            if link_name != deleted_name {
+                backlinks.entry(link_name).or_default().push(path.clone());
+            }
+        }
+    }
+
+    let all_docs = db.get_all_documents()?;
+
+    for mut doc in all_docs {
+        if let Some(back_links) = backlinks.get(&doc.name) {
+            doc.backlinks = back_links.clone();
+            db.upsert_document(&doc)?;
+        }
+    }
+
     Ok(())
 }
 
@@ -156,7 +262,7 @@ mod tests {
         create_test_file(&test_dir, "test.md", "# Test\n\nContent here.");
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, false);
+        let result = index_directory(&test_dir, &db, false, false, None);
         assert!(result.is_ok());
 
         let mtime = db
@@ -182,7 +288,7 @@ mod tests {
         create_test_file(&test_dir, "file3.md", "# File 3");
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, false);
+        let result = index_directory(&test_dir, &db, false, false, None);
         assert!(result.is_ok());
 
         let link_map = db.get_all_links().unwrap();
@@ -202,7 +308,7 @@ mod tests {
         create_test_file(&subdir, "sub.md", "# Sub");
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, false);
+        let result = index_directory(&test_dir, &db, false, false, None);
         assert!(result.is_ok());
 
         let link_map = db.get_all_links().unwrap();
@@ -220,7 +326,7 @@ mod tests {
         create_test_file(&test_dir, "data.json", "{}");
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, false);
+        let result = index_directory(&test_dir, &db, false, false, None);
         assert!(result.is_ok());
 
         let link_map = db.get_all_links().unwrap();
@@ -245,7 +351,7 @@ See [[other]] for more."#;
         create_test_file(&test_dir, "with_frontmatter.md", content);
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, false);
+        let result = index_directory(&test_dir, &db, false, false, None);
         assert!(result.is_ok());
 
         let link_map = db.get_all_links().unwrap();
@@ -270,7 +376,7 @@ See [[other]] for more."#;
         create_test_file(&test_dir, "referrer.md", "See [[target]] for info.");
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, false);
+        let result = index_directory(&test_dir, &db, false, false, None);
         assert!(result.is_ok());
 
         // Verify both files are indexed
@@ -291,7 +397,7 @@ See [[other]] for more."#;
         );
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, false);
+        let result = index_directory(&test_dir, &db, false, false, None);
         assert!(result.is_ok());
 
         let mtime = db
@@ -319,7 +425,7 @@ See [[other]] for more."#;
         );
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, false);
+        let result = index_directory(&test_dir, &db, false, false, None);
         assert!(result.is_ok());
 
         let mtime = db
@@ -345,7 +451,7 @@ See [[other]] for more."#;
         let db = Database::new(&db_path).unwrap();
 
         // First index
-        index_directory(&test_dir, &db, false, false).unwrap();
+        index_directory(&test_dir, &db, false, false, None).unwrap();
         let mtime1 = db
             .get_mtime(
                 &test_dir
@@ -361,7 +467,7 @@ See [[other]] for more."#;
         create_test_file(&test_dir, "test.md", "# Updated");
 
         // Re-index with force
-        index_directory(&test_dir, &db, true, false).unwrap();
+        index_directory(&test_dir, &db, true, false, None).unwrap();
         let mtime2 = db
             .get_mtime(
                 &test_dir
@@ -383,7 +489,7 @@ See [[other]] for more."#;
         let (test_dir, db_path) = create_test_directory();
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, false);
+        let result = index_directory(&test_dir, &db, false, false, None);
         assert!(result.is_ok());
 
         let link_map = db.get_all_links().unwrap();

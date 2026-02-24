@@ -34,7 +34,7 @@ cargo build --release
 mdb index --base-dir ./my-notes
 
 # Query notes
-mdb query -q "has(tags, 'todo')"
+mdb query "has(tags, 'todo')"
 ```
 
 ## Commands
@@ -46,6 +46,7 @@ Scans Markdown files and indexes to DuckDB.
 mdb index --base-dir ./notes        # Index base directory
 mdb index --base-dir ./notes --force     # Force re-index
 mdb index --base-dir ./notes -v     # Verbose
+mdb index --base-dir ./notes --watch     # Watch for changes
 ```
 
 ### `query`
@@ -53,22 +54,31 @@ Query indexed files with SQL-like expressions.
 
 ```bash
 # Basic queries (shorthand - native columns and frontmatter properties)
-mdb query -q "has(tags, 'project')"
-mdb query -q "category == 'work'"
-mdb query -q "folder =~ '%projects%'"
-mdb query -q "mtime > '2024-01-01'"
+mdb query "has(tags, 'project')"
+mdb query "category == 'work'"
+mdb query "folder =~ '%projects%'"
+mdb query "mtime > '2024-01-01'"
 
 # Explicit namespace usage (file.* for native columns, note.* for frontmatter)
-mdb query -q "has(file.tags, 'todo')"
-mdb query -q "note.author == 'John'"
+mdb query "has(file.tags, 'todo')"
+mdb query "note.author == 'John'"
 
 # Output formats
-mdb query -q "has(tags, 'todo')" -o json
-mdb query -q "has(tags, 'todo')" -o list
+mdb query "has(tags, 'todo')" -o json
+mdb query "has(tags, 'todo')" -o list
 
 # Select fields (default: file.path, file.mtime)
-mdb query -q "name == 'readme'" -f "path,name,size"
-mdb query -q "category == 'project'" -f "path,note.author,category"
+mdb query "name == 'readme'" -f "path,name,size"
+mdb query "category == 'project'" -f "path,note.author,category"
+```
+
+### `new`
+Create a new markdown note with optional template.
+
+```bash
+mdb new my-note                    # Create note in base-dir
+mdb new notes/my-note              # Create in subdirectory
+mdb new my-note --template daily   # Create with template
 ```
 
 **Fields:** Native columns (`path`, `folder`, `name`, `ext`, `size`, `ctime`, `mtime`, `content`, `tags`, `links`, `backlinks`, `embeds`) and frontmatter properties (e.g., `author`, `category`). Use `file.*` prefix for explicit namespace or shorthand for convenience.
@@ -96,10 +106,10 @@ export MDB_DATABASE=/path/to/db.duckdb
 export MDB_BASE_DIR=/path/to/notes
 
 # Use environment variables
-mdb query -q "has(tags, 'design')"
+mdb query "has(tags, 'design')"
 
 # CLI arguments override environment variables
-mdb --database /other/db.duckdb query -q "..."
+mdb --database /other/db.duckdb query "..."
 mdb index -b /other/dir
 ```
 
@@ -109,9 +119,11 @@ mdb index -b /other/dir
 - SQL-like query language
 - Obsidian support (wiki-links, embeds, frontmatter, tags)
 - Incremental updates
+- File watching mode for auto-reindexing
 - Multiple output formats (table, json, list)
 - Human-readable timestamps
 - Shorthand field notation for conciseness
+- Note creation with templates
 
 ## Development
 
@@ -121,7 +133,7 @@ cargo build
 
 # Run in development
 cargo run -- index --base-dir ./notes
-cargo run -- query -q "file.name == 'readme'"
+cargo run -- query "file.name == 'readme'"
 
 # Run tests
 cargo test
@@ -140,11 +152,12 @@ cargo run -- index --base-dir ./notes -v
 
 The project includes comprehensive unit tests covering all major components:
 
-- **97 total tests** across all modules
+- **102 total tests** across all modules
 - **Query System**: Tokenizer, parser, compiler, and SQL generation
 - **Content Extraction**: Frontmatter, tags, wiki-links, embeds
 - **Database**: CRUD operations, queries, and filtering
 - **Scanner**: File discovery, indexing, and backlink tracking
+- **Watcher**: File monitoring and incremental indexing
 - **Output**: Table, JSON, and list formatting
 
 Run tests with: `cargo test`
@@ -171,6 +184,8 @@ mdb/
 │   ├── db.rs            # DuckDB database operations
 │   ├── scanner.rs       # File discovery and indexing
 │   ├── extractor.rs     # Markdown content extraction
+│   ├── watcher.rs       # File monitoring for watch mode
+│   ├── creator.rs      # Note creation with templates
 │   ├── lib.rs           # Library exports
 │   └── query/           # Query system
 │       ├── mod.rs       # Output formatting (table/json/list)

@@ -109,6 +109,80 @@ impl Database {
         }
     }
 
+    pub fn delete_document(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        self.conn
+            .execute("DELETE FROM documents WHERE path = ?", params![path])?;
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub fn get_document_by_name(
+        &self,
+        name: &str,
+    ) -> Result<Option<Document>, Box<dyn std::error::Error>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT * FROM documents WHERE name = ?")?;
+        let mut rows = stmt.query(params![name])?;
+
+        if let Some(row) = rows.next()? {
+            Ok(Some(self.row_to_document(row)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn get_all_documents(&self) -> Result<Vec<Document>, Box<dyn std::error::Error>> {
+        let mut stmt = self.conn.prepare("SELECT * FROM documents")?;
+        let mut rows = stmt.query([])?;
+        let mut docs = Vec::new();
+
+        while let Some(row) = rows.next()? {
+            docs.push(self.row_to_document(row)?);
+        }
+
+        Ok(docs)
+    }
+
+    fn row_to_document(&self, row: &duckdb::Row) -> Result<Document, Box<dyn std::error::Error>> {
+        let path: String = row.get(0)?;
+        let folder: String = row.get(1)?;
+        let name: String = row.get(2)?;
+        let ext: String = row.get(3)?;
+        let size: i64 = row.get(4)?;
+        let ctime: chrono::DateTime<chrono::Utc> = row.get(5)?;
+        let mtime: chrono::DateTime<chrono::Utc> = row.get(6)?;
+        let content: String = row.get(7)?;
+        let tags_json: String = row.get(8)?;
+        let links_json: String = row.get(9)?;
+        let backlinks_json: String = row.get(10)?;
+        let embeds_json: String = row.get(11)?;
+        let properties_json: String = row.get(12)?;
+
+        let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
+        let links: Vec<String> = serde_json::from_str(&links_json).unwrap_or_default();
+        let backlinks: Vec<String> = serde_json::from_str(&backlinks_json).unwrap_or_default();
+        let embeds: Vec<String> = serde_json::from_str(&embeds_json).unwrap_or_default();
+        let properties: serde_json::Value =
+            serde_json::from_str(&properties_json).unwrap_or(serde_json::Value::Null);
+
+        Ok(Document {
+            path,
+            folder,
+            name,
+            ext,
+            size: size as u64,
+            ctime: ctime.timestamp(),
+            mtime: mtime.timestamp(),
+            content,
+            tags,
+            links,
+            backlinks,
+            embeds,
+            properties,
+        })
+    }
+
     pub fn get_all_links(
         &self,
     ) -> Result<std::collections::HashMap<String, Vec<String>>, Box<dyn std::error::Error>> {
