@@ -101,6 +101,9 @@ impl Lexer {
         if ident == "has" {
             return Token::Function(ident);
         }
+        if ident == "exists" {
+            return Token::Function(ident);
+        }
 
         if ident == "and" {
             return Token::And;
@@ -216,6 +219,18 @@ mod tests {
         assert!(matches!(tokens[4], Token::StringLiteral(ref s) if s == "important"));
         assert!(matches!(tokens[5], Token::RParen));
         assert!(matches!(tokens[6], Token::EOF));
+    }
+
+    #[test]
+    fn test_exists_function_tokenization() {
+        let mut lexer = Lexer::new("exists(note.category)");
+        let tokens = lexer.tokenize();
+        assert_eq!(tokens.len(), 5);
+        assert!(matches!(tokens[0], Token::Function(ref f) if f == "exists"));
+        assert!(matches!(tokens[1], Token::LParen));
+        assert!(matches!(tokens[2], Token::Field(ref f) if f == "note.category"));
+        assert!(matches!(tokens[3], Token::RParen));
+        assert!(matches!(tokens[4], Token::EOF));
     }
 
     #[test]

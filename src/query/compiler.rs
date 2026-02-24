@@ -15,6 +15,22 @@ const FILE_FIELDS: &[&str] = &[
     "embeds",
 ];
 
+fn check_field_arg_not_quoted(node: &AstNode, func_name: &str) -> Option<String> {
+    match node {
+        AstNode::Field(_) => None,
+        AstNode::StringLiteral(_) => Some(format!("{}_arg_should_not_be_quoted", func_name)),
+        _ => Some("1=1".to_string()),
+    }
+}
+
+fn is_array_field(field: &str) -> bool {
+    matches!(field, "tags" | "links" | "backlinks" | "embeds")
+}
+
+fn is_native_field(field: &str) -> bool {
+    FILE_FIELDS.contains(&field)
+}
+
 pub fn resolve_field(field: &str) -> String {
     if field.contains('.') {
         let parts: Vec<&str> = field.split('.').collect();
@@ -73,10 +89,36 @@ pub fn compile(node: &AstNode) -> String {
         AstNode::NumberLiteral(val) => val.clone(),
         AstNode::FunctionCall { name, args } => {
             if name == "has" && args.len() == 2 {
+                if let Some(error_marker) = check_field_arg_not_quoted(&args[0], "has") {
+                    return error_marker;
+                }
                 let field = compile(&args[0]);
                 let value = compile(&args[1]);
                 let clean_value = value.trim_matches('\'');
                 return format!("'{}' = ANY({})", clean_value, field);
+            }
+            if name == "exists" && args.len() == 1 {
+                if let Some(error_marker) = check_field_arg_not_quoted(&args[0], "exists") {
+                    return error_marker;
+                }
+                let field_name = match &args[0] {
+                    AstNode::Field(f) => f.clone(),
+                    _ => return "1=1".to_string(),
+                };
+
+                let bare_field = field_name.strip_prefix("file.").unwrap_or(&field_name);
+
+                return if is_array_field(bare_field) {
+                    format!("array_length({}) > 0", bare_field)
+                } else if is_native_field(bare_field) {
+                    format!("{} IS NOT NULL AND {} != ''", bare_field, bare_field)
+                } else {
+                    let json_path = bare_field.strip_prefix("note.").unwrap_or(bare_field);
+                    format!(
+                        "NOT (json_extract(properties, '$.{}') IS NULL OR (json_type(properties, '$.{}') = 'STRING' AND json_extract_string(properties, '$.{}') = '') OR (json_type(properties, '$.{}') = 'ARRAY' AND json_array_length(properties, '$.{}') = 0))",
+                        json_path, json_path, json_path, json_path, json_path
+                    )
+                };
             }
             "1=1".to_string()
         }
