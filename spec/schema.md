@@ -60,7 +60,7 @@ _schema:
 | 字段           | 说明                                                                                          | 示例                            |
 | -------------- | --------------------------------------------------------------------------------------------- | ------------------------------- |
 | **`type`**     | 实体类型。用于跨模板的实体对齐查询（`note.type == 'company'`）。                             | `type: company`                 |
-| **`template`** | 所用模板的文件名（不含路径，模板统一存放于 `templates/` 目录）。用于沉淀阶段精确反查模板指令。 | `template: company_customer.md` |
+| **`template`** | 所用模板的文件名（不含路径及md后缀，模板统一存放于 `templates/` 目录）。用于沉淀阶段精确反查模板指令。 | `template: company_customer` |
 
 > **为何同时需要 `type` 和 `template`：** `type` 用于跨模板的实体查询（如「找所有 person 类型的实体」），`template` 用于精确反查沉淀指令（如同为 `person` 类型，客户人员模板和私人朋友模板的正文指令可能完全不同）。
 
@@ -251,7 +251,7 @@ _schema:
       default: "Lead"
 
 type: company
-template: company_customer.md
+template: company_customer
 tags: ["customer"]
 ---
 
