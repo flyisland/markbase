@@ -81,6 +81,16 @@ mdb new notes/my-note              # Create in subdirectory
 mdb new my-note --template daily   # Create with template
 ```
 
+### `template`
+Manage templates (MKS schema-based templates).
+
+```bash
+mdb template list                  # List all templates
+mdb template list -f "tags,type"  # List with additional fields
+```
+
+**Note:** Templates are expected in the `templates/` directory under base-dir. Default fields shown: `name`, `_schema.description`, `path`.
+
 **Fields:** Native columns (`path`, `folder`, `name`, `ext`, `size`, `ctime`, `mtime`, `content`, `tags`, `links`, `backlinks`, `embeds`) and frontmatter properties (e.g., `author`, `category`). Use `file.*` prefix for explicit namespace or shorthand for convenience.
 
 **Operators:** `==`, `!=`, `>`, `<`, `>=`, `<=`, `=~` (LIKE), `and`, `or`
@@ -124,6 +134,7 @@ mdb index -b /other/dir
 - Human-readable timestamps
 - Shorthand field notation for conciseness
 - Note creation with templates
+- Template listing with MKS schema support
 
 ## Development
 

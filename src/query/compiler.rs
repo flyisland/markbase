@@ -39,9 +39,20 @@ pub fn resolve_field(field: &str) -> String {
         }
     }
 
-    if field.starts_with("note.") || field.contains('.') {
-        let json_path = field.strip_prefix("note.").unwrap_or(field);
+    if field.starts_with("note.") {
+        let json_path = &field[5..];
         return format!("json_extract_string(properties, '$.{}')", json_path);
+    }
+
+    if field.contains('.') {
+        let parts: Vec<&str> = field.split('.').collect();
+        let json_path = "$".to_string()
+            + &parts
+                .iter()
+                .map(|p| format!(".\"{}\"", p))
+                .collect::<Vec<_>>()
+                .join("");
+        return format!("json_extract_string(properties, '{}')", json_path);
     }
 
     if FILE_FIELDS.contains(&field) {
@@ -187,6 +198,18 @@ mod tests {
         assert_eq!(
             resolve_field("priority"),
             "json_extract_string(properties, '$.priority')"
+        );
+    }
+
+    #[test]
+    fn test_resolve_nested_json_path() {
+        assert_eq!(
+            resolve_field("_schema.description"),
+            "json_extract_string(properties, '$.\"_schema\".\"description\"')"
+        );
+        assert_eq!(
+            resolve_field("_schema.strict"),
+            "json_extract_string(properties, '$.\"_schema\".\"strict\"')"
         );
     }
 

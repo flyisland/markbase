@@ -93,6 +93,20 @@ enum Commands {
         #[arg(short, long)]
         template: Option<String>,
     },
+    #[command(about = "Manage templates")]
+    Template {
+        #[command(subcommand)]
+        command: TemplateCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum TemplateCommands {
+    #[command(about = "List all available templates")]
+    List {
+        #[arg(short, long, help = "Additional fields to display")]
+        fields: Option<String>,
+    },
 }
 
 fn get_database_path() -> PathBuf {
@@ -228,6 +242,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let created_path = creator::create_note(&base, &name, template.as_deref())?;
             println!("Created: {}", created_path.display());
         }
+        Commands::Template { command } => match command {
+            TemplateCommands::List { fields } => {
+                let base = cli.base_dir.unwrap_or_else(get_base_dir);
+                let base_canonical = base
+                    .canonicalize()
+                    .map_err(|e| format!("Failed to resolve base-dir: {}", e))?;
+                let pattern = format!("{}/templates/%%", base_canonical.display());
+
+                let mut output_fields = vec![
+                    "name".to_string(),
+                    "_schema.description".to_string(),
+                    "path".to_string(),
+                ];
+
+                if let Some(extra) = fields {
+                    let user_fields: Vec<String> =
+                        extra.split(',').map(|s| s.trim().to_string()).collect();
+                    output_fields.extend(user_fields);
+                }
+
+                let fields_str = output_fields.join(", ");
+                let query = format!("path=~\"{}\"", pattern);
+                let compiled = query::build_sql(&query, &fields_str).map_err(|e| e.to_string())?;
+                if compiled.contains("_arg_should_not_be_quoted") {
+                    return Err("Error: property name in function should not be quoted. Use function(property_name, ...) instead of function('property_name', ...)".into());
+                }
+                let db = db.lock().unwrap();
+                let results = db.query(&compiled, &fields_str, 1000)?;
+                query::output_results(&results, "list", &output_fields)?;
+            }
+        },
     }
 
     Ok(())
@@ -239,7 +284,7 @@ mod tests {
 
     #[test]
     fn test_default_fields_value() {
-        let cli = Cli::parse_from(["mdb", "query", "-q", "file.name == 'test'"]);
+        let cli = Cli::parse_from(["mdb", "query", "file.name == 'test'"]);
         if let Commands::Query { fields, .. } = cli.command {
             assert_eq!(fields, "file.path, file.mtime");
         } else {
@@ -249,7 +294,7 @@ mod tests {
 
     #[test]
     fn test_all_fields_option() {
-        let cli = Cli::parse_from(["mdb", "query", "-q", "file.name == 'test'", "-f", "*"]);
+        let cli = Cli::parse_from(["mdb", "query", "file.name == 'test'", "-f", "*"]);
         if let Commands::Query { fields, .. } = cli.command {
             assert_eq!(fields, "*");
         } else {
@@ -262,7 +307,6 @@ mod tests {
         let cli = Cli::parse_from([
             "mdb",
             "query",
-            "-q",
             "file.name == 'test'",
             "--output-fields",
             "file.name",
@@ -276,7 +320,7 @@ mod tests {
 
     #[test]
     fn test_output_format_option() {
-        let cli = Cli::parse_from(["mdb", "query", "-q", "file.name == 'test'", "-o", "json"]);
+        let cli = Cli::parse_from(["mdb", "query", "file.name == 'test'", "-o", "json"]);
         if let Commands::Query { format, .. } = cli.command {
             assert_eq!(format, OutputFormat::Json);
         } else {
@@ -337,6 +381,34 @@ mod tests {
             assert_eq!(watch, true);
         } else {
             panic!("Expected Index command");
+        }
+    }
+
+    #[test]
+    fn test_template_list_command() {
+        let cli = Cli::parse_from(["mdb", "template", "list"]);
+        if let Commands::Template { command } = cli.command {
+            if let TemplateCommands::List { fields } = command {
+                assert_eq!(fields, None);
+            } else {
+                panic!("Expected List subcommand");
+            }
+        } else {
+            panic!("Expected Template command");
+        }
+    }
+
+    #[test]
+    fn test_template_list_with_fields() {
+        let cli = Cli::parse_from(["mdb", "template", "list", "-f", "tags,type"]);
+        if let Commands::Template { command } = cli.command {
+            if let TemplateCommands::List { fields } = command {
+                assert_eq!(fields, Some("tags,type".to_string()));
+            } else {
+                panic!("Expected List subcommand");
+            }
+        } else {
+            panic!("Expected Template command");
         }
     }
 }
