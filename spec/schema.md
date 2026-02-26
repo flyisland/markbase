@@ -1,15 +1,15 @@
-# MKS (Markdown Knowledge Schema) v1.6
+# MKS (Markdown Knowledge Schema) v1.7
 
 **Status:** Stable / Production Ready  
 **Date:** 2026-02-26  
 **Target System:** mdb CLI, OpenClaw Agent  
-**Changelog:** v1.5 → v1.6 见文末
+**Changelog:** v1.6 → v1.7 见文末
 
 ---
 
 ## 1. 核心理念与流程 (Core Philosophy & Workflow)
 
-MKS v1.6 是连接非结构化对话流与结构化知识库的协议。它不仅仅定义数据格式，更定义了知识的全生命周期管理流程：
+MKS v1.7 是连接非结构化对话流与结构化知识库的协议。它不仅仅定义数据格式，更定义了知识的全生命周期管理流程：
 
 1. **流式采集 (Stream Collection):**
    依靠 Frontmatter 中的 `description`（语义路由）和 `properties`（Prompt），指导 Agent 从杂乱的对话流中精准提取信息。
@@ -36,35 +36,30 @@ _schema:
   # 必填。Agent 读取此描述，判断当前信息流是否匹配该模版。
   description: string
 
-  # [2. 模板映射]
-  # 必填。定义此模板对应的实体类型。用于实体对齐查询（mdb query "note.type == '...'"）。
-  # 同一 type 可有多个模板（如 person 类型下有客户人员模板、私人朋友模板）。
-  type: string
-
-  # [3. 字段校验]
+  # [2. 字段校验]
   # 默认为 false。
   # strict: true  — Agent 发现未定义字段时报错，拒绝写入。
   # strict: false — 未定义字段采取「只读透传（read-only passthrough）」策略：
   #                 读取内容纳入上下文，但不主动写入或修改。
   strict: boolean
 
-  # [4. 数据完整性]
+  # [3. 数据完整性]
   # 必填字段的 Key 列表。创建文档时，若上下文无法自动推断，Agent 须向用户提问获取。
   # 提问时机：先完成实体对齐；仍无法确定时，再向用户提问。
   required: [string]
 
-  # [5. 结构定义]
+  # [4. 结构定义]
   properties:
     <field_name>: <SchemaObject>
 ```
 
 ### 1.2 实例文件必填 Frontmatter
 
-所有由模板创建的实例文件，Frontmatter 中必须包含以下两个字段：
+所有由模板创建的实例文件，Frontmatter 中必须包含以下两个字段。这两个字段直接定义在模板 Frontmatter 的外层（`_schema` 之外），`mdb new` 创建骨架时原样保留：
 
-| 字段         | 说明                                                                 | 示例                           |
-| ------------ | -------------------------------------------------------------------- | ------------------------------ |
-| **`type`**   | 实体类型，与模板 `_schema.type` 一致。用于实体对齐查询。            | `type: company`                |
+| 字段           | 说明                                                                                          | 示例                            |
+| -------------- | --------------------------------------------------------------------------------------------- | ------------------------------- |
+| **`type`**     | 实体类型。用于跨模板的实体对齐查询（`note.type == 'company'`）。                             | `type: company`                 |
 | **`template`** | 所用模板的文件名（不含路径，模板统一存放于 `templates/` 目录）。用于沉淀阶段精确反查模板指令。 | `template: company_customer.md` |
 
 > **为何同时需要 `type` 和 `template`：** `type` 用于跨模板的实体查询（如「找所有 person 类型的实体」），`template` 用于精确反查沉淀指令（如同为 `person` 类型，客户人员模板和私人朋友模板的正文指令可能完全不同）。
@@ -75,33 +70,33 @@ _schema:
 
 #### 类型定义（`type`）
 
-| MKS `type`   | Obsidian UI 对应  | 说明                            |
-| ------------ | ----------------- | ------------------------------- |
-| `text`       | Text              | 普通文本                        |
-| `number`     | Number            | 数值                            |
-| `boolean`    | Checkbox          | 布尔值，使用 `boolean` 更直观   |
-| `date`       | Date              | 日期，格式 `YYYY-MM-DD`         |
-| `datetime`   | Date & time       | 日期时间，格式 `YYYY-MM-DDTHH:MM` |
-| `list`       | List              | 数组，含 aliases、tags 等列表类字段 |
+| MKS `type`   | Obsidian UI 对应 | 说明                                     |
+| ------------ | ---------------- | ---------------------------------------- |
+| `text`       | Text             | 普通文本                                 |
+| `number`     | Number           | 数值                                     |
+| `boolean`    | Checkbox         | 布尔值，使用 `boolean` 更直观            |
+| `date`       | Date             | 日期，格式 `YYYY-MM-DD`                  |
+| `datetime`   | Date & time      | 日期时间，格式 `YYYY-MM-DDTHH:MM`        |
+| `list`       | List             | 数组，含 aliases、tags 等列表类字段      |
 
 #### 格式增强（`format`）
 
 `format` 字段仅有一个合法值，专用于双链约束：
 
-| `format` 值 | 说明                                                        |
-| ----------- | ----------------------------------------------------------- |
+| `format` 值 | 说明                                                                                              |
+| ----------- | ------------------------------------------------------------------------------------------------- |
 | `link`      | 该字段值必须为 Obsidian 双链格式。配合 `target` 指定实体类型约束。仅可用于 `type: text` 或 `type: list` 的字段。 |
 
 #### 完整 Schema Object 属性表
 
-| 属性 Key          | 类型   | 描述                                              |
-| ----------------- | ------ | ------------------------------------------------- |
-| **`type`**        | string | 见上方类型定义表                                  |
-| **`format`**      | string | 目前仅支持 `link`                                 |
-| **`target`**      | string | 实体类型约束，仅当 `format: link` 时有效          |
-| **`enum`**        | array  | 预设值列表，用于下拉约束和幻觉抑制                |
-| **`description`** | string | 字段填写的 Prompt 指引，指导 Agent 如何提取和填写 |
-| **`default`**     | any    | 字段默认值，创建实例时若上下文无信息则使用此值    |
+| 属性 Key          | 类型   | 描述                                                |
+| ----------------- | ------ | --------------------------------------------------- |
+| **`type`**        | string | 见上方类型定义表                                    |
+| **`format`**      | string | 目前仅支持 `link`                                   |
+| **`target`**      | string | 实体类型约束，仅当 `format: link` 时有效            |
+| **`enum`**        | array  | 预设值列表，用于下拉约束和幻觉抑制                  |
+| **`description`** | string | 字段填写的 Prompt 指引，指导 Agent 如何提取和填写   |
+| **`default`**     | any    | 字段默认值，创建实例时若上下文无信息则使用此值      |
 
 ---
 
@@ -202,13 +197,13 @@ aliases: ["绿米", "绿米联合"]
 
 ```
 Step 1  Agent 预读模板文件（mdb new 之前）
-        ↓ 记住：_schema.type、_schema.required、_schema.properties
+        ↓ 记住：_schema.required、_schema.strict、_schema.properties
         ↓ 记住：各章节的 [Fill] / [Update] 指令内容
 
 Step 2  mdb new <实例名> --template <模板文件名>
         ↓ mdb 过滤掉 _schema 属性和所有 <!-- [...] --> 指令注释
+        ↓ 保留模板外层 Frontmatter（含 type、template 等字段）原样写入骨架文件
         ↓ 生成干净的骨架文件（仅保留 Frontmatter 结构和章节标题）
-        ↓ 骨架文件自动写入 template: <模板文件名>
 
 Step 3  Agent 填充 Frontmatter
         ↓ 从上下文推断各字段值
@@ -229,12 +224,11 @@ Step 4  Agent 填充正文
 
 ```markdown
 ---
-# [MKS v1.6 Template Definition]
+# [MKS v1.7 Template Definition]
 _schema:
   description: >-
     标准客户档案模版。
     用于建立新客户的基本信息库，并随着商机推进自动沉淀技术栈、关键人和活动记录。
-  type: company
   strict: false
   required: ["name", "industry", "owner"]
 
@@ -334,22 +328,19 @@ tags: ["customer"]
 3. **查模板：** 读取 `templates/company_customer.md`，加载全部正文指令。
 4. **逐章扫描，按指令执行：**
 
-   | 章节               | 指令                   | 操作                                                                                          |
-   | ------------------ | ---------------------- | --------------------------------------------------------------------------------------------- |
-   | `## 2. 组织架构`   | `[Update]: Accumulate` | 提取会议纪要中出现的人员，实体对齐后追加（不确定者写悬空引用）；幂等检查通过后写入           |
-   | `## 3. 技术栈画像` | `[Update]: Accumulate` | 提取新技术信息，带时间戳追加；幂等检查通过后写入                                             |
-   | `## 4. 关键活动`   | `[Update]: Append`     | 幂等检查通过后，追加：`- [[2026-02-26]] [Visit] 讨论私有化部署 → [[2026-02-26_绿米拜访]]`   |
+   | 章节               | 指令                   | 操作                                                                                        |
+   | ------------------ | ---------------------- | ------------------------------------------------------------------------------------------- |
+   | `## 2. 组织架构`   | `[Update]: Accumulate` | 提取会议纪要中出现的人员，实体对齐后追加（不确定者写悬空引用）；幂等检查通过后写入         |
+   | `## 3. 技术栈画像` | `[Update]: Accumulate` | 提取新技术信息，带时间戳追加；幂等检查通过后写入                                           |
+   | `## 4. 关键活动`   | `[Update]: Append`     | 幂等检查通过后，追加：`- [[2026-02-26]] [Visit] 讨论私有化部署 → [[2026-02-26_绿米拜访]]` |
 
 5. **重新索引：** 若有 alias 写入，执行 `mdb index` 使变更生效。
 
 ---
 
-## Changelog: v1.5 → v1.6
+## Changelog: v1.6 → v1.7
 
 | # | 变更内容 |
 |---|----------|
-| 1 | **`strict` 语义修正**：从「沉淀策略」移至独立的「字段校验」说明，明确其为校验行为开关，与沉淀逻辑无关 |
-| 2 | **类型系统全面替换**：`type` 从 OpenAPI 命名（`string/number/boolean/array`）改为 Obsidian 对齐命名（`text/number/boolean/date/datetime/list`）；`format` 字段职责收窄，仅保留 `link` 一个合法值 |
-| 3 | **新增 `template` 实例字段**：所有实例文件必须包含 `template` 字段指向所用模板文件名；沉淀阶段通过 `template` 精确反查指令，替代原来仅靠 `type` 反查的方式，支持同一 `type` 多模板场景 |
-| 4 | 模板范例文件名更新为 `company_customer.md`，体现多模板命名惯例 |
-| 5 | Part IV 文件创建流程补充：骨架文件自动写入 `template` 字段；`default` 值的使用时机明确 |
+| 1 | **删除 `_schema.type`**：其职责已由模板外层 Frontmatter 的 `type` 字段完全覆盖，`_schema` 内保留 `description`、`strict`、`required`、`properties` 四个属性 |
+| 2 | 明确模板外层 `type` 和 `template` 字段由 `mdb new` 原样保留到骨架文件，无需 `_schema` 转发 |
