@@ -13,7 +13,6 @@ _schema:
       description: "客户简称"
     industry:
       type: text
-      enum: ["IoT", "Automotive", "Finance", "Gaming"]
       description: "客户所属行业"
     owner:
       type: text
@@ -22,11 +21,10 @@ _schema:
       description: "内部销售负责人"
     status:
       type: text
-      enum: ["Lead", "POC", "Customer"]
       default: "Lead"
 
 type: company
-template: company_customer.md
+template: company_customer
 tags: ["customer"]
 ---
 
