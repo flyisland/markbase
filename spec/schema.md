@@ -1,15 +1,15 @@
-# MKS (Markdown Knowledge Schema) v1.7
+# MKS (Markdown Knowledge Schema) v1.9
 
 **Status:** Stable / Production Ready  
 **Date:** 2026-02-26  
 **Target System:** mdb CLI, OpenClaw Agent  
-**Changelog:** v1.6 → v1.7 见文末
+**Changelog:** v1.8 → v1.9 见文末
 
 ---
 
 ## 1. 核心理念与流程 (Core Philosophy & Workflow)
 
-MKS v1.7 是连接非结构化对话流与结构化知识库的协议。它不仅仅定义数据格式，更定义了知识的全生命周期管理流程：
+MKS v1.9 是连接非结构化对话流与结构化知识库的协议。它不仅仅定义数据格式，更定义了知识的全生命周期管理流程：
 
 1. **流式采集 (Stream Collection):**
    依靠 Frontmatter 中的 `description`（语义路由）和 `properties`（Prompt），指导 Agent 从杂乱的对话流中精准提取信息。
@@ -48,7 +48,18 @@ _schema:
   # 提问时机：先完成实体对齐；仍无法确定时，再向用户提问。
   required: [string]
 
-  # [4. 结构定义]
+  # [4. 文件命名]
+  # 可选。用自然语言描述文件名的推断规则，指导 Agent 在执行 mdb new 前确定文件名。
+  # 若缺省，Agent 依据上下文自行判断。
+  filename:
+    description: string
+
+  # [5. 存放路径]
+  # 可选。固定目录路径（相对于 Vault 根目录），末尾须含 /。
+  # 路径应固定，不支持动态分支。
+  location: string
+
+  # [6. 结构定义]
   properties:
     <field_name>: <SchemaObject>
 ```
@@ -196,22 +207,34 @@ aliases: ["绿米", "绿米联合"]
 ### 完整流程
 
 ```
+Step 0  执行 mdb template list（每次会话开始时执行一次）
+        ↓ 将返回的 name / description / path 载入上下文
+        ↓ 作为后续路由判断和模板预读的索引
+
 Step 1  Agent 预读模板文件（mdb new 之前）
         ↓ 记住：_schema.required、_schema.strict、_schema.properties
+        ↓ 记住：_schema.filename.description（命名规则）
+        ↓ 记住：_schema.location（存放路径）
         ↓ 记住：各章节的 [Fill] / [Update] 指令内容
 
-Step 2  mdb new <实例名> --template <模板文件名>
+Step 2  确定文件名与路径
+        ↓ 依据 _schema.filename.description，从上下文推断文件名
+        ↓ 若 _schema.filename 缺省，Agent 自行判断
+        ↓ 若 _schema.location 存在，使用该路径；否则使用默认路径
+        ↓ 无法推断文件名时，向用户提问
+
+Step 3  mdb new <路径/实例名> --template <模板文件名>
         ↓ mdb 过滤掉 _schema 属性和所有 <!-- [...] --> 指令注释
         ↓ 保留模板外层 Frontmatter（含 type、template 等字段）原样写入骨架文件
         ↓ 生成干净的骨架文件（仅保留 Frontmatter 结构和章节标题）
 
-Step 3  Agent 填充 Frontmatter
+Step 4  Agent 填充 Frontmatter
         ↓ 从上下文推断各字段值
         ↓ 对 format: link 字段执行实体对齐（Part III）
         ↓ required 字段若无法推断，向用户提问
         ↓ 有 default 值的字段，上下文无信息时使用默认值
 
-Step 4  Agent 填充正文
+Step 5  Agent 填充正文
         ↓ 依据 Step 1 记住的 [Fill] 指令，填充对应章节
         ↓ 无 [Fill] 指令的章节保持空白，不写入
 ```
@@ -220,123 +243,98 @@ Step 4  Agent 填充正文
 
 ## Part V: 完整模版范例 (Reference Template)
 
-**文件路径：** `templates/company_customer.md`
-
-```markdown
----
-# [MKS v1.7 Template Definition]
-_schema:
-  description: >-
-    标准客户档案模版。
-    用于建立新客户的基本信息库，并随着商机推进自动沉淀技术栈、关键人和活动记录。
-  strict: false
-  required: ["name", "industry", "owner"]
-
-  properties:
-    name:
-      type: text
-      description: "客户简称"
-    industry:
-      type: text
-      enum: ["IoT", "Automotive", "Finance", "Gaming"]
-      description: "客户所属行业"
-    owner:
-      type: text
-      format: link
-      target: person
-      description: "内部销售负责人"
-    status:
-      type: text
-      enum: ["Lead", "POC", "Customer"]
-      default: "Lead"
-
-type: company
-template: company_customer
-tags: ["customer"]
----
-
-# {{ name }} 客户档案
-
-## 1. 企业概况
-<!-- [Fill]:
-     根据对话上下文，用 2-3 句话概括客户的主营业务、规模和核心产品。
-     若上下文信息不足，此章节留空。
--->
-
-## 2. 组织架构与关键人
-<!-- [Update]: Accumulate
-     当工作日记或会议纪要中出现客户侧人员信息时，提取并追加到此章节。
-     每个人员须完成实体对齐：
-       - 对齐成功：使用双链格式 [[人名]]
-       - 对齐不确定：使用悬空引用 [?[人名]]，待后续确认
-     格式：`- [[人名]] — <职务/角色>（首次出现：[[YYYY-MM-DD]]）`
-     若同一人员的职务或角色有变动，在原条目后追加备注，保留历史：
-     `- [[张伟]] — 采购总监（首次出现：[[2026-01-10]]）→ 升任 VP（[[2026-06-01]]）`
-     追加前检查源文件路径是否已存在，存在则跳过（幂等）。
--->
-
-## 3. 技术栈画像
-<!-- [Update]: Accumulate
-     当会议纪要或对话中出现新的技术信息时，在对应分类下追加一条记录。
-     格式：`- <Category>: <Technology>（<Status>）— [[YYYY-MM-DD]]`
-     Status 可选值：Evaluating / Planned / In Use / Deprecated
-     即使新技术替代了旧技术，也保留旧条目，以记录演进轨迹。
-     示例：
-       - AI Coding: GitLab CE（Deprecated）— [[2025-06-01]]
-       - AI Coding: GitLab Duo（Planned）— [[2026-02-26]]
-     追加前检查源文件路径是否已存在，存在则跳过（幂等）。
--->
-- **CI/CD**:
-- **Cloud**:
-- **Languages**:
-
-## 4. 关键活动记录
-<!-- [Update]: Append
-     每次有新的客户互动（拜访、会议、电话）时，在末尾追加一条记录。
-     格式：`- [[YYYY-MM-DD]] [<Type>] <简要描述> → [[源文件链接]]`
-     Type 可选值：Visit / Call / Demo / Email
-     追加前检查源文件路径是否已存在，存在则跳过（幂等）。
--->
-```
+> 引用文件：`@/templates/company_customer.md`
 
 ---
 
 ## Part VI: Agent 工作流算法 (The Algorithm)
 
+### 阶段 0：模板感知 (Template Awareness)
+
+**每次会话开始时执行一次**，为后续所有阶段建立路由基础：
+
+```bash
+mdb template list
+```
+
+输出示例：
+```
+name: person_work
+_schema.description: 工作相关人员档案模板。适用于客户侧联系人、合作伙伴...
+path: /vault/templates/person_work.md
+---
+name: company_customer
+_schema.description: 标准客户档案模版。用于建立新客户的基本信息库...
+path: /vault/templates/company_customer.md
+---
+```
+
+Agent 将返回的 `name`、`description`、`path` 载入上下文，作为后续路由判断和模板预读的索引。
+
+---
+
 ### 阶段 1：流式采集 (Collection)
 
 1. **用户输入：** "记录一下，今天拜访了绿米..."
-2. **路由：** Agent 读取所有模版的 `_schema.description`，选中 `meeting_log` 模版。
-3. **预读模板：** 读取模板文件，记住 `_schema` 和所有正文指令。
-4. **必填校验：** 对 `required` 字段，先尝试从上下文推断；推断不足时，先走实体对齐；仍无法确定时，向用户提问。
-5. **创建文件：** 调用 `mdb new`，基于模板生成骨架文件。
-6. **填充内容：** 依据预读的指令填充 Frontmatter 和 `[Fill]` 章节。
+2. **路由：** 依据阶段 0 已加载的模板列表，匹配 `_schema.description`，选中目标模板（此例为 `meeting_log`）。
+3. **关联实体预检（Company Prefetch）：**
+   - 识别对话中涉及的 company 实体（此例为「绿米」）。
+   - 执行实体对齐查询（Part III 算法）：
+     - **命中** → 读取该 company 文件的完整内容载入上下文（包含已有的商机状态、关键人、技术栈等），辅助后续实体识别和信息填充。
+     - **未命中** → 先触发 `company_customer` 模板的完整创建流程（阶段 0 → 阶段 1），创建完成后再继续当前文档的创建。
+4. **预读模板：** 读取目标模板文件，记住 `_schema`（含 `filename`、`location`）和所有正文指令。
+5. **确定文件名与路径：** 依据 `_schema.filename.description` 从上下文推断文件名，结合 `_schema.location` 确定存放目录。
+6. **必填校验：** 对 `required` 字段，先尝试从上下文推断；推断不足时，先走实体对齐；仍无法确定时，向用户提问。
+7. **创建文件：** 调用 `mdb new`，基于模板生成骨架文件。
+8. **填充内容：** 依据预读的指令填充 Frontmatter 和 `[Fill]` 章节。
+
+---
 
 ### 阶段 2：实体对齐 (Alignment)
 
 1. 读取模板 `properties`，找到所有 `format: link` 字段。
-2. 对每个字段，按 Part III 算法依次执行：name 精确匹配 → aliases 匹配 → 结果处理。
+2. 对每个字段，按 Part III 算法依次执行：文件名精确匹配 → aliases 匹配 → 结果处理。
 3. 唯一命中写双链；多结果推断或询问；零结果写悬空引用。
-4. 生成会议纪要 `2026-02-26_绿米拜访.md`，写入 `related_customer: [[绿米]]`。
+4. 示例：生成会议纪要 `logs/2026-02-26_绿米拜访.md`，写入 `related_customer: [[绿米]]`。
+
+---
 
 ### 阶段 3：结构化沉淀 (Sedimentation)
 
 *此阶段由后台任务或 Agent 的「反思」步骤触发*
 
 1. **触发：** 检测到新创建的会议纪要关联了 `[[绿米]]`。
-2. **加载实例：** 读取 `company/绿米.md`，获取 `template: company_customer.md`。
-3. **查模板：** 读取 `templates/company_customer.md`，加载全部正文指令。
+2. **加载实例：** 读取 `company/绿米.md`，获取 `template: company_customer`。
+3. **查模板：** 在阶段 0 的模板索引中定位 `company_customer` 的 `path`，读取模板加载全部正文指令。
 4. **逐章扫描，按指令执行：**
 
    | 章节               | 指令                   | 操作                                                                                        |
    | ------------------ | ---------------------- | ------------------------------------------------------------------------------------------- |
    | `## 2. 组织架构`   | `[Update]: Accumulate` | 提取会议纪要中出现的人员，实体对齐后追加（不确定者写悬空引用）；幂等检查通过后写入         |
    | `## 3. 技术栈画像` | `[Update]: Accumulate` | 提取新技术信息，带时间戳追加；幂等检查通过后写入                                           |
-   | `## 4. 关键活动`   | `[Update]: Append`     | 幂等检查通过后，追加：`- [[2026-02-26]] [Visit] 讨论私有化部署 → [[2026-02-26_绿米拜访]]` |
+   | `## 4. 关键活动`   | `[Update]: Append`     | 幂等检查通过后，追加：`- [[2026-02-26]] [Visit] 讨论私有化部署 → [[logs/2026-02-26_绿米拜访]]` |
 
 5. **重新索引：** 若有 alias 写入，执行 `mdb index` 使变更生效。
 
 ---
+
+## Changelog: v1.8 → v1.9
+
+| # | 变更内容 |
+|---|----------|
+| 1 | **新增阶段 0：模板感知（Template Awareness）**：在 Part VI 中新增阶段 0，规定 Agent 在每次会话开始时执行 `mdb template list`，将返回的 `name`、`description`、`path` 载入上下文，作为路由和模板预读的索引 |
+| 2 | **Part IV 文件创建流程新增 Step 0**：与 Part VI 阶段 0 对应，明确 `mdb template list` 为创建流程的前置步骤 |
+| 3 | **新增关联实体预检（Company Prefetch）**：在 Part VI 阶段 1 流式采集中，路由之后、创建文件之前，新增对 company 等关联实体的预检步骤——命中则读取文件内容载入上下文辅助识别，未命中则先触发该实体的创建流程 |
+| 4 | **Part V 范例更新**：顶部加入文件引用标注 `@/templates/company_customer.md`；模板内容同步升级为 v1.9 规范，删除 `name` 字段，补充 `filename` 和 `location` 字段，正文标题改用 `{{ 文件名 }}` |
+
+## Changelog: v1.7 → v1.8
+
+| # | 变更内容 |
+|---|----------|
+| 1 | **新增 `_schema.filename`**：可选顶层字段，包含 `description` 子字段，用自然语言描述文件命名规则，指导 Agent 在 `mdb new` 前推断文件名 |
+| 2 | **新增 `_schema.location`**：可选顶层字段，字符串类型，指定实例文件的固定存放目录（相对 Vault 根目录，末尾含 `/`） |
+| 3 | **Part IV 文件创建流程更新**：在 Step 1 中增加预读 `filename` 和 `location` 的要求；原 Step 2 拆分为「确定文件名与路径（Step 2）」和「执行 mdb new（Step 3）」两步，步骤总数由 4 步变为 5 步 |
+| 4 | **Part VI Agent 工作流算法更新**：阶段 1 流式采集中，在「预读模板」后新增「确定文件名与路径」步骤 |
 
 ## Changelog: v1.6 → v1.7
 

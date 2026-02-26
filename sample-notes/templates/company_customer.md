@@ -5,12 +5,16 @@ _schema:
     标准客户档案模版。
     用于建立新客户的基本信息库，并随着商机推进自动沉淀技术栈、关键人和活动记录。
   strict: false
-  required: ["name", "industry", "owner"]
+  required: []
+  filename:
+    description: 客户公司简称，如"绿米"
+
+  location: "entities/"
 
   properties:
-    name:
+    full_name:
       type: text
-      description: "客户简称"
+      description: "客户公司全名，如‘深圳绿米联创科技有限公司’"
     industry:
       type: text
       description: "客户所属行业"
