@@ -32,19 +32,16 @@ fn is_native_field(field: &str) -> bool {
 }
 
 pub fn resolve_field(field: &str) -> String {
-    if field.contains('.') {
-        let parts: Vec<&str> = field.split('.').collect();
-        if parts.len() == 2 {
-            let prefix = parts[0];
-            let name = parts[1];
-            if prefix == "file" && FILE_FIELDS.contains(&name) {
-                return name.to_string();
-            }
-            if prefix == "note" {
-                return format!("json_extract_string(properties, '$.{}')", name);
-            }
+    if field.starts_with("file.") {
+        let name = &field[5..];
+        if FILE_FIELDS.contains(&name) {
+            return name.to_string();
         }
-        return field.to_string();
+    }
+
+    if field.starts_with("note.") || field.contains('.') {
+        let json_path = field.strip_prefix("note.").unwrap_or(field);
+        return format!("json_extract_string(properties, '$.{}')", json_path);
     }
 
     if FILE_FIELDS.contains(&field) {
