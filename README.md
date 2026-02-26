@@ -37,6 +37,86 @@ mdb index --base-dir ./my-notes
 mdb query "has(tags, 'todo')"
 ```
 
+## Properties
+
+Every indexed markdown file has two types of properties: native file metadata and frontmatter properties.
+
+**Shorthand Resolution**: Native columns are checked first, then frontmatter properties.
+
+### File Namespace (Native Properties)
+
+Use the `file.*` prefix to access native file metadata:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `file.path` | TEXT | Full file path (primary key) |
+| `file.folder` | TEXT | Directory path |
+| `file.name` | TEXT | File name (without extension) |
+| `file.ext` | TEXT | File extension (e.g., `md`) |
+| `file.size` | INTEGER | File size in bytes |
+| `file.ctime` | TIMESTAMP | Created time |
+| `file.mtime` | TIMESTAMP | Modified time |
+| `file.content` | TEXT | Full file content |
+| `file.tags` | VARCHAR[] | Array of `#tags` in content |
+| `file.links` | VARCHAR[] | Array of `[[wiki-links]]` |
+| `file.backlinks` | VARCHAR[] | Files linking to this file |
+| `file.embeds` | VARCHAR[] | Array of `![[embeds]]` |
+
+```bash
+# Query native file properties
+mdb query "file.folder == './notes'"
+mdb query "file.mtime > '2024-01-01'"
+mdb query "file.size > 10000"
+mdb query "has(file.tags, 'todo')"
+mdb query "has(file.links, 'target-page')"
+```
+
+### Note Namespace (Frontmatter Properties)
+
+Use `note.*` prefix to explicitly access frontmatter properties stored in YAML frontmatter:
+
+### Frontmatter Example
+
+```yaml
+---
+title: My Note
+author: John
+category: project
+status: in-progress
+tags: [design, research]
+date: 2024-01-15
+---
+```
+
+### Querying Properties
+
+Properties are accessed via the `note.*` namespace or shorthand:
+
+```bash
+# Using shorthand (native columns checked first, then frontmatter)
+mdb query "author == 'John'"
+mdb query "category == 'project'"
+mdb query "status == 'in-progress'"
+mdb query "name == 'readme'"
+
+# Using explicit namespace
+mdb query "note.author == 'John'"
+mdb query "note.category == 'project'"
+```
+
+### Property Types
+
+| Frontmatter Type | Query Example |
+|-----------------|---------------|
+| String | `author == 'John'` |
+| Number | `year >= 2024` |
+| Boolean | `published == true` |
+| Array | `has(tags, 'design')` |
+| Date | `date > '2024-01-01'` |
+| Exists | `exists(author)` |
+
+**Note:** Use explicit namespaces (`file.*`, `note.*`) when field names might conflict.
+
 ## Commands
 
 ### `index`
@@ -95,9 +175,9 @@ mdb template list -f "tags,type"  # List with additional fields
 
 **Operators:** `==`, `!=`, `>`, `<`, `>=`, `<=`, `=~` (LIKE), `and`, `or`
 
-**Functions:** `has(field, value)` - array containment
+**Functions:** `has(field, value)` - array containment | `exists(field)` - property existence check
 
-**Note:** Shorthand notation allows concise field names - native columns (path, folder, name, tags, etc.) resolve directly, while unknown identifiers resolve to frontmatter properties. Use explicit namespaces (`file.*`, `note.*`) when needed for clarity.
+**Note:** Shorthand notation - native columns (path, folder, name, tags, etc.) resolve first, then frontmatter properties. Use explicit namespaces (`file.*`, `note.*`) when field names might conflict.
 
 **Note:** Timestamps are displayed in human-readable format (YYYY-MM-DD HH:MM:SS)
 
