@@ -127,6 +127,8 @@ See [README.md](./README.md#project-structure) for the complete project structur
 - Simplified field resolution (no file.*/note.* namespaces)
 - Frontmatter conflict warnings (reserved fields except tags)
 - `template describe` command
+- `MDB_OUTPUT` environment variable support
+- Global `--output-format` / `-o` option for query and template list
 
 ### Technical Debt / Future Improvements
 - Add integration tests for full query pipeline

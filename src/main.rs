@@ -15,12 +15,26 @@ use crate::db::Database;
 
 const ENV_DATABASE: &str = "MDB_DATABASE";
 const ENV_BASE_DIR: &str = "MDB_BASE_DIR";
+const ENV_OUTPUT: &str = "MDB_OUTPUT";
 
 #[derive(Clone, ValueEnum, Debug, PartialEq)]
 enum OutputFormat {
     Table,
     Json,
     List,
+}
+
+impl std::str::FromStr for OutputFormat {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "table" => Ok(OutputFormat::Table),
+            "json" => Ok(OutputFormat::Json),
+            "list" => Ok(OutputFormat::List),
+            _ => Err(format!("Invalid output format: {}", s)),
+        }
+    }
 }
 
 #[derive(Parser)]
@@ -48,6 +62,15 @@ struct Cli {
         help = "Directory to index (default: .)"
     )]
     base_dir: Option<PathBuf>,
+
+    #[arg(
+        long = "output-format",
+        global = true,
+        env = ENV_OUTPUT,
+        help_heading = "Output",
+        help = "Output format: table, json, list"
+    )]
+    output_format: Option<OutputFormat>,
 }
 
 #[derive(Subcommand)]
@@ -65,8 +88,8 @@ enum Commands {
         #[arg(value_name = "QUERY")]
         query: String,
 
-        #[arg(short = 'o', long = "output-format", default_value = "table")]
-        format: OutputFormat,
+        #[arg(short = 'o')]
+        format: Option<OutputFormat>,
 
         #[arg(
             short = 'f',
@@ -98,6 +121,9 @@ enum TemplateCommands {
     List {
         #[arg(short, long, help = "Additional fields to display")]
         fields: Option<String>,
+
+        #[arg(short = 'o')]
+        format: Option<OutputFormat>,
     },
     #[command(about = "Show template content")]
     Describe {
@@ -116,6 +142,15 @@ fn get_base_dir() -> PathBuf {
     env::var(ENV_BASE_DIR)
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("."))
+}
+
+fn get_output_format(cli_format: Option<OutputFormat>) -> OutputFormat {
+    cli_format.unwrap_or_else(|| {
+        env::var(ENV_OUTPUT)
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(OutputFormat::Table)
+    })
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -171,7 +206,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } => {
             let field_names: Vec<String> =
                 fields.split(',').map(|s| s.trim().to_string()).collect();
-            let format_str = match format {
+            let effective_format = get_output_format(format.or(cli.output_format));
+            let format_str = match effective_format {
                 OutputFormat::Table => "table",
                 OutputFormat::Json => "json",
                 OutputFormat::List => "list",
@@ -190,7 +226,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Created: {}", created_path.display());
         }
         Commands::Template { command } => match command {
-            TemplateCommands::List { fields } => {
+            TemplateCommands::List { fields, format } => {
                 let base = cli.base_dir.unwrap_or_else(get_base_dir);
                 let base_canonical = base
                     .canonicalize()
@@ -217,7 +253,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 let db = db.lock().unwrap();
                 let results = db.query(&compiled, &fields_str, 1000)?;
-                query::output_results(&results, "list", &output_fields)?;
+                
+                let effective_format = get_output_format(format.or(cli.output_format));
+                let format_str = match effective_format {
+                    OutputFormat::Table => "table",
+                    OutputFormat::Json => "json",
+                    OutputFormat::List => "list",
+                };
+                query::output_results(&results, format_str, &output_fields)?;
             }
             TemplateCommands::Describe { name } => {
                 let base = cli.base_dir.unwrap_or_else(get_base_dir);
@@ -274,7 +317,7 @@ mod tests {
     fn test_output_format_option() {
         let cli = Cli::parse_from(["mdb", "query", "file.name == 'test'", "-o", "json"]);
         if let Commands::Query { format, .. } = cli.command {
-            assert_eq!(format, OutputFormat::Json);
+            assert_eq!(format, Some(OutputFormat::Json));
         } else {
             panic!("Expected Query command");
         }
@@ -307,8 +350,9 @@ mod tests {
         let cli = Cli::parse_from(["mdb", "template", "list"]);
         if let Commands::Template { command } = cli.command {
             match command {
-                TemplateCommands::List { fields } => {
+                TemplateCommands::List { fields, format } => {
                     assert_eq!(fields, None);
+                    assert_eq!(format, None);
                 }
                 TemplateCommands::Describe { .. } => {
                     panic!("Expected List command, got Describe");
@@ -324,8 +368,27 @@ mod tests {
         let cli = Cli::parse_from(["mdb", "template", "list", "-f", "tags,type"]);
         if let Commands::Template { command } = cli.command {
             match command {
-                TemplateCommands::List { fields } => {
+                TemplateCommands::List { fields, format } => {
                     assert_eq!(fields, Some("tags,type".to_string()));
+                    assert_eq!(format, None);
+                }
+                TemplateCommands::Describe { .. } => {
+                    panic!("Expected List command, got Describe");
+                }
+            }
+        } else {
+            panic!("Expected Template command");
+        }
+    }
+
+    #[test]
+    fn test_template_list_with_output_format() {
+        let cli = Cli::parse_from(["mdb", "template", "list", "-o", "json"]);
+        if let Commands::Template { command } = cli.command {
+            match command {
+                TemplateCommands::List { fields, format } => {
+                    assert_eq!(fields, None);
+                    assert_eq!(format, Some(OutputFormat::Json));
                 }
                 TemplateCommands::Describe { .. } => {
                     panic!("Expected List command, got Describe");
@@ -347,6 +410,37 @@ mod tests {
                 TemplateCommands::Describe { name } => {
                     assert_eq!(name, "daily");
                 }
+            }
+        } else {
+            panic!("Expected Template command");
+        }
+    }
+
+    #[test]
+    fn test_global_output_format() {
+        let cli = Cli::parse_from(["mdb", "--output-format", "json", "query", "name == 'test'"]);
+        assert_eq!(cli.output_format, Some(OutputFormat::Json));
+    }
+
+    #[test]
+    fn test_query_format_overrides_global() {
+        let cli = Cli::parse_from(["mdb", "--output-format", "json", "query", "name == 'test'", "-o", "list"]);
+        if let Commands::Query { format, .. } = cli.command {
+            assert_eq!(format, Some(OutputFormat::List));
+        } else {
+            panic!("Expected Query command");
+        }
+    }
+
+    #[test]
+    fn test_template_list_format_overrides_global() {
+        let cli = Cli::parse_from(["mdb", "--output-format", "table", "template", "list", "-o", "json"]);
+        if let Commands::Template { command } = cli.command {
+            match command {
+                TemplateCommands::List { format, .. } => {
+                    assert_eq!(format, Some(OutputFormat::Json));
+                }
+                _ => panic!("Expected List command"),
             }
         } else {
             panic!("Expected Template command");

@@ -156,7 +156,9 @@ mdb new my-note --template daily   # Create with template
 Manage templates (MKS schema-based templates).
 
 ```bash
-mdb template list                  # List all templates
+mdb template list                  # List all templates (default: table format)
+mdb template list -o json          # List in JSON format
+mdb template list -o list         # List in list format
 mdb template list -f "tags,type"  # List with additional fields
 mdb template describe daily        # Show template content
 ```
@@ -179,6 +181,7 @@ mdb template describe daily        # Show template content
 |----------|-------------|---------|
 | `MDB_DATABASE` | Path to DuckDB database | `.mdb/mdb.duckdb` |
 | `MDB_BASE_DIR` | Base directory for indexing | `.` |
+| `MDB_OUTPUT` | Output format for query and template list | `table` |
 
 **Priority:** CLI arguments > Environment variables > Defaults
 
@@ -186,6 +189,7 @@ mdb template describe daily        # Show template content
 # Set environment variables
 export MDB_DATABASE=/path/to/db.duckdb
 export MDB_BASE_DIR=/path/to/notes
+export MDB_OUTPUT=json
 
 # Use environment variables
 mdb query "has(tags, 'design')"
@@ -193,6 +197,7 @@ mdb query "has(tags, 'design')"
 # CLI arguments override environment variables
 mdb --database /other/db.duckdb query "..."
 mdb index --base-dir /other/dir
+mdb --output-format json query "..."
 ```
 
 ## Features
