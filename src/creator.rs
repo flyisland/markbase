@@ -80,25 +80,22 @@ fn process_template(
             let mut outer_fields: HashMap<String, String> = HashMap::new();
             let mut location: Option<String> = None;
 
-            if let Some(fm) = frontmatter {
-                if let Some(obj) = fm.as_object() {
-                    for (key, value) in obj.iter() {
-                        if key == "_schema" {
-                            if let Some(schema_obj) = value.as_object() {
-                                if let Some(loc_val) = schema_obj.get("location") {
-                                    if let Value::String(loc) = loc_val {
-                                        location = Some(loc.clone());
-                                    }
-                                }
-                            }
-                            continue;
+            if let Some(fm) = frontmatter && let Some(obj) = fm.as_object() {
+                for (key, value) in obj.iter() {
+                    if key == "_schema" {
+                        if let Some(schema_obj) = value.as_object()
+                            && let Some(loc_val) = schema_obj.get("location")
+                            && let Value::String(loc) = loc_val
+                        {
+                            location = Some(loc.clone());
                         }
-                        let val_str = match value {
-                            Value::String(s) => s.clone(),
-                            other => other.to_string(),
-                        };
-                        outer_fields.insert(key.clone(), val_str);
+                        continue;
                     }
+                    let val_str = match value {
+                        Value::String(s) => s.clone(),
+                        other => other.to_string(),
+                    };
+                    outer_fields.insert(key.clone(), val_str);
                 }
             }
 

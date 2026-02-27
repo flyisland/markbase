@@ -32,15 +32,11 @@ fn is_native_field(field: &str) -> bool {
 }
 
 pub fn resolve_field(field: &str) -> String {
-    if field.starts_with("file.") {
-        let name = &field[5..];
-        if FILE_FIELDS.contains(&name) {
-            return name.to_string();
-        }
+    if let Some(name) = field.strip_prefix("file.") && FILE_FIELDS.contains(&name) {
+        return name.to_string();
     }
 
-    if field.starts_with("note.") {
-        let json_path = &field[5..];
+    if let Some(json_path) = field.strip_prefix("note.") {
         return format!("json_extract_string(properties, '$.{}')", json_path);
     }
 
@@ -87,10 +83,7 @@ pub fn compile(node: &AstNode) -> String {
                 format!("{} {} {}", left_sql, sql_op, right_sql)
             }
         }
-        AstNode::Field(name) => {
-            let resolved = resolve_field(name);
-            resolved
-        }
+        AstNode::Field(name) => resolve_field(name),
         AstNode::StringLiteral(val) => {
             format!("'{}'", val.replace('\'', "''"))
         }

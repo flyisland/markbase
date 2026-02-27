@@ -10,7 +10,7 @@ pub enum Token {
     Function(String),
     And,
     Or,
-    EOF,
+    Eof,
 }
 
 pub struct Lexer {
@@ -55,7 +55,7 @@ impl Lexer {
                 self.pos += 1;
             }
         }
-        tokens.push(Token::EOF);
+        tokens.push(Token::Eof);
         tokens
     }
 
@@ -122,10 +122,7 @@ impl Lexer {
 
         if self.pos < self.input.len() {
             let next = self.input[self.pos];
-            if (ch == '=' && next == '=')
-                || (ch == '!' && next == '=')
-                || (ch == '>' && next == '=')
-                || (ch == '<' && next == '=')
+            if (ch == '<' || ch == '>' || ch == '!' || ch == '=') && next == '='
                 || (ch == '=' && next == '~')
             {
                 self.pos += 1;
@@ -147,7 +144,7 @@ mod tests {
         let tokens = lexer.tokenize();
         assert_eq!(tokens.len(), 2);
         assert!(matches!(tokens[0], Token::Field(ref f) if f == "file.name"));
-        assert!(matches!(tokens[1], Token::EOF));
+        assert!(matches!(tokens[1], Token::Eof));
     }
 
     #[test]
@@ -158,7 +155,7 @@ mod tests {
         assert!(matches!(tokens[0], Token::Field(ref f) if f == "file.name"));
         assert!(matches!(tokens[1], Token::Operator(ref o) if o == "=="));
         assert!(matches!(tokens[2], Token::StringLiteral(ref s) if s == "readme"));
-        assert!(matches!(tokens[3], Token::EOF));
+        assert!(matches!(tokens[3], Token::Eof));
     }
 
     #[test]
@@ -218,7 +215,7 @@ mod tests {
         assert!(matches!(tokens[3], Token::Comma));
         assert!(matches!(tokens[4], Token::StringLiteral(ref s) if s == "important"));
         assert!(matches!(tokens[5], Token::RParen));
-        assert!(matches!(tokens[6], Token::EOF));
+        assert!(matches!(tokens[6], Token::Eof));
     }
 
     #[test]
@@ -230,7 +227,7 @@ mod tests {
         assert!(matches!(tokens[1], Token::LParen));
         assert!(matches!(tokens[2], Token::Field(ref f) if f == "note.category"));
         assert!(matches!(tokens[3], Token::RParen));
-        assert!(matches!(tokens[4], Token::EOF));
+        assert!(matches!(tokens[4], Token::Eof));
     }
 
     #[test]
@@ -276,7 +273,7 @@ mod tests {
         let mut lexer = Lexer::new("");
         let tokens = lexer.tokenize();
         assert_eq!(tokens.len(), 1);
-        assert!(matches!(tokens[0], Token::EOF));
+        assert!(matches!(tokens[0], Token::Eof));
     }
 
     #[test]

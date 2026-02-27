@@ -109,12 +109,6 @@ impl Database {
         }
     }
 
-    pub fn delete_document(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
-        self.conn
-            .execute("DELETE FROM documents WHERE path = ?", params![path])?;
-        Ok(())
-    }
-
     #[allow(dead_code)]
     pub fn get_document_by_name(
         &self,
@@ -130,18 +124,6 @@ impl Database {
         } else {
             Ok(None)
         }
-    }
-
-    pub fn get_all_documents(&self) -> Result<Vec<Document>, Box<dyn std::error::Error>> {
-        let mut stmt = self.conn.prepare("SELECT * FROM documents")?;
-        let mut rows = stmt.query([])?;
-        let mut docs = Vec::new();
-
-        while let Some(row) = rows.next()? {
-            docs.push(self.row_to_document(row)?);
-        }
-
-        Ok(docs)
     }
 
     fn row_to_document(&self, row: &duckdb::Row) -> Result<Document, Box<dyn std::error::Error>> {

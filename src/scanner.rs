@@ -17,7 +17,7 @@ pub fn index_directory(
 
     if let Some(specific_paths) = paths {
         for path in specific_paths {
-            if path.is_file() && path.extension().map_or(false, |ext| ext == "md") {
+            if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
                 match index_single_file(&path, db, force, verbose) {
                     Ok(Some(doc)) => {
                         all_docs.push(doc);
@@ -39,7 +39,7 @@ pub fn index_directory(
             .filter_map(|e| e.ok())
         {
             let path = entry.path();
-            if path.is_file() && path.extension().map_or(false, |ext| ext == "md") {
+            if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
                 match index_single_file(path, db, force, verbose) {
                     Ok(Some(doc)) => {
                         all_docs.push(doc);
@@ -70,15 +70,13 @@ fn index_single_file(
 ) -> Result<Option<Document>, Box<dyn std::error::Error>> {
     let path_str = path.canonicalize()?.to_string_lossy().to_string();
 
-    if !force {
-        if let Some(db_mtime) = db.get_mtime(&path_str)? {
-            let file_mtime = fs::metadata(path)?
-                .modified()?
-                .duration_since(UNIX_EPOCH)?
-                .as_secs() as i64;
-            if file_mtime <= db_mtime {
-                return Ok(None);
-            }
+    if !force && let Some(db_mtime) = db.get_mtime(&path_str)? {
+        let file_mtime = fs::metadata(path)?
+            .modified()?
+            .duration_since(UNIX_EPOCH)?
+            .as_secs() as i64;
+        if file_mtime <= db_mtime {
+            return Ok(None);
         }
     }
 
@@ -128,7 +126,7 @@ fn update_backlinks(
     for (path, links) in &link_map {
         for link in links {
             let link_name = link
-                .trim_end_matches(|c: char| c == '|' || c == '#')
+                .trim_end_matches(['|', '#'])
                 .to_string();
             backlinks.entry(link_name).or_default().push(path.clone());
         }
@@ -157,7 +155,7 @@ pub fn update_backlinks_for_file(
     for (path, links) in &link_map {
         for link in links {
             let link_name = link
-                .trim_end_matches(|c: char| c == '|' || c == '#')
+                .trim_end_matches(['|', '#'])
                 .to_string();
             backlinks.entry(link_name).or_default().push(path.clone());
         }
@@ -166,37 +164,6 @@ pub fn update_backlinks_for_file(
     if let Some(mut doc) = db.get_document_by_name(file_name)? {
         doc.backlinks = backlinks.get(&doc.name).cloned().unwrap_or_default();
         db.upsert_document(&doc)?;
-    }
-
-    Ok(())
-}
-
-pub fn update_backlinks_after_delete(
-    db: &Database,
-    deleted_name: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let link_map = db.get_all_links()?;
-    let mut backlinks: std::collections::HashMap<String, Vec<String>> =
-        std::collections::HashMap::new();
-
-    for (path, links) in &link_map {
-        for link in links {
-            let link_name = link
-                .trim_end_matches(|c: char| c == '|' || c == '#')
-                .to_string();
-            if link_name != deleted_name {
-                backlinks.entry(link_name).or_default().push(path.clone());
-            }
-        }
-    }
-
-    let all_docs = db.get_all_documents()?;
-
-    for mut doc in all_docs {
-        if let Some(back_links) = backlinks.get(&doc.name) {
-            doc.backlinks = back_links.clone();
-            db.upsert_document(&doc)?;
-        }
     }
 
     Ok(())

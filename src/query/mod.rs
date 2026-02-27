@@ -75,7 +75,7 @@ fn output_table(
         .map(|i| {
             field_names
                 .get(i)
-                .map(|s| s.clone())
+                .cloned()
                 .unwrap_or_else(|| format!("col{}", i))
         })
         .collect();

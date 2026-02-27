@@ -32,7 +32,7 @@ impl Parser {
     }
 
     fn current(&self) -> &Token {
-        self.tokens.get(self.pos).unwrap_or(&Token::EOF)
+        self.tokens.get(self.pos).unwrap_or(&Token::Eof)
     }
 
     fn advance(&mut self) -> Token {
@@ -76,16 +76,16 @@ impl Parser {
     fn parse_comparison(&mut self) -> AstNode {
         let left = self.parse_primary();
 
-        if let Token::Operator(op) = self.current().clone() {
-            if ["==", "!=", ">", "<", ">=", "<=", "=~", "="].contains(&op.as_str()) {
-                self.advance();
-                let right = self.parse_primary();
-                return AstNode::Binary {
-                    left: Box::new(left),
-                    op,
-                    right: Box::new(right),
-                };
-            }
+        if let Token::Operator(op) = self.current().clone()
+            && ["==", "!=", ">", "<", ">=", "<=", "=~", "="].contains(&op.as_str())
+        {
+            self.advance();
+            let right = self.parse_primary();
+            return AstNode::Binary {
+                left: Box::new(left),
+                op,
+                right: Box::new(right),
+            };
         }
 
         left
