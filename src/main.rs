@@ -3,7 +3,6 @@ mod db;
 mod extractor;
 mod query;
 mod scanner;
-mod watcher;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use std::env;
@@ -60,13 +59,6 @@ enum Commands {
 
         #[arg(short, long)]
         verbose: bool,
-
-        #[arg(
-            short,
-            long,
-            help = "Watch for file changes and re-index automatically"
-        )]
-        watch: bool,
     },
     #[command(about = "Query indexed files with SQL-like expressions")]
     Query {
@@ -121,80 +113,6 @@ fn get_base_dir() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("."))
 }
 
-fn run_watch_mode(
-    base_dir: &PathBuf,
-    db_path: &PathBuf,
-    force: bool,
-    verbose: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    println!("Initial indexing...");
-    let db = Database::new(db_path)?;
-    scanner::index_directory(base_dir, &db, force, verbose, None)?;
-    drop(db);
-
-    println!(
-        "\nWatching for changes in {} (Ctrl+C to stop)\n",
-        base_dir.display()
-    );
-
-    let watcher = watcher::FileWatcher::new(base_dir)?;
-
-    loop {
-        match watcher.wait_for_changes_with_kind() {
-            Ok(changes) => {
-                if changes.is_empty() {
-                    continue;
-                }
-
-                let (creates_modifies, removes): (Vec<_>, Vec<_>) =
-                    changes.into_iter().partition(|(_, kind)| {
-                        matches!(kind, notify_debouncer_mini::DebouncedEventKind::Any)
-                    });
-
-                let db = Database::new(db_path)?;
-
-                for (path, _) in removes {
-                    let path_str = path.canonicalize()?.to_string_lossy().to_string();
-                    if let Some(name) = path.file_stem() {
-                        let name_str = name.to_string_lossy().to_string();
-                        if verbose {
-                            println!("File removed: {}", path_str);
-                        }
-                        db.delete_document(&path_str)?;
-                        scanner::update_backlinks_after_delete(&db, &name_str)?;
-                    }
-                }
-
-                if !creates_modifies.is_empty() {
-                    let paths: Vec<PathBuf> =
-                        creates_modifies.into_iter().map(|(path, _)| path).collect();
-
-                    if verbose {
-                        for path in &paths {
-                            println!("File changed: {}", path.display());
-                        }
-                    }
-
-                    scanner::index_directory(base_dir, &db, false, verbose, Some(paths))?;
-                }
-
-                drop(db);
-
-                println!(
-                    "\nWatching for changes in {} (Ctrl+C to stop)\n",
-                    base_dir.display()
-                );
-            }
-            Err(e) => {
-                eprintln!("Watch error: {}", e);
-                break;
-            }
-        }
-    }
-
-    Ok(())
-}
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
@@ -203,18 +121,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db = Mutex::new(Database::new(&db_path)?);
 
     match cli.command {
-        Commands::Index {
-            force,
-            verbose,
-            watch,
-        } => {
+        Commands::Index { force, verbose } => {
             let base = cli.base_dir.unwrap_or_else(get_base_dir);
-            if watch {
-                run_watch_mode(&base, &db_path, force, verbose)?;
-            } else {
-                let db = db.lock().unwrap();
-                scanner::index_directory(&base, &db, force, verbose, None)?;
-            }
+            let db = db.lock().unwrap();
+            scanner::index_directory(&base, &db, force, verbose, None)?;
         }
         Commands::Query {
             query,
@@ -347,40 +257,6 @@ mod tests {
             assert_eq!(template, Some("daily".to_string()));
         } else {
             panic!("Expected New command");
-        }
-    }
-
-    #[test]
-    fn test_index_watch_flag() {
-        let cli = Cli::parse_from(["mdb", "index", "--watch"]);
-        if let Commands::Index {
-            force,
-            verbose,
-            watch,
-        } = cli.command
-        {
-            assert_eq!(force, false);
-            assert_eq!(verbose, false);
-            assert_eq!(watch, true);
-        } else {
-            panic!("Expected Index command");
-        }
-    }
-
-    #[test]
-    fn test_index_watch_with_options() {
-        let cli = Cli::parse_from(["mdb", "index", "--force", "--verbose", "--watch"]);
-        if let Commands::Index {
-            force,
-            verbose,
-            watch,
-        } = cli.command
-        {
-            assert_eq!(force, true);
-            assert_eq!(verbose, true);
-            assert_eq!(watch, true);
-        } else {
-            panic!("Expected Index command");
         }
     }
 

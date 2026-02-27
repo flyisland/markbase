@@ -52,7 +52,6 @@ CREATE INDEX IF NOT EXISTS idx_name ON documents(name);
     - `-b, --base-dir <path>` - Target directory (default: current directory `.`)
     - `-f, --force` - Force re-index all files (ignore mtime)
     - `-v, --verbose` - Show detailed output
-    - `-w, --watch` - Watch for file changes and re-index automatically
 
 ### Command: `query`
 - **Behavior**: Query indexed files with SQL-like expressions.
@@ -212,23 +211,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    Index { force, verbose, watch },
+    Index { force, verbose },
     Query { query, format, limit, fields },
     New { name, template },
-}
-```
-
-### 5.6 File Watcher (watcher.rs)
-Using `notify` and `notify-debouncer-mini` for file monitoring:
-```rust
-pub struct FileWatcher {
-    debouncer: notify_debouncer_mini::Debouncer<RecommendedWatcher>,
-    rx: mpsc::Receiver<Result<Vec<DebouncedEvent>, notify::Error>>,
-}
-
-impl FileWatcher {
-    pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> { ... }
-    pub fn wait_for_changes_with_kind(&self) -> Result<Vec<(PathBuf, DebouncedEventKind)>, ...> { ... }
 }
 ```
 
@@ -274,7 +259,7 @@ See [README.md](./README.md#project-structure) for the complete project structur
 - Database lock release in watch mode for concurrent queries
 
 ### Technical Debt / Future Improvements
-- ✅ ~~Add unit tests for tokenizer, parser, and compiler~~ (Completed - 102 tests total)
+- ✅ ~~Add unit tests for tokenizer, parser, and compiler~~ (Completed - 95 tests total)
 - Add integration tests for full query pipeline
 - Benchmark performance against 10,000 files goal
 - Consider parallel processing for indexing
@@ -283,7 +268,7 @@ See [README.md](./README.md#project-structure) for the complete project structur
 
 ### Test Coverage Summary
 
-**Unit Tests Implemented (102 tests total):**
+**Unit Tests Implemented (95 tests total):**
 
 | Module | Tests | Coverage |
 |--------|-------|----------|
@@ -293,6 +278,5 @@ See [README.md](./README.md#project-structure) for the complete project structur
 | `extractor.rs` | 18 | Frontmatter, tags, wiki-links, embeds, edge cases |
 | `db.rs` | 12 | Database operations, queries, CRUD |
 | `scanner.rs` | 10 | File scanning, indexing, backlinks, subdirectories |
-| `watcher.rs` | 5 | File monitoring, create/modify/delete detection |
 | `query/mod.rs` | 10 | Output formatting (table, JSON, list) |
-| `main.rs` | 4 | CLI options, default values, parsing |
+| `main.rs` | 2 | CLI options, default values, parsing |

@@ -126,7 +126,6 @@ Scans Markdown files and indexes to DuckDB.
 mdb index --base-dir ./notes        # Index base directory
 mdb index --base-dir ./notes --force     # Force re-index
 mdb index --base-dir ./notes -v     # Verbose
-mdb index --base-dir ./notes --watch     # Watch for changes
 ```
 
 ### `query`
