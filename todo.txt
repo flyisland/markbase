@@ -1,0 +1,3 @@
+required -> should have
+不要 --watch, 让agent每次修改文件后都调用 mdb index
+在 duckdb 记录中保留 file hash, 判断文件是否被修改
