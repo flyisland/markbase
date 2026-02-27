@@ -155,7 +155,7 @@ mdb new my-note --template daily   # Create with template (outputs path + conten
 **With template:** Returns `path:` and `content:` for agent workflow integration:
 
 ```
-path: ./notes/today.md
+path: /home/user/notes/today.md
 content: ---
 date: ""
 mood: ""
@@ -170,6 +170,8 @@ tags: []
 
 ### `template`
 Manage templates (MKS schema-based templates).
+
+MKS (Markdown Knowledge Schema) is a protocol for connecting unstructured conversation flow with structured knowledge bases. See [spec/schema.md](./spec/schema.md) for the complete specification.
 
 ```bash
 mdb template list                  # List all templates (default: table format)
