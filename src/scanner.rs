@@ -31,7 +31,7 @@ impl IndexStats {
             base_dir: base_dir.to_path_buf(),
         }
     }
-    
+
     pub fn relative_path(&self, full_path: &str) -> String {
         let full = Path::new(full_path);
         if let Ok(rel) = full.strip_prefix(&self.base_dir) {
@@ -73,11 +73,16 @@ pub fn index_directory(
     {
         let path = entry.path();
         if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
-            let rel_path = path.strip_prefix(abs_base_dir)
-                .map_err(|_| format!("Path {} is not under base dir {}", path.display(), abs_base_dir.display()))?;
+            let rel_path = path.strip_prefix(abs_base_dir).map_err(|_| {
+                format!(
+                    "Path {} is not under base dir {}",
+                    path.display(),
+                    abs_base_dir.display()
+                )
+            })?;
             let path_str = rel_path.to_string_lossy().to_string();
             let exists = db.get_mtime(&path_str)?.is_some();
-            
+
             match index_single_file(path, abs_base_dir, db, force) {
                 Ok(Some(doc)) => {
                     all_docs.push(doc.clone());
@@ -90,10 +95,9 @@ pub fn index_directory(
                     }
                 }
                 Ok(None) => {
-                    stats.skipped.push((
-                        path_str.clone(),
-                        "unchanged".to_string(),
-                    ));
+                    stats
+                        .skipped
+                        .push((path_str.clone(), "unchanged".to_string()));
                 }
                 Err(e) => {
                     stats.errors += 1;
@@ -116,8 +120,13 @@ fn index_single_file(
     db: &Database,
     force: bool,
 ) -> Result<Option<Document>, Box<dyn std::error::Error>> {
-    let rel_path = path.strip_prefix(base_dir)
-        .map_err(|_| format!("Path {} is not under base dir {}", path.display(), base_dir.display()))?;
+    let rel_path = path.strip_prefix(base_dir).map_err(|_| {
+        format!(
+            "Path {} is not under base dir {}",
+            path.display(),
+            base_dir.display()
+        )
+    })?;
     let path_str = rel_path.to_string_lossy().to_string();
 
     if !force && let Some(db_mtime) = db.get_mtime(&path_str)? {
@@ -132,7 +141,8 @@ fn index_single_file(
 
     let metadata = fs::metadata(path)?;
     let file_name = path.file_name().unwrap().to_string_lossy().to_string();
-    let parent = rel_path.parent()
+    let parent = rel_path
+        .parent()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default();
 
@@ -186,9 +196,7 @@ fn update_backlinks(
 
     for (path, links) in &link_map {
         for link in links {
-            let link_name = link
-                .trim_end_matches(['|', '#'])
-                .to_string();
+            let link_name = link.trim_end_matches(['|', '#']).to_string();
             backlinks.entry(link_name).or_default().push(path.clone());
         }
     }
@@ -215,9 +223,7 @@ pub fn update_backlinks_for_file(
 
     for (path, links) in &link_map {
         for link in links {
-            let link_name = link
-                .trim_end_matches(['|', '#'])
-                .to_string();
+            let link_name = link.trim_end_matches(['|', '#']).to_string();
             backlinks.entry(link_name).or_default().push(path.clone());
         }
     }
@@ -293,9 +299,7 @@ mod tests {
         let result = index_directory(&test_dir, &db, false);
         assert!(result.is_ok());
 
-        let mtime = db
-            .get_mtime("test.md")
-            .unwrap();
+        let mtime = db.get_mtime("test.md").unwrap();
         assert!(mtime.is_some());
 
         cleanup(&test_dir, &db_path);
@@ -417,9 +421,7 @@ See [[other]] for more."#;
         let result = index_directory(&test_dir, &db, false);
         assert!(result.is_ok());
 
-        let mtime = db
-            .get_mtime("tagged.md")
-            .unwrap();
+        let mtime = db.get_mtime("tagged.md").unwrap();
         assert!(mtime.is_some());
 
         cleanup(&test_dir, &db_path);
@@ -439,9 +441,7 @@ See [[other]] for more."#;
         let result = index_directory(&test_dir, &db, false);
         assert!(result.is_ok());
 
-        let mtime = db
-            .get_mtime("with_embeds.md")
-            .unwrap();
+        let mtime = db.get_mtime("with_embeds.md").unwrap();
         assert!(mtime.is_some());
 
         cleanup(&test_dir, &db_path);

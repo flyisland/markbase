@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use gray_matter::engine::YAML;
 use gray_matter::Matter;
+use gray_matter::engine::YAML;
 use regex::Regex;
 use serde_json::Value;
 
@@ -89,7 +89,9 @@ fn process_template(
             let mut outer_fields: HashMap<String, String> = HashMap::new();
             let mut location: Option<String> = None;
 
-            if let Some(fm) = frontmatter && let Some(obj) = fm.as_object() {
+            if let Some(fm) = frontmatter
+                && let Some(obj) = fm.as_object()
+            {
                 for (key, value) in obj.iter() {
                     if key == "_schema" {
                         if let Some(schema_obj) = value.as_object()
@@ -265,7 +267,11 @@ mod tests {
         let content = "{{  name  }} {{date}}";
         let result = replace_template_variables(content, "x");
         let re = Regex::new(r"\d{4}-\d{2}-\d{2}").unwrap();
-        assert!(re.is_match(&result), "date should match YYYY-MM-DD format, got: {}", result);
+        assert!(
+            re.is_match(&result),
+            "date should match YYYY-MM-DD format, got: {}",
+            result
+        );
         assert!(!result.contains("{{"));
     }
 
@@ -280,7 +286,10 @@ mod tests {
         assert!(result.is_ok());
         let created = result.unwrap();
         assert!(created.path.exists());
-        assert_eq!(created.path.file_name().unwrap().to_str().unwrap(), "test-note.md");
+        assert_eq!(
+            created.path.file_name().unwrap().to_str().unwrap(),
+            "test-note.md"
+        );
         assert!(created.content.is_empty());
 
         let _ = fs::remove_dir_all(&test_dir);

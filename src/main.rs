@@ -81,11 +81,7 @@ enum Commands {
         #[arg(short = 'o')]
         format: Option<OutputFormat>,
 
-        #[arg(
-            short = 'F',
-            long = "output-fields",
-            default_value = "path, mtime"
-        )]
+        #[arg(short = 'F', long = "output-fields", default_value = "path, mtime")]
         fields: String,
 
         #[arg(short, long, default_value_t = 1000)]
@@ -109,7 +105,11 @@ enum Commands {
 enum TemplateCommands {
     #[command(about = "List all available templates")]
     List {
-        #[arg(short = 'F', long = "additional-fields", help = "Additional fields to display")]
+        #[arg(
+            short = 'F',
+            long = "additional-fields",
+            help = "Additional fields to display"
+        )]
         fields: Option<String>,
 
         #[arg(short = 'o', help = "Output format (default: json)")]
@@ -124,7 +124,9 @@ enum TemplateCommands {
 
 fn get_database_path(cli_base_dir: Option<PathBuf>) -> Result<PathBuf, String> {
     let base = get_base_dir_with_cli(cli_base_dir);
-    let absolute = base.canonicalize().map_err(|e| format!("Failed to resolve base-dir: {}", e))?;
+    let absolute = base
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve base-dir: {}", e))?;
     Ok(absolute.join(".mdb/mdb.duckdb"))
 }
 
@@ -136,7 +138,8 @@ fn get_base_dir_with_cli(cli_base_dir: Option<PathBuf>) -> PathBuf {
 
 fn get_base_dir_absolute_with_cli(cli_base_dir: Option<PathBuf>) -> Result<PathBuf, String> {
     let base = get_base_dir_with_cli(cli_base_dir);
-    base.canonicalize().map_err(|e| format!("Failed to resolve base-dir: {}", e))
+    base.canonicalize()
+        .map_err(|e| format!("Failed to resolve base-dir: {}", e))
 }
 
 fn get_output_format(cli_format: Option<OutputFormat>) -> OutputFormat {
@@ -160,7 +163,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let db = db.lock().unwrap();
             eprintln!("Indexing {}...", base.display());
             let stats = scanner::index_directory(&base, &db, force)?;
-            
+
             if verbose {
                 if !stats.new_files.is_empty() {
                     for path in &stats.new_files {
@@ -174,22 +177,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         println!("    ~ {}", rel);
                     }
                 }
-                
+
                 for (path, reason) in &stats.skipped {
                     if reason != "unchanged" {
                         eprintln!("  ⚠ Skipped: {} — {}", path, reason);
                     }
                 }
             }
-            
+
             let total = stats.new + stats.updated;
             let details = if stats.new > 0 || stats.updated > 0 || stats.errors > 0 {
-                format!(" ({} new, {} updated, {} errors)", stats.new, stats.updated, stats.errors)
+                format!(
+                    " ({} new, {} updated, {} errors)",
+                    stats.new, stats.updated, stats.errors
+                )
             } else {
                 String::new()
             };
-            let time_str = format!("{}.{}s", stats.duration_ms / 1000, (stats.duration_ms % 1000) / 100);
-            println!("  ✓ {} files indexed{}{}", total, details, if stats.duration_ms > 0 { format!("  [{}]", time_str) } else { String::new() });
+            let time_str = format!(
+                "{}.{}s",
+                stats.duration_ms / 1000,
+                (stats.duration_ms % 1000) / 100
+            );
+            println!(
+                "  ✓ {} files indexed{}{}",
+                total,
+                details,
+                if stats.duration_ms > 0 {
+                    format!("  [{}]", time_str)
+                } else {
+                    String::new()
+                }
+            );
         }
         Commands::Query {
             query,
@@ -247,10 +266,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let db = Mutex::new(Database::open_existing(&db_path)?);
                 let db = db.lock().unwrap();
                 let results = db.query(&compiled, &fields_str, 1000)?;
-                
-                let effective_format = format
-                    .or(cli.output_format)
-                    .unwrap_or(OutputFormat::Json);
+
+                let effective_format = format.or(cli.output_format).unwrap_or(OutputFormat::Json);
                 let format_str = match effective_format {
                     OutputFormat::Table => "table",
                     OutputFormat::Json => "json",
@@ -420,7 +437,15 @@ mod tests {
 
     #[test]
     fn test_query_format_overrides_global() {
-        let cli = Cli::parse_from(["mdb", "--output-format", "json", "query", "name == 'test'", "-o", "list"]);
+        let cli = Cli::parse_from([
+            "mdb",
+            "--output-format",
+            "json",
+            "query",
+            "name == 'test'",
+            "-o",
+            "list",
+        ]);
         if let Commands::Query { format, .. } = cli.command {
             assert_eq!(format, Some(OutputFormat::List));
         } else {
@@ -430,7 +455,15 @@ mod tests {
 
     #[test]
     fn test_template_list_format_overrides_global() {
-        let cli = Cli::parse_from(["mdb", "--output-format", "table", "template", "list", "-o", "json"]);
+        let cli = Cli::parse_from([
+            "mdb",
+            "--output-format",
+            "table",
+            "template",
+            "list",
+            "-o",
+            "json",
+        ]);
         if let Commands::Template { command } = cli.command {
             match command {
                 TemplateCommands::List { format, .. } => {

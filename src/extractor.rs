@@ -1,5 +1,5 @@
-use gray_matter::engine::YAML;
 use gray_matter::Matter;
+use gray_matter::engine::YAML;
 use regex::Regex;
 use serde_json::Value;
 
@@ -132,9 +132,11 @@ This is the body."#;
         let content = "Check this image: ![[mobile-app-mockup.png]] and ![[diagram.svg]]";
         let extracted = Extractor::extract(content);
         assert_eq!(extracted.embeds.len(), 2);
-        assert!(extracted
-            .embeds
-            .contains(&"mobile-app-mockup.png".to_string()));
+        assert!(
+            extracted
+                .embeds
+                .contains(&"mobile-app-mockup.png".to_string())
+        );
         assert!(extracted.embeds.contains(&"diagram.svg".to_string()));
     }
 
@@ -143,9 +145,11 @@ This is the body."#;
         let content = "See [[architecture|System Architecture]] for details.";
         let extracted = Extractor::extract(content);
         assert_eq!(extracted.links.len(), 1);
-        assert!(extracted
-            .links
-            .contains(&"architecture|System Architecture".to_string()));
+        assert!(
+            extracted
+                .links
+                .contains(&"architecture|System Architecture".to_string())
+        );
     }
 
     #[test]
@@ -153,9 +157,11 @@ This is the body."#;
         let content = "See [[architecture#Overview]] for details.";
         let extracted = Extractor::extract(content);
         assert_eq!(extracted.links.len(), 1);
-        assert!(extracted
-            .links
-            .contains(&"architecture#Overview".to_string()));
+        assert!(
+            extracted
+                .links
+                .contains(&"architecture#Overview".to_string())
+        );
     }
 
     #[test]
