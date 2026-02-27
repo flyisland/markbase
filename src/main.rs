@@ -264,11 +264,8 @@ mod tests {
     fn test_template_list_command() {
         let cli = Cli::parse_from(["mdb", "template", "list"]);
         if let Commands::Template { command } = cli.command {
-            if let TemplateCommands::List { fields } = command {
-                assert_eq!(fields, None);
-            } else {
-                panic!("Expected List subcommand");
-            }
+            let TemplateCommands::List { fields } = command;
+            assert_eq!(fields, None);
         } else {
             panic!("Expected Template command");
         }
@@ -278,11 +275,8 @@ mod tests {
     fn test_template_list_with_fields() {
         let cli = Cli::parse_from(["mdb", "template", "list", "-f", "tags,type"]);
         if let Commands::Template { command } = cli.command {
-            if let TemplateCommands::List { fields } = command {
-                assert_eq!(fields, Some("tags,type".to_string()));
-            } else {
-                panic!("Expected List subcommand");
-            }
+            let TemplateCommands::List { fields } = command;
+            assert_eq!(fields, Some("tags,type".to_string()));
         } else {
             panic!("Expected Template command");
         }

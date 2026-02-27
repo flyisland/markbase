@@ -255,7 +255,8 @@ mod tests {
     fn test_replace_variables_multiple_spaces() {
         let content = "{{  name  }} {{date}}";
         let result = replace_template_variables(content, "x");
-        assert!(result.contains("2026-02-26"));
+        let re = Regex::new(r"\d{4}-\d{2}-\d{2}").unwrap();
+        assert!(re.is_match(&result), "date should match YYYY-MM-DD format, got: {}", result);
         assert!(!result.contains("{{"));
     }
 
