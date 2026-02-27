@@ -3,32 +3,97 @@ use crate::db::{Database, Document};
 use crate::extractor::Extractor;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
+use std::time::{Instant, UNIX_EPOCH};
 use walkdir::WalkDir;
+
+#[derive(Debug, Clone)]
+pub struct IndexStats {
+    pub new: usize,
+    pub updated: usize,
+    pub errors: usize,
+    pub skipped: Vec<(String, String)>,
+    pub new_files: Vec<String>,
+    pub updated_files: Vec<String>,
+    pub duration_ms: u64,
+    pub base_dir: PathBuf,
+}
+
+impl IndexStats {
+    pub fn new(base_dir: &Path) -> Self {
+        Self {
+            new: 0,
+            updated: 0,
+            errors: 0,
+            skipped: Vec::new(),
+            new_files: Vec::new(),
+            updated_files: Vec::new(),
+            duration_ms: 0,
+            base_dir: base_dir.to_path_buf(),
+        }
+    }
+    
+    pub fn relative_path(&self, full_path: &str) -> String {
+        let full = Path::new(full_path);
+        if let Ok(rel) = full.strip_prefix(&self.base_dir) {
+            rel.to_string_lossy().to_string()
+        } else {
+            full_path.to_string()
+        }
+    }
+}
+
+impl Default for IndexStats {
+    fn default() -> Self {
+        Self {
+            new: 0,
+            updated: 0,
+            errors: 0,
+            skipped: Vec::new(),
+            new_files: Vec::new(),
+            updated_files: Vec::new(),
+            duration_ms: 0,
+            base_dir: PathBuf::new(),
+        }
+    }
+}
 
 pub fn index_directory(
     dir: &Path,
+    dir_abs: &Path,
     db: &Database,
     force: bool,
-    verbose: bool,
     paths: Option<Vec<PathBuf>>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let mut count = 0;
+) -> Result<IndexStats, Box<dyn std::error::Error>> {
+    let start = Instant::now();
+    let mut stats = IndexStats::new(dir_abs);
     let mut all_docs: Vec<Document> = Vec::new();
 
     if let Some(specific_paths) = paths {
         for path in specific_paths {
             if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
-                match index_single_file(&path, db, force, verbose) {
+                let path_str = path.canonicalize()?.to_string_lossy().to_string();
+                let exists = db.get_mtime(&path_str)?.is_some();
+                
+                match index_single_file(&path, db, force) {
                     Ok(Some(doc)) => {
-                        all_docs.push(doc);
-                        count += 1;
-                    }
-                    Ok(None) => {}
-                    Err(e) => {
-                        if verbose {
-                            eprintln!("Error indexing {}: {}", path.display(), e);
+                        all_docs.push(doc.clone());
+                        if exists {
+                            stats.updated += 1;
+                            stats.updated_files.push(doc.path.clone());
+                        } else {
+                            stats.new += 1;
+                            stats.new_files.push(doc.path.clone());
                         }
+                    }
+                    Ok(None) => {
+                        stats.skipped.push((
+                            path.to_string_lossy().to_string(),
+                            "unchanged".to_string(),
+                        ));
+                    }
+                    Err(e) => {
+                        stats.errors += 1;
+                        eprintln!("Error indexing {}: {}", path.display(), e);
                     }
                 }
             }
@@ -41,16 +106,29 @@ pub fn index_directory(
         {
             let path = entry.path();
             if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
-                match index_single_file(path, db, force, verbose) {
+                let path_str = path.canonicalize()?.to_string_lossy().to_string();
+                let exists = db.get_mtime(&path_str)?.is_some();
+                
+                match index_single_file(path, db, force) {
                     Ok(Some(doc)) => {
-                        all_docs.push(doc);
-                        count += 1;
-                    }
-                    Ok(None) => {}
-                    Err(e) => {
-                        if verbose {
-                            eprintln!("Error indexing {}: {}", path.display(), e);
+                        all_docs.push(doc.clone());
+                        if exists {
+                            stats.updated += 1;
+                            stats.updated_files.push(doc.path.clone());
+                        } else {
+                            stats.new += 1;
+                            stats.new_files.push(doc.path.clone());
                         }
+                    }
+                    Ok(None) => {
+                        stats.skipped.push((
+                            path.to_string_lossy().to_string(),
+                            "unchanged".to_string(),
+                        ));
+                    }
+                    Err(e) => {
+                        stats.errors += 1;
+                        eprintln!("Error indexing {}: {}", path.display(), e);
                     }
                 }
             }
@@ -59,15 +137,15 @@ pub fn index_directory(
 
     update_backlinks(db, &all_docs)?;
 
-    println!("Indexed {} files", count);
-    Ok(())
+    stats.duration_ms = start.elapsed().as_millis() as u64;
+
+    Ok(stats)
 }
 
 fn index_single_file(
     path: &Path,
     db: &Database,
     force: bool,
-    verbose: bool,
 ) -> Result<Option<Document>, Box<dyn std::error::Error>> {
     let path_str = path.canonicalize()?.to_string_lossy().to_string();
 
@@ -121,9 +199,6 @@ fn index_single_file(
     };
 
     db.upsert_document(&doc)?;
-    if verbose {
-        println!("Indexed: {}", doc.path);
-    }
 
     Ok(Some(doc))
 }
@@ -242,7 +317,7 @@ mod tests {
         create_test_file(&test_dir, "test.md", "# Test\n\nContent here.");
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, false, None);
+        let result = index_directory(&test_dir, &test_dir, &db, false, None);
         assert!(result.is_ok());
 
         let mtime = db
@@ -268,7 +343,7 @@ mod tests {
         create_test_file(&test_dir, "file3.md", "# File 3");
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, false, None);
+        let result = index_directory(&test_dir, &test_dir, &db, false, None);
         assert!(result.is_ok());
 
         let link_map = db.get_all_links().unwrap();
@@ -288,7 +363,7 @@ mod tests {
         create_test_file(&subdir, "sub.md", "# Sub");
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, false, None);
+        let result = index_directory(&test_dir, &test_dir, &db, false, None);
         assert!(result.is_ok());
 
         let link_map = db.get_all_links().unwrap();
@@ -306,7 +381,7 @@ mod tests {
         create_test_file(&test_dir, "data.json", "{}");
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, false, None);
+        let result = index_directory(&test_dir, &test_dir, &db, false, None);
         assert!(result.is_ok());
 
         let link_map = db.get_all_links().unwrap();
@@ -331,7 +406,7 @@ See [[other]] for more."#;
         create_test_file(&test_dir, "with_frontmatter.md", content);
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, false, None);
+        let result = index_directory(&test_dir, &test_dir, &db, false, None);
         assert!(result.is_ok());
 
         let link_map = db.get_all_links().unwrap();
@@ -356,7 +431,7 @@ See [[other]] for more."#;
         create_test_file(&test_dir, "referrer.md", "See [[target]] for info.");
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, false, None);
+        let result = index_directory(&test_dir, &test_dir, &db, false, None);
         assert!(result.is_ok());
 
         // Verify both files are indexed
@@ -377,7 +452,7 @@ See [[other]] for more."#;
         );
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, false, None);
+        let result = index_directory(&test_dir, &test_dir, &db, false, None);
         assert!(result.is_ok());
 
         let mtime = db
@@ -405,7 +480,7 @@ See [[other]] for more."#;
         );
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, false, None);
+        let result = index_directory(&test_dir, &test_dir, &db, false, None);
         assert!(result.is_ok());
 
         let mtime = db
@@ -431,7 +506,7 @@ See [[other]] for more."#;
         let db = Database::new(&db_path).unwrap();
 
         // First index
-        index_directory(&test_dir, &db, false, false, None).unwrap();
+        index_directory(&test_dir, &test_dir, &db, false, None).unwrap();
         let mtime1 = db
             .get_mtime(
                 &test_dir
@@ -447,7 +522,7 @@ See [[other]] for more."#;
         create_test_file(&test_dir, "test.md", "# Updated");
 
         // Re-index with force
-        index_directory(&test_dir, &db, true, false, None).unwrap();
+        index_directory(&test_dir, &test_dir, &db, true, None).unwrap();
         let mtime2 = db
             .get_mtime(
                 &test_dir
@@ -469,7 +544,7 @@ See [[other]] for more."#;
         let (test_dir, db_path) = create_test_directory();
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, false, None);
+        let result = index_directory(&test_dir, &test_dir, &db, false, None);
         assert!(result.is_ok());
 
         let link_map = db.get_all_links().unwrap();

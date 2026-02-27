@@ -42,7 +42,14 @@ fn output_json(
         })
         .collect();
 
-    println!("{}", serde_json::to_string_pretty(&json_results)?);
+    let output = serde_json::json!({
+        "metadata": {
+            "count": results.len()
+        },
+        "results": json_results
+    });
+
+    println!("{}", serde_json::to_string_pretty(&output)?);
     Ok(())
 }
 
@@ -59,6 +66,7 @@ fn output_list(
         }
         println!("---");
     }
+    println!("\n{} results", results.len());
     Ok(())
 }
 
@@ -120,6 +128,7 @@ fn output_table(
             .collect();
         println!("{}", cells.join(" | "));
     }
+    println!("\n{} results", results.len());
     Ok(())
 }
 

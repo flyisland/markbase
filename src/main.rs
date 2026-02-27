@@ -124,8 +124,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Commands::Index { force, verbose } => {
             let base = cli.base_dir.unwrap_or_else(get_base_dir);
+            let base_abs = base.canonicalize().map_err(|e| format!("Failed to resolve base-dir: {}", e))?;
             let db = db.lock().unwrap();
-            scanner::index_directory(&base, &db, force, verbose, None)?;
+            eprintln!("Indexing {}...", base_abs.display());
+            let stats = scanner::index_directory(&base, &base_abs, &db, force, None)?;
+            
+            if verbose {
+                if !stats.new_files.is_empty() {
+                    for path in &stats.new_files {
+                        let rel = stats.relative_path(path);
+                        println!("    + {}", rel);
+                    }
+                }
+                if !stats.updated_files.is_empty() {
+                    for path in &stats.updated_files {
+                        let rel = stats.relative_path(path);
+                        println!("    ~ {}", rel);
+                    }
+                }
+                
+                for (path, reason) in &stats.skipped {
+                    if reason != "unchanged" {
+                        eprintln!("  ⚠ Skipped: {} — {}", path, reason);
+                    }
+                }
+            }
+            
+            let total = stats.new + stats.updated;
+            let details = if stats.new > 0 || stats.updated > 0 || stats.errors > 0 {
+                format!(" ({} new, {} updated, {} errors)", stats.new, stats.updated, stats.errors)
+            } else {
+                String::new()
+            };
+            let time_str = format!("{}.{}s", stats.duration_ms / 1000, (stats.duration_ms % 1000) / 100);
+            println!("  ✓ {} files indexed{}{}", total, details, if stats.duration_ms > 0 { format!("  [{}]", time_str) } else { String::new() });
         }
         Commands::Query {
             query,
