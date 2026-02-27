@@ -159,7 +159,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let db = Mutex::new(Database::new(&db_path)?);
             let db = db.lock().unwrap();
             eprintln!("Indexing {}...", base.display());
-            let stats = scanner::index_directory(&base, &db, force, None)?;
+            let stats = scanner::index_directory(&base, &db, force)?;
             
             if verbose {
                 if !stats.new_files.is_empty() {

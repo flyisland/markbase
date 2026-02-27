@@ -61,74 +61,43 @@ pub fn index_directory(
     abs_base_dir: &Path,
     db: &Database,
     force: bool,
-    paths: Option<Vec<PathBuf>>,
 ) -> Result<IndexStats, Box<dyn std::error::Error>> {
     let start = Instant::now();
     let mut stats = IndexStats::new(abs_base_dir);
     let mut all_docs: Vec<Document> = Vec::new();
 
-    if let Some(specific_paths) = paths {
-        for path in specific_paths {
-            if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
-                let path_str = path.canonicalize()?.to_string_lossy().to_string();
-                let exists = db.get_mtime(&path_str)?.is_some();
-                
-                match index_single_file(&path, db, force) {
-                    Ok(Some(doc)) => {
-                        all_docs.push(doc.clone());
-                        if exists {
-                            stats.updated += 1;
-                            stats.updated_files.push(doc.path.clone());
-                        } else {
-                            stats.new += 1;
-                            stats.new_files.push(doc.path.clone());
-                        }
-                    }
-                    Ok(None) => {
-                        stats.skipped.push((
-                            path.to_string_lossy().to_string(),
-                            "unchanged".to_string(),
-                        ));
-                    }
-                    Err(e) => {
-                        stats.errors += 1;
-                        eprintln!("Error indexing {}: {}", path.display(), e);
+    for entry in WalkDir::new(abs_base_dir)
+        .follow_links(true)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        let path = entry.path();
+        if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
+            let rel_path = path.strip_prefix(abs_base_dir)
+                .map_err(|_| format!("Path {} is not under base dir {}", path.display(), abs_base_dir.display()))?;
+            let path_str = rel_path.to_string_lossy().to_string();
+            let exists = db.get_mtime(&path_str)?.is_some();
+            
+            match index_single_file(path, abs_base_dir, db, force) {
+                Ok(Some(doc)) => {
+                    all_docs.push(doc.clone());
+                    if exists {
+                        stats.updated += 1;
+                        stats.updated_files.push(doc.path.clone());
+                    } else {
+                        stats.new += 1;
+                        stats.new_files.push(doc.path.clone());
                     }
                 }
-            }
-        }
-    } else {
-        for entry in WalkDir::new(abs_base_dir)
-            .follow_links(true)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            let path = entry.path();
-            if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
-                let path_str = path.canonicalize()?.to_string_lossy().to_string();
-                let exists = db.get_mtime(&path_str)?.is_some();
-                
-                match index_single_file(path, db, force) {
-                    Ok(Some(doc)) => {
-                        all_docs.push(doc.clone());
-                        if exists {
-                            stats.updated += 1;
-                            stats.updated_files.push(doc.path.clone());
-                        } else {
-                            stats.new += 1;
-                            stats.new_files.push(doc.path.clone());
-                        }
-                    }
-                    Ok(None) => {
-                        stats.skipped.push((
-                            path.to_string_lossy().to_string(),
-                            "unchanged".to_string(),
-                        ));
-                    }
-                    Err(e) => {
-                        stats.errors += 1;
-                        eprintln!("Error indexing {}: {}", path.display(), e);
-                    }
+                Ok(None) => {
+                    stats.skipped.push((
+                        path_str.clone(),
+                        "unchanged".to_string(),
+                    ));
+                }
+                Err(e) => {
+                    stats.errors += 1;
+                    eprintln!("Error indexing {}: {}", path.display(), e);
                 }
             }
         }
@@ -143,10 +112,13 @@ pub fn index_directory(
 
 fn index_single_file(
     path: &Path,
+    base_dir: &Path,
     db: &Database,
     force: bool,
 ) -> Result<Option<Document>, Box<dyn std::error::Error>> {
-    let path_str = path.canonicalize()?.to_string_lossy().to_string();
+    let rel_path = path.strip_prefix(base_dir)
+        .map_err(|_| format!("Path {} is not under base dir {}", path.display(), base_dir.display()))?;
+    let path_str = rel_path.to_string_lossy().to_string();
 
     if !force && let Some(db_mtime) = db.get_mtime(&path_str)? {
         let file_mtime = fs::metadata(path)?
@@ -160,7 +132,9 @@ fn index_single_file(
 
     let metadata = fs::metadata(path)?;
     let file_name = path.file_name().unwrap().to_string_lossy().to_string();
-    let parent = path.parent().unwrap().to_string_lossy().to_string();
+    let parent = rel_path.parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
 
     let content = fs::read_to_string(path)?;
     let extracted = Extractor::extract(&content);
@@ -316,17 +290,11 @@ mod tests {
         create_test_file(&test_dir, "test.md", "# Test\n\nContent here.");
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, None);
+        let result = index_directory(&test_dir, &db, false);
         assert!(result.is_ok());
 
         let mtime = db
-            .get_mtime(
-                &test_dir
-                    .join("test.md")
-                    .canonicalize()
-                    .unwrap()
-                    .to_string_lossy(),
-            )
+            .get_mtime("test.md")
             .unwrap();
         assert!(mtime.is_some());
 
@@ -342,7 +310,7 @@ mod tests {
         create_test_file(&test_dir, "file3.md", "# File 3");
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, None);
+        let result = index_directory(&test_dir, &db, false);
         assert!(result.is_ok());
 
         let link_map = db.get_all_links().unwrap();
@@ -362,7 +330,7 @@ mod tests {
         create_test_file(&subdir, "sub.md", "# Sub");
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, None);
+        let result = index_directory(&test_dir, &db, false);
         assert!(result.is_ok());
 
         let link_map = db.get_all_links().unwrap();
@@ -380,7 +348,7 @@ mod tests {
         create_test_file(&test_dir, "data.json", "{}");
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, None);
+        let result = index_directory(&test_dir, &db, false);
         assert!(result.is_ok());
 
         let link_map = db.get_all_links().unwrap();
@@ -405,18 +373,13 @@ See [[other]] for more."#;
         create_test_file(&test_dir, "with_frontmatter.md", content);
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, None);
+        let result = index_directory(&test_dir, &db, false);
         assert!(result.is_ok());
 
         let link_map = db.get_all_links().unwrap();
         assert_eq!(link_map.len(), 1);
 
-        let links = &link_map[&test_dir
-            .join("with_frontmatter.md")
-            .canonicalize()
-            .unwrap()
-            .to_string_lossy()
-            .to_string()];
+        let links = &link_map["with_frontmatter.md"];
         assert!(links.contains(&"other".to_string()));
 
         cleanup(&test_dir, &db_path);
@@ -430,7 +393,7 @@ See [[other]] for more."#;
         create_test_file(&test_dir, "referrer.md", "See [[target]] for info.");
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, None);
+        let result = index_directory(&test_dir, &db, false);
         assert!(result.is_ok());
 
         // Verify both files are indexed
@@ -451,17 +414,11 @@ See [[other]] for more."#;
         );
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, None);
+        let result = index_directory(&test_dir, &db, false);
         assert!(result.is_ok());
 
         let mtime = db
-            .get_mtime(
-                &test_dir
-                    .join("tagged.md")
-                    .canonicalize()
-                    .unwrap()
-                    .to_string_lossy(),
-            )
+            .get_mtime("tagged.md")
             .unwrap();
         assert!(mtime.is_some());
 
@@ -479,17 +436,11 @@ See [[other]] for more."#;
         );
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, None);
+        let result = index_directory(&test_dir, &db, false);
         assert!(result.is_ok());
 
         let mtime = db
-            .get_mtime(
-                &test_dir
-                    .join("with_embeds.md")
-                    .canonicalize()
-                    .unwrap()
-                    .to_string_lossy(),
-            )
+            .get_mtime("with_embeds.md")
             .unwrap();
         assert!(mtime.is_some());
 
@@ -505,32 +456,16 @@ See [[other]] for more."#;
         let db = Database::new(&db_path).unwrap();
 
         // First index
-        index_directory(&test_dir, &db, false, None).unwrap();
-        let mtime1 = db
-            .get_mtime(
-                &test_dir
-                    .join("test.md")
-                    .canonicalize()
-                    .unwrap()
-                    .to_string_lossy(),
-            )
-            .unwrap();
+        index_directory(&test_dir, &db, false).unwrap();
+        let mtime1 = db.get_mtime("test.md").unwrap();
 
         // Wait a bit and update file
         std::thread::sleep(std::time::Duration::from_millis(100));
         create_test_file(&test_dir, "test.md", "# Updated");
 
         // Re-index with force
-        index_directory(&test_dir, &db, true, None).unwrap();
-        let mtime2 = db
-            .get_mtime(
-                &test_dir
-                    .join("test.md")
-                    .canonicalize()
-                    .unwrap()
-                    .to_string_lossy(),
-            )
-            .unwrap();
+        index_directory(&test_dir, &db, true).unwrap();
+        let mtime2 = db.get_mtime("test.md").unwrap();
 
         // Should have been updated
         assert!(mtime2.unwrap() >= mtime1.unwrap());
@@ -543,7 +478,7 @@ See [[other]] for more."#;
         let (test_dir, db_path) = create_test_directory();
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false, None);
+        let result = index_directory(&test_dir, &db, false);
         assert!(result.is_ok());
 
         let link_map = db.get_all_links().unwrap();
