@@ -1,6 +1,7 @@
 mod constants;
 mod creator;
 mod db;
+mod describe;
 mod extractor;
 mod query;
 mod scanner;
@@ -97,6 +98,11 @@ enum TemplateCommands {
     List {
         #[arg(short, long, help = "Additional fields to display")]
         fields: Option<String>,
+    },
+    #[command(about = "Show template content")]
+    Describe {
+        #[arg(help = "Template name (without .md extension)")]
+        name: String,
     },
 }
 
@@ -213,6 +219,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let results = db.query(&compiled, &fields_str, 1000)?;
                 query::output_results(&results, "list", &output_fields)?;
             }
+            TemplateCommands::Describe { name } => {
+                let base = cli.base_dir.unwrap_or_else(get_base_dir);
+                let content = describe::describe_template(&base, &name)?;
+                println!("{}", content);
+            }
         },
     }
 
@@ -295,8 +306,14 @@ mod tests {
     fn test_template_list_command() {
         let cli = Cli::parse_from(["mdb", "template", "list"]);
         if let Commands::Template { command } = cli.command {
-            let TemplateCommands::List { fields } = command;
-            assert_eq!(fields, None);
+            match command {
+                TemplateCommands::List { fields } => {
+                    assert_eq!(fields, None);
+                }
+                TemplateCommands::Describe { .. } => {
+                    panic!("Expected List command, got Describe");
+                }
+            }
         } else {
             panic!("Expected Template command");
         }
@@ -306,8 +323,31 @@ mod tests {
     fn test_template_list_with_fields() {
         let cli = Cli::parse_from(["mdb", "template", "list", "-f", "tags,type"]);
         if let Commands::Template { command } = cli.command {
-            let TemplateCommands::List { fields } = command;
-            assert_eq!(fields, Some("tags,type".to_string()));
+            match command {
+                TemplateCommands::List { fields } => {
+                    assert_eq!(fields, Some("tags,type".to_string()));
+                }
+                TemplateCommands::Describe { .. } => {
+                    panic!("Expected List command, got Describe");
+                }
+            }
+        } else {
+            panic!("Expected Template command");
+        }
+    }
+
+    #[test]
+    fn test_template_describe_command() {
+        let cli = Cli::parse_from(["mdb", "template", "describe", "daily"]);
+        if let Commands::Template { command } = cli.command {
+            match command {
+                TemplateCommands::List { .. } => {
+                    panic!("Expected Describe command, got List");
+                }
+                TemplateCommands::Describe { name } => {
+                    assert_eq!(name, "daily");
+                }
+            }
         } else {
             panic!("Expected Template command");
         }

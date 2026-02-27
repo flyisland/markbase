@@ -158,6 +158,7 @@ Manage templates (MKS schema-based templates).
 ```bash
 mdb template list                  # List all templates
 mdb template list -f "tags,type"  # List with additional fields
+mdb template describe daily        # Show template content
 ```
 
 **Note:** Templates are expected in the `templates/` directory under base-dir. Default fields shown: `name`, `_schema.description`, `path`.
@@ -266,8 +267,8 @@ mdb/
 │   ├── db.rs            # DuckDB database operations
 │   ├── scanner.rs       # File discovery and indexing
 │   ├── extractor.rs     # Markdown content extraction
-│   ├── watcher.rs       # File monitoring for watch mode
-│   ├── creator.rs      # Note creation with templates
+│   ├── creator.rs       # Note creation with templates
+│   ├── describe.rs      # Template description
 │   ├── lib.rs           # Library exports
 │   └── query/           # Query system
 │       ├── mod.rs       # Output formatting (table/json/list)

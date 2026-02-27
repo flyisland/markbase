@@ -126,6 +126,7 @@ See [README.md](./README.md#project-structure) for the complete project structur
 - Single equals operator (=) support
 - Simplified field resolution (no file.*/note.* namespaces)
 - Frontmatter conflict warnings (reserved fields except tags)
+- `template describe` command
 
 ### Technical Debt / Future Improvements
 - Add integration tests for full query pipeline
