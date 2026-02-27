@@ -136,6 +136,7 @@ mdb query "_schema.strict == 'true'"
 # Output formats
 mdb query "has(tags, 'todo')" -o json
 mdb query "has(tags, 'todo')" -o list
+# Query results include count in output (table/list) or metadata (JSON)
 
 # Select fields (default: path, mtime)
 mdb query "name == 'readme'" -f "path,name,size"
