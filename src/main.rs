@@ -13,7 +13,6 @@ use std::sync::Mutex;
 
 use crate::db::Database;
 
-const ENV_DATABASE: &str = "MDB_DATABASE";
 const ENV_BASE_DIR: &str = "MDB_BASE_DIR";
 const ENV_OUTPUT: &str = "MDB_OUTPUT";
 
@@ -44,15 +43,6 @@ impl std::str::FromStr for OutputFormat {
 struct Cli {
     #[command(subcommand)]
     command: Commands,
-
-    #[arg(
-        long,
-        env = ENV_DATABASE,
-        global = true,
-        help_heading = "Environment Variables",
-        help = "Path to DuckDB database (default: .mdb/mdb.duckdb)"
-    )]
-    database: Option<PathBuf>,
 
     #[arg(
         long = "base-dir",
@@ -132,20 +122,20 @@ enum TemplateCommands {
     },
 }
 
-fn get_database_path() -> PathBuf {
-    env::var(ENV_DATABASE)
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(".mdb/mdb.duckdb"))
+fn get_database_path(cli_base_dir: Option<PathBuf>) -> Result<PathBuf, String> {
+    let base = get_base_dir_with_cli(cli_base_dir);
+    let absolute = base.canonicalize().map_err(|e| format!("Failed to resolve base-dir: {}", e))?;
+    Ok(absolute.join(".mdb/mdb.duckdb"))
 }
 
-fn get_base_dir() -> PathBuf {
-    env::var(ENV_BASE_DIR)
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("."))
+fn get_base_dir_with_cli(cli_base_dir: Option<PathBuf>) -> PathBuf {
+    cli_base_dir
+        .or_else(|| env::var(ENV_BASE_DIR).ok().map(PathBuf::from))
+        .unwrap_or_else(|| PathBuf::from("."))
 }
 
-fn get_base_dir_absolute() -> Result<PathBuf, String> {
-    let base = get_base_dir();
+fn get_base_dir_absolute_with_cli(cli_base_dir: Option<PathBuf>) -> Result<PathBuf, String> {
+    let base = get_base_dir_with_cli(cli_base_dir);
     base.canonicalize().map_err(|e| format!("Failed to resolve base-dir: {}", e))
 }
 
@@ -161,11 +151,11 @@ fn get_output_format(cli_format: Option<OutputFormat>) -> OutputFormat {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
-    let db_path = cli.database.unwrap_or_else(get_database_path);
+    let db_path = get_database_path(cli.base_dir.clone())?;
 
     match cli.command {
         Commands::Index { force, verbose } => {
-            let base = get_base_dir_absolute()?;
+            let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
             let db = Mutex::new(Database::new(&db_path)?);
             let db = db.lock().unwrap();
             eprintln!("Indexing {}...", base.display());
@@ -225,7 +215,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             query::output_results(&results, format_str, &field_names)?;
         }
         Commands::New { name, template } => {
-            let base = get_base_dir_absolute()?;
+            let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
             let created = creator::create_note(&base, &name, template.as_deref())?;
             if template.is_some() {
                 println!("path: {}", created.path.display());
@@ -236,7 +226,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Commands::Template { command } => match command {
             TemplateCommands::List { fields, format } => {
-                let base = get_base_dir_absolute()?;
+                let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
                 let pattern = format!("{}/templates/%%", base.display());
 
                 let mut output_fields = vec![
@@ -270,7 +260,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 query::output_results(&results, format_str, &output_fields)?;
             }
             TemplateCommands::Describe { name } => {
-                let base = get_base_dir_absolute()?;
+                let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
                 let content = describe::describe_template(&base, &name)?;
                 println!("{}", content);
             }

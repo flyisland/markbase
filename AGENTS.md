@@ -68,7 +68,7 @@ For command usage, options, and examples, see [README.md](./README.md#commands).
 
 > For actual implementation, read the source files directly under `src/`. This section describes each module's responsibilities and key design decisions that are not self-evident from the code.
 
-- **`main.rs`** — CLI entry point using clap derive macros. Handles argument parsing and dispatches to the appropriate command handler. Database path and base-dir can be overridden via environment variables (`MDB_DATABASE`, `MDB_BASE_DIR`); CLI args take priority.
+- **`main.rs`** — CLI entry point using clap derive macros. Handles argument parsing and dispatches to the appropriate command handler. Database path is derived from base-dir as `{{base-dir}}/.mdb/mdb.duckdb`; base-dir can be overridden via environment variable (`MDB_BASE_DIR`) or CLI arg (`--base-dir`).
 
 - **`scanner.rs`** — Drives the `index` command. Walks the directory tree, compares `mtime` for incremental updates, orchestrates calls to `extractor.rs` and `db.rs`, and computes backlinks as a reverse-lookup pass *after* all documents are inserted.
 

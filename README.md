@@ -197,7 +197,6 @@ mdb template describe daily        # Show template content
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `MDB_DATABASE` | Path to DuckDB database | `.mdb/mdb.duckdb` |
 | `MDB_BASE_DIR` | Base directory for indexing | `.` |
 | `MDB_OUTPUT` | Output format for query and template list | `table` |
 
@@ -205,7 +204,6 @@ mdb template describe daily        # Show template content
 
 ```bash
 # Set environment variables
-export MDB_DATABASE=/path/to/db.duckdb
 export MDB_BASE_DIR=/path/to/notes
 export MDB_OUTPUT=json
 
@@ -213,7 +211,6 @@ export MDB_OUTPUT=json
 mdb query "has(tags, 'design')"
 
 # CLI arguments override environment variables
-mdb --database /other/db.duckdb query "..."
 mdb index --base-dir /other/dir
 mdb --output-format json query "..."
 ```
