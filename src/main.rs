@@ -31,7 +31,6 @@ struct Cli {
     command: Commands,
 
     #[arg(
-        short,
         long,
         env = ENV_DATABASE,
         global = true,
@@ -41,7 +40,6 @@ struct Cli {
     database: Option<PathBuf>,
 
     #[arg(
-        short = 'b',
         long = "base-dir",
         env = ENV_BASE_DIR,
         global = true,

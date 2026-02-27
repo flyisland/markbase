@@ -191,7 +191,7 @@ mdb query "has(tags, 'design')"
 
 # CLI arguments override environment variables
 mdb --database /other/db.duckdb query "..."
-mdb index -b /other/dir
+mdb index --base-dir /other/dir
 ```
 
 ## Features
