@@ -174,7 +174,7 @@ cargo clippy -- -D warnings
 # 2. Tests — all tests must pass
 cargo test
 
-# 3. Formatting check (optional but recommended)
+# 3. Formatting check
 cargo fmt --check
 ```
 
@@ -216,6 +216,7 @@ A task is not complete until all of the following have been performed — not ju
 - [ ] Branch is up to date with `main`
 - [ ] `cargo clippy -- -D warnings` passes clean
 - [ ] `cargo test` — all tests pass
+- [ ] `cargo fmt --check` passes
 - [ ] `README.md` updated if user-facing behavior changed
 - [ ] `AGENTS.md` updated if architecture or schema changed
 
