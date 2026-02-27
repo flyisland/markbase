@@ -47,8 +47,8 @@ Every indexed markdown file has two types of properties: native file metadata an
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `path` | TEXT | Full file path (primary key) |
-| `folder` | TEXT | Directory path |
+| `path` | TEXT | File path relative to base-dir (primary key) |
+| `folder` | TEXT | Directory path relative to base-dir |
 | `name` | TEXT | File name (without extension) |
 | `ext` | TEXT | File extension (e.g., `md`) |
 | `size` | INTEGER | File size in bytes |

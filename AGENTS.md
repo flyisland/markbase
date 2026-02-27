@@ -14,8 +14,8 @@ The DuckDB local file (`.mdb/mdb.duckdb`) utilizes the following schema to suppo
 
 | Property   | Type        | Description                              |
 | ---------- | ----------- | ---------------------------------------- |
-| path       | TEXT        | Primary key - full file path             |
-| folder     | TEXT        | Directory path                           |
+| path       | TEXT        | File path relative to base-dir (primary key) |
+| folder     | TEXT        | Directory path relative to base-dir     |
 | name       | TEXT        | File name (without extension)            |
 | ext        | TEXT        | File extension                           |
 | size       | INTEGER     | File size in bytes                       |
