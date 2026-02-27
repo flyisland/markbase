@@ -34,6 +34,19 @@ impl Database {
         Ok(db)
     }
 
+    pub fn open_existing(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+        if !path.exists() {
+            return Err(format!(
+                "Database not found at {}. Please run 'mdb index' first.",
+                path.display()
+            )
+            .into());
+        }
+
+        let conn = Connection::open(path)?;
+        Ok(Database { conn })
+    }
+
     fn init_schema(&self) -> Result<(), Box<dyn std::error::Error>> {
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS documents (

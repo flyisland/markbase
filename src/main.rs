@@ -163,11 +163,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let db_path = cli.database.unwrap_or_else(get_database_path);
 
-    let db = Mutex::new(Database::new(&db_path)?);
-
     match cli.command {
         Commands::Index { force, verbose } => {
             let base = get_base_dir_absolute()?;
+            let db = Mutex::new(Database::new(&db_path)?);
             let db = db.lock().unwrap();
             eprintln!("Indexing {}...", base.display());
             let stats = scanner::index_directory(&base, &db, force, None)?;
@@ -220,6 +219,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if compiled.contains("_arg_should_not_be_quoted") {
                 return Err("Error: property name in function should not be quoted. Use function(property_name, ...) instead of function('property_name', ...)".into());
             }
+            let db = Mutex::new(Database::open_existing(&db_path)?);
             let db = db.lock().unwrap();
             let results = db.query(&compiled, &fields, limit)?;
             query::output_results(&results, format_str, &field_names)?;
@@ -257,6 +257,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if compiled.contains("_arg_should_not_be_quoted") {
                     return Err("Error: property name in function should not be quoted. Use function(property_name, ...) instead of function('property_name', ...)".into());
                 }
+                let db = Mutex::new(Database::open_existing(&db_path)?);
                 let db = db.lock().unwrap();
                 let results = db.query(&compiled, &fields_str, 1000)?;
                 
