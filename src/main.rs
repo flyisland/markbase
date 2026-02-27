@@ -112,7 +112,7 @@ enum TemplateCommands {
         #[arg(short = 'F', long = "additional-fields", help = "Additional fields to display")]
         fields: Option<String>,
 
-        #[arg(short = 'o')]
+        #[arg(short = 'o', help = "Output format (default: json)")]
         format: Option<OutputFormat>,
     },
     #[command(about = "Show template content")]
@@ -239,7 +239,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
 
                 let fields_str = output_fields.join(", ");
-                let query = "folder==templates".to_string();
+                let query = "folder=='templates'".to_string();
                 let compiled = query::build_sql(&query, &fields_str).map_err(|e| e.to_string())?;
                 if compiled.contains("_arg_should_not_be_quoted") {
                     return Err("Error: property name in function should not be quoted. Use function(property_name, ...) instead of function('property_name', ...)".into());
@@ -248,7 +248,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let db = db.lock().unwrap();
                 let results = db.query(&compiled, &fields_str, 1000)?;
                 
-                let effective_format = get_output_format(format.or(cli.output_format));
+                let effective_format = format
+                    .or(cli.output_format)
+                    .unwrap_or(OutputFormat::Json);
                 let format_str = match effective_format {
                     OutputFormat::Table => "table",
                     OutputFormat::Json => "json",
