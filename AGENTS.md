@@ -155,6 +155,13 @@ See [README.md](./README.md#project-structure) for the complete project structur
 ## 11. Development Workflow (Agent Guidelines)
 
 ### 11.1 Branch Policy
+
+> **Trigger**: Whenever a user proposes any development task (including bug fixes, new features, documentation changes, etc.), you **must first** check the current branch status.
+>
+> If not on `main` branch, check whether you need to create a new branch based on latest `main`.
+> If already on a feature/fix branch, continue working on that branch.
+> **Never** make code changes directly on `main` branch.
+
 - **Never commit directly to `main`.**
 - Always create a new feature branch before starting any development task:
   ```bash
