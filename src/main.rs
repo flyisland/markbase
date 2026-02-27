@@ -222,8 +222,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Commands::New { name, template } => {
             let base = cli.base_dir.unwrap_or_else(get_base_dir);
-            let created_path = creator::create_note(&base, &name, template.as_deref())?;
-            println!("Created: {}", created_path.display());
+            let created = creator::create_note(&base, &name, template.as_deref())?;
+            if template.is_some() {
+                println!("path: {}", created.path.display());
+                println!("content: {}", created.content);
+            } else {
+                println!("Created: {}", created.path.display());
+            }
         }
         Commands::Template { command } => match command {
             TemplateCommands::List { fields, format } => {

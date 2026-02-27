@@ -149,7 +149,23 @@ Create a new markdown note with optional template.
 ```bash
 mdb new my-note                    # Create note in base-dir
 mdb new notes/my-note              # Create in subdirectory
-mdb new my-note --template daily   # Create with template
+mdb new my-note --template daily   # Create with template (outputs path + content)
+```
+
+**With template:** Returns `path:` and `content:` for agent workflow integration:
+
+```
+path: ./notes/today.md
+content: ---
+date: ""
+mood: ""
+summary: ""
+tags: []
+---
+
+## 今日记录
+
+---
 ```
 
 ### `template`
@@ -240,7 +256,7 @@ cargo run -- index --base-dir ./notes -v
 
 The project includes comprehensive unit tests covering all major components:
 
-- **102 total tests** across all modules
+- **127 total tests** across all modules
 - **Query System**: Tokenizer, parser, compiler, and SQL generation
 - **Content Extraction**: Frontmatter, tags, wiki-links, embeds
 - **Database**: CRUD operations, queries, and filtering

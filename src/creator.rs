@@ -7,11 +7,17 @@ use gray_matter::Matter;
 use regex::Regex;
 use serde_json::Value;
 
+#[derive(Debug)]
+pub struct CreatedNote {
+    pub path: PathBuf,
+    pub content: String,
+}
+
 pub fn create_note(
     base_dir: &Path,
     name: &str,
     template_name: Option<&str>,
-) -> Result<PathBuf, Box<dyn std::error::Error>> {
+) -> Result<CreatedNote, Box<dyn std::error::Error>> {
     let template_dir = base_dir.join("templates");
 
     let (content, location) = match template_name {
@@ -47,9 +53,12 @@ pub fn create_note(
         fs::create_dir_all(parent)?;
     }
 
-    fs::write(&target_path, content)?;
+    fs::write(&target_path, content.clone())?;
 
-    Ok(target_path)
+    Ok(CreatedNote {
+        path: target_path,
+        content,
+    })
 }
 
 fn replace_template_variables(content: &str, name: &str) -> String {
@@ -269,9 +278,10 @@ mod tests {
 
         let result = create_note(&test_dir, "test-note", None);
         assert!(result.is_ok());
-        let path = result.unwrap();
-        assert!(path.exists());
-        assert_eq!(path.file_name().unwrap().to_str().unwrap(), "test-note.md");
+        let created = result.unwrap();
+        assert!(created.path.exists());
+        assert_eq!(created.path.file_name().unwrap().to_str().unwrap(), "test-note.md");
+        assert!(created.content.is_empty());
 
         let _ = fs::remove_dir_all(&test_dir);
     }
@@ -304,10 +314,10 @@ mod tests {
 
         let result = create_note(&test_dir, "today", Some("daily"));
         assert!(result.is_ok());
-        let path = result.unwrap();
-        let content = fs::read_to_string(&path).unwrap();
-        assert!(content.contains("# today"));
-        assert!(content.contains("Date: "));
+        let created = result.unwrap();
+        assert!(created.path.exists());
+        assert!(created.content.contains("# today"));
+        assert!(created.content.contains("Date: "));
 
         let _ = fs::remove_dir_all(&test_dir);
     }

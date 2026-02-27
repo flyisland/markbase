@@ -129,6 +129,7 @@ See [README.md](./README.md#project-structure) for the complete project structur
 - `template describe` command
 - `MDB_OUTPUT` environment variable support
 - Global `--output-format` / `-o` option for query and template list
+- `new --template` outputs path + content for agent workflow
 
 ### Technical Debt / Future Improvements
 - Add integration tests for full query pipeline
