@@ -58,14 +58,13 @@ impl Default for IndexStats {
 }
 
 pub fn index_directory(
-    dir: &Path,
-    dir_abs: &Path,
+    abs_base_dir: &Path,
     db: &Database,
     force: bool,
     paths: Option<Vec<PathBuf>>,
 ) -> Result<IndexStats, Box<dyn std::error::Error>> {
     let start = Instant::now();
-    let mut stats = IndexStats::new(dir_abs);
+    let mut stats = IndexStats::new(abs_base_dir);
     let mut all_docs: Vec<Document> = Vec::new();
 
     if let Some(specific_paths) = paths {
@@ -99,7 +98,7 @@ pub fn index_directory(
             }
         }
     } else {
-        for entry in WalkDir::new(dir)
+        for entry in WalkDir::new(abs_base_dir)
             .follow_links(true)
             .into_iter()
             .filter_map(|e| e.ok())
@@ -317,7 +316,7 @@ mod tests {
         create_test_file(&test_dir, "test.md", "# Test\n\nContent here.");
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &test_dir, &db, false, None);
+        let result = index_directory(&test_dir, &db, false, None);
         assert!(result.is_ok());
 
         let mtime = db
@@ -343,7 +342,7 @@ mod tests {
         create_test_file(&test_dir, "file3.md", "# File 3");
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &test_dir, &db, false, None);
+        let result = index_directory(&test_dir, &db, false, None);
         assert!(result.is_ok());
 
         let link_map = db.get_all_links().unwrap();
@@ -363,7 +362,7 @@ mod tests {
         create_test_file(&subdir, "sub.md", "# Sub");
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &test_dir, &db, false, None);
+        let result = index_directory(&test_dir, &db, false, None);
         assert!(result.is_ok());
 
         let link_map = db.get_all_links().unwrap();
@@ -381,7 +380,7 @@ mod tests {
         create_test_file(&test_dir, "data.json", "{}");
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &test_dir, &db, false, None);
+        let result = index_directory(&test_dir, &db, false, None);
         assert!(result.is_ok());
 
         let link_map = db.get_all_links().unwrap();
@@ -406,7 +405,7 @@ See [[other]] for more."#;
         create_test_file(&test_dir, "with_frontmatter.md", content);
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &test_dir, &db, false, None);
+        let result = index_directory(&test_dir, &db, false, None);
         assert!(result.is_ok());
 
         let link_map = db.get_all_links().unwrap();
@@ -431,7 +430,7 @@ See [[other]] for more."#;
         create_test_file(&test_dir, "referrer.md", "See [[target]] for info.");
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &test_dir, &db, false, None);
+        let result = index_directory(&test_dir, &db, false, None);
         assert!(result.is_ok());
 
         // Verify both files are indexed
@@ -452,7 +451,7 @@ See [[other]] for more."#;
         );
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &test_dir, &db, false, None);
+        let result = index_directory(&test_dir, &db, false, None);
         assert!(result.is_ok());
 
         let mtime = db
@@ -480,7 +479,7 @@ See [[other]] for more."#;
         );
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &test_dir, &db, false, None);
+        let result = index_directory(&test_dir, &db, false, None);
         assert!(result.is_ok());
 
         let mtime = db
@@ -506,7 +505,7 @@ See [[other]] for more."#;
         let db = Database::new(&db_path).unwrap();
 
         // First index
-        index_directory(&test_dir, &test_dir, &db, false, None).unwrap();
+        index_directory(&test_dir, &db, false, None).unwrap();
         let mtime1 = db
             .get_mtime(
                 &test_dir
@@ -522,7 +521,7 @@ See [[other]] for more."#;
         create_test_file(&test_dir, "test.md", "# Updated");
 
         // Re-index with force
-        index_directory(&test_dir, &test_dir, &db, true, None).unwrap();
+        index_directory(&test_dir, &db, true, None).unwrap();
         let mtime2 = db
             .get_mtime(
                 &test_dir
@@ -544,7 +543,7 @@ See [[other]] for more."#;
         let (test_dir, db_path) = create_test_directory();
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &test_dir, &db, false, None);
+        let result = index_directory(&test_dir, &db, false, None);
         assert!(result.is_ok());
 
         let link_map = db.get_all_links().unwrap();

@@ -170,7 +170,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let base = get_base_dir_absolute()?;
             let db = db.lock().unwrap();
             eprintln!("Indexing {}...", base.display());
-            let stats = scanner::index_directory(&base, &base, &db, force, None)?;
+            let stats = scanner::index_directory(&base, &db, force, None)?;
             
             if verbose {
                 if !stats.new_files.is_empty() {
