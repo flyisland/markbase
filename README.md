@@ -139,8 +139,8 @@ mdb query "has(tags, 'todo')" -o list
 # Query results include count in output (table/list) or metadata (JSON)
 
 # Select fields (default: path, mtime)
-mdb query "name == 'readme'" -f "path,name,size"
-mdb query "category == 'project'" -f "path,author,category"
+mdb query "name == 'readme'" -F "path,name,size"
+mdb query "category == 'project'" -F "path,author,category"
 ```
 
 ### `new`
@@ -175,7 +175,7 @@ Manage templates (MKS schema-based templates).
 mdb template list                  # List all templates (default: table format)
 mdb template list -o json          # List in JSON format
 mdb template list -o list         # List in list format
-mdb template list -f "tags,type"  # List with additional fields
+mdb template list -F "tags,type"  # List with additional fields
 mdb template describe daily        # Show template content
 ```
 

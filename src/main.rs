@@ -92,7 +92,7 @@ enum Commands {
         format: Option<OutputFormat>,
 
         #[arg(
-            short = 'f',
+            short = 'F',
             long = "output-fields",
             default_value = "path, mtime"
         )]
@@ -119,7 +119,7 @@ enum Commands {
 enum TemplateCommands {
     #[command(about = "List all available templates")]
     List {
-        #[arg(short, long, help = "Additional fields to display")]
+        #[arg(short = 'F', long = "additional-fields", help = "Additional fields to display")]
         fields: Option<String>,
 
         #[arg(short = 'o')]
@@ -294,7 +294,7 @@ mod tests {
 
     #[test]
     fn test_all_fields_option() {
-        let cli = Cli::parse_from(["mdb", "query", "file.name == 'test'", "-f", "*"]);
+        let cli = Cli::parse_from(["mdb", "query", "file.name == 'test'", "-F", "*"]);
         if let Commands::Query { fields, .. } = cli.command {
             assert_eq!(fields, "*");
         } else {
@@ -370,7 +370,7 @@ mod tests {
 
     #[test]
     fn test_template_list_with_fields() {
-        let cli = Cli::parse_from(["mdb", "template", "list", "-f", "tags,type"]);
+        let cli = Cli::parse_from(["mdb", "template", "list", "-F", "tags,type"]);
         if let Commands::Template { command } = cli.command {
             match command {
                 TemplateCommands::List { fields, format } => {
