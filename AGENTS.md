@@ -230,3 +230,71 @@ The goal is tests that verify **meaningful behavior**, not tests that merely exe
 - Tests written solely to increase coverage numbers.
 - Tests that duplicate what another test already covers without adding new signal.
 - Overly brittle tests that break on minor refactors unrelated to the behavior being tested.
+
+### 11.7 Rust Best Practices
+
+These are points where agent-written Rust code commonly goes wrong, beyond what `clippy` catches automatically.
+
+**Error handling:**
+- Define structured error types with `thiserror` rather than returning bare `Box<dyn Error>` from library functions. Reserve `Box<dyn Error>` only for top-level `main` or quick prototypes.
+- Never use `.unwrap()` or `.expect()` in non-test code. Propagate errors with `?` or handle them explicitly with a clear rationale.
+- Error messages should describe what failed and why, not just the error type (e.g. `"failed to open database at {path}: {source}"` not just `"io error"`).
+
+**Dependencies:**
+- Before adding a new crate, check whether the existing stack already covers the need. This project is binary-size sensitive (`strip = true`).
+- Prefer crates already in `Cargo.toml` over introducing new ones for marginal convenience.
+- Always add new crates via `cargo add <crate>` rather than editing `Cargo.toml` directly. This ensures the version is current, `Cargo.lock` is updated atomically, and features are validated immediately. For crates with required features, use `cargo add <crate> --features <feature>`.
+
+**Code style:**
+- Keep functions small and focused. If a function needs a comment to explain what a block does, that block is a candidate for extraction.
+- Avoid premature optimization. Correctness and clarity first; optimize only when there is a measured performance problem.
+
+### 11.8 Code Reuse
+
+Before implementing new functionality, always check whether an existing module can be extended rather than duplicating logic or adding unnecessary files.
+
+**Respect module boundaries:**
+- Each module owns a specific responsibility. Adding logic that belongs to module A into module B to avoid a refactor is the most common source of long-term debt. If the boundary needs to move, move it explicitly.
+- If an existing module needs to be extended to support a new use case, prefer adding a well-named method to that module over working around it from the outside.
+
+**Before adding new code, ask:**
+- Does this logic already exist somewhere? Search before writing.
+- Does this belong in an existing module, or does it genuinely warrant a new one?
+- If creating a new module, does it have a single, clearly statable responsibility?
+
+**New CLI subcommands:**
+- Follow the existing pattern in `main.rs` for argument parsing.
+- Implement the command's logic in a dedicated file, not inline in `main.rs`.
+
+### 11.9 CLI UX Principles
+
+**Output structure:**
+- Default output should provide a structured summary sufficient for the user to confirm what happened — counts, status, and any non-fatal warnings — without requiring `--verbose`.
+- `--verbose` is for process detail: per-file status, intermediate steps, generated SQL, and similar diagnostic information.
+- Never emit content-free confirmations like `"Done!"` or `"Success!"` on their own. If there is nothing meaningful to report, stay silent.
+
+**Output targets:**
+- Query results and structured data → stdout (so they can be piped).
+- Warnings, errors, and diagnostic messages → stderr.
+- This separation ensures `mdb query "..." | jq` and similar pipelines work correctly.
+
+**Exit codes:**
+- Exit `0` only on full success.
+- Exit non-zero on any error that prevented the command from completing its intended effect.
+- Non-fatal warnings (e.g. skipped files) should not cause a non-zero exit, but must be reported on stderr.
+
+**Summary format reference:**
+```
+# index — default output
+Indexing ./notes...
+  ✓ 142 files indexed  (3 new, 5 updated, 0 errors)  [1.2s]
+  ⚠ Skipped: notes/broken.md — invalid frontmatter (line 4)
+
+# query — default output
+path                      mtime
+────────────────────────  ───────────────────
+./notes/task-a.md         2025-01-10 09:00:00
+./notes/task-b.md         2025-01-12 14:30:00
+
+2 results
+```
