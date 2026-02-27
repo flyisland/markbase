@@ -144,6 +144,11 @@ fn get_base_dir() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("."))
 }
 
+fn get_base_dir_absolute() -> Result<PathBuf, String> {
+    let base = get_base_dir();
+    base.canonicalize().map_err(|e| format!("Failed to resolve base-dir: {}", e))
+}
+
 fn get_output_format(cli_format: Option<OutputFormat>) -> OutputFormat {
     cli_format.unwrap_or_else(|| {
         env::var(ENV_OUTPUT)
@@ -162,11 +167,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         Commands::Index { force, verbose } => {
-            let base = cli.base_dir.unwrap_or_else(get_base_dir);
-            let base_abs = base.canonicalize().map_err(|e| format!("Failed to resolve base-dir: {}", e))?;
+            let base = get_base_dir_absolute()?;
             let db = db.lock().unwrap();
-            eprintln!("Indexing {}...", base_abs.display());
-            let stats = scanner::index_directory(&base, &base_abs, &db, force, None)?;
+            eprintln!("Indexing {}...", base.display());
+            let stats = scanner::index_directory(&base, &base, &db, force, None)?;
             
             if verbose {
                 if !stats.new_files.is_empty() {
@@ -221,7 +225,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             query::output_results(&results, format_str, &field_names)?;
         }
         Commands::New { name, template } => {
-            let base = cli.base_dir.unwrap_or_else(get_base_dir);
+            let base = get_base_dir_absolute()?;
             let created = creator::create_note(&base, &name, template.as_deref())?;
             if template.is_some() {
                 println!("path: {}", created.path.display());
@@ -232,11 +236,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Commands::Template { command } => match command {
             TemplateCommands::List { fields, format } => {
-                let base = cli.base_dir.unwrap_or_else(get_base_dir);
-                let base_canonical = base
-                    .canonicalize()
-                    .map_err(|e| format!("Failed to resolve base-dir: {}", e))?;
-                let pattern = format!("{}/templates/%%", base_canonical.display());
+                let base = get_base_dir_absolute()?;
+                let pattern = format!("{}/templates/%%", base.display());
 
                 let mut output_fields = vec![
                     "name".to_string(),
@@ -268,7 +269,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 query::output_results(&results, format_str, &output_fields)?;
             }
             TemplateCommands::Describe { name } => {
-                let base = cli.base_dir.unwrap_or_else(get_base_dir);
+                let base = get_base_dir_absolute()?;
                 let content = describe::describe_template(&base, &name)?;
                 println!("{}", content);
             }
