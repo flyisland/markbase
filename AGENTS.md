@@ -205,8 +205,10 @@ test(compiler): add coverage for nested JSON paths
 docs(readme): update query operator table
 ```
 
-### 11.5 Pull Request Checklist
-Before opening a PR, confirm:
+### 11.5 Definition of Done
+
+A task is not complete until all of the following have been performed — not just checked mentally, but actually executed:
+
 - [ ] Branch is up to date with `main`
 - [ ] `cargo clippy -- -D warnings` passes clean
 - [ ] `cargo test` — all tests pass
