@@ -41,41 +41,37 @@ mdb query "has(tags, 'todo')"
 
 Every indexed markdown file has two types of properties: native file metadata and frontmatter properties.
 
-**Shorthand Resolution**: Native columns are checked first, then frontmatter properties.
+**Field Resolution**: Reserved fields are checked first, then frontmatter properties.
 
-### File Namespace (Native Properties)
-
-Use the `file.*` prefix to access native file metadata:
+### Reserved Fields (Native Properties)
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `file.path` | TEXT | Full file path (primary key) |
-| `file.folder` | TEXT | Directory path |
-| `file.name` | TEXT | File name (without extension) |
-| `file.ext` | TEXT | File extension (e.g., `md`) |
-| `file.size` | INTEGER | File size in bytes |
-| `file.ctime` | TIMESTAMP | Created time |
-| `file.mtime` | TIMESTAMP | Modified time |
-| `file.content` | TEXT | Full file content |
-| `file.tags` | VARCHAR[] | Array of `#tags` in content |
-| `file.links` | VARCHAR[] | Array of `[[wiki-links]]` |
-| `file.backlinks` | VARCHAR[] | Files linking to this file |
-| `file.embeds` | VARCHAR[] | Array of `![[embeds]]` |
+| `path` | TEXT | Full file path (primary key) |
+| `folder` | TEXT | Directory path |
+| `name` | TEXT | File name (without extension) |
+| `ext` | TEXT | File extension (e.g., `md`) |
+| `size` | INTEGER | File size in bytes |
+| `ctime` | TIMESTAMP | Created time |
+| `mtime` | TIMESTAMP | Modified time |
+| `content` | TEXT | Full file content |
+| `tags` | VARCHAR[] | Array of `#tags` (from content AND frontmatter) |
+| `links` | VARCHAR[] | Array of `[[wiki-links]]` |
+| `backlinks` | VARCHAR[] | Files linking to this file |
+| `embeds` | VARCHAR[] | Array of `![[embeds]]` |
 
 ```bash
-# Query native file properties
-mdb query "file.folder == './notes'"
-mdb query "file.mtime > '2024-01-01'"
-mdb query "file.size > 10000"
-mdb query "has(file.tags, 'todo')"
-mdb query "has(file.links, 'target-page')"
+# Query reserved fields
+mdb query "folder == './notes'"
+mdb query "mtime > '2024-01-01'"
+mdb query "size > 10000"
+mdb query "has(tags, 'todo')"
+mdb query "has(links, 'target-page')"
 ```
 
-### Note Namespace (Frontmatter Properties)
+### Frontmatter Properties
 
-Use `note.*` prefix to explicitly access frontmatter properties stored in YAML frontmatter:
-
-### Frontmatter Example
+Properties defined in YAML frontmatter are also available:
 
 ```yaml
 ---
@@ -88,21 +84,15 @@ date: 2024-01-15
 ---
 ```
 
-### Querying Properties
-
-Properties are accessed via the `note.*` namespace or shorthand:
-
 ```bash
-# Using shorthand (native columns checked first, then frontmatter)
+# Query frontmatter properties (resolved automatically)
 mdb query "author == 'John'"
 mdb query "category == 'project'"
 mdb query "status == 'in-progress'"
-mdb query "name == 'readme'"
-
-# Using explicit namespace
-mdb query "note.author == 'John'"
-mdb query "note.category == 'project'"
+mdb query "has(tags, 'design')"
 ```
+
+**Note:** If a frontmatter field conflicts with a reserved field (except `tags`), a warning will be shown during indexing and the frontmatter value will be ignored.
 
 ### Property Types
 
@@ -114,8 +104,6 @@ mdb query "note.category == 'project'"
 | Array | `has(tags, 'design')` |
 | Date | `date > '2024-01-01'` |
 | Exists | `exists(author)` |
-
-**Note:** Use explicit namespaces (`file.*`, `note.*`) when field names might conflict.
 
 ## Commands
 
@@ -132,23 +120,26 @@ mdb index --base-dir ./notes -v     # Verbose
 Query indexed files with SQL-like expressions.
 
 ```bash
-# Basic queries (shorthand - native columns and frontmatter properties)
+# Query reserved fields
 mdb query "has(tags, 'project')"
-mdb query "category == 'work'"
 mdb query "folder =~ '%projects%'"
 mdb query "mtime > '2024-01-01'"
+mdb query "size > 1000"
 
-# Explicit namespace usage (file.* for native columns, note.* for frontmatter)
-mdb query "has(file.tags, 'todo')"
-mdb query "note.author == 'John'"
+# Query frontmatter properties
+mdb query "category == 'work'"
+mdb query "author == 'John'"
+
+# Nested properties
+mdb query "_schema.strict == 'true'"
 
 # Output formats
 mdb query "has(tags, 'todo')" -o json
 mdb query "has(tags, 'todo')" -o list
 
-# Select fields (default: file.path, file.mtime)
+# Select fields (default: path, mtime)
 mdb query "name == 'readme'" -f "path,name,size"
-mdb query "category == 'project'" -f "path,note.author,category"
+mdb query "category == 'project'" -f "path,author,category"
 ```
 
 ### `new`
@@ -170,13 +161,13 @@ mdb template list -f "tags,type"  # List with additional fields
 
 **Note:** Templates are expected in the `templates/` directory under base-dir. Default fields shown: `name`, `_schema.description`, `path`.
 
-**Fields:** Native columns (`path`, `folder`, `name`, `ext`, `size`, `ctime`, `mtime`, `content`, `tags`, `links`, `backlinks`, `embeds`) and frontmatter properties (e.g., `author`, `category`). Use `file.*` prefix for explicit namespace or shorthand for convenience.
+**Fields:** Reserved fields (`path`, `folder`, `name`, `ext`, `size`, `ctime`, `mtime`, `content`, `tags`, `links`, `backlinks`, `embeds`) and frontmatter properties (e.g., `author`, `category`). Nested properties supported (e.g., `_schema.strict`).
 
 **Operators:** `==`, `!=`, `>`, `<`, `>=`, `<=`, `=~` (LIKE), `and`, `or`
 
 **Functions:** `has(field, value)` - array containment | `exists(field)` - property existence check
 
-**Note:** Shorthand notation - native columns (path, folder, name, tags, etc.) resolve first, then frontmatter properties. Use explicit namespaces (`file.*`, `note.*`) when field names might conflict.
+**Note:** Reserved fields are checked first, then frontmatter properties. If a frontmatter field conflicts with a reserved field (except `tags`), a warning will be shown during indexing.
 
 **Note:** Timestamps are displayed in human-readable format (YYYY-MM-DD HH:MM:SS)
 

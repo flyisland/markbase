@@ -1,3 +1,4 @@
+mod constants;
 mod creator;
 mod db;
 mod extractor;
@@ -71,7 +72,7 @@ enum Commands {
         #[arg(
             short = 'f',
             long = "output-fields",
-            default_value = "file.path, file.mtime"
+            default_value = "path, mtime"
         )]
         fields: String,
 
@@ -194,9 +195,9 @@ mod tests {
 
     #[test]
     fn test_default_fields_value() {
-        let cli = Cli::parse_from(["mdb", "query", "file.name == 'test'"]);
+        let cli = Cli::parse_from(["mdb", "query", "name == 'test'"]);
         if let Commands::Query { fields, .. } = cli.command {
-            assert_eq!(fields, "file.path, file.mtime");
+            assert_eq!(fields, "path, mtime");
         } else {
             panic!("Expected Query command");
         }

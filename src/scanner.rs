@@ -1,3 +1,4 @@
+use crate::constants::RESERVED_FIELDS;
 use crate::db::{Database, Document};
 use crate::extractor::Extractor;
 use std::fs;
@@ -86,6 +87,18 @@ fn index_single_file(
 
     let content = fs::read_to_string(path)?;
     let extracted = Extractor::extract(&content);
+
+    if let Some(obj) = extracted.frontmatter.as_object() {
+        for key in obj.keys() {
+            if RESERVED_FIELDS.contains(&key.as_str()) && *key != "tags" {
+                eprintln!(
+                    "⚠ {}: frontmatter field '{}' conflicts with a reserved field and will be ignored.",
+                    path.display(),
+                    key
+                );
+            }
+        }
+    }
 
     let size = metadata.len();
     let ctime = metadata.created()?.duration_since(UNIX_EPOCH)?.as_secs() as i64;

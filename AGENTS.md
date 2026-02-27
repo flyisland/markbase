@@ -57,19 +57,19 @@ CREATE INDEX IF NOT EXISTS idx_name ON documents(name);
 - **Behavior**: Query indexed files with SQL-like expressions.
 - **Functionality**: 
     - Parse SQL-like query expressions with field references, operators, and logical combinations
-    - Support `file.*` namespace for native table columns (path, folder, name, ext, size, ctime, mtime, content, tags, links, backlinks, embeds)
-    - Support `note.*` namespace for user-defined frontmatter properties (e.g., `note.alias` → `json_extract(properties, '$.alias')`)
-    - Support shorthand notation: unprefixed identifiers resolve to native columns first, then frontmatter properties
+    - Field resolution: reserved fields (path, folder, name, ext, size, ctime, mtime, content, tags, links, backlinks, embeds) are checked first, then frontmatter properties
+    - Support nested JSON paths (e.g., `a.b.c` → `json_extract_string(properties, '$.\"a\".\"b\".\"c\"')`)
     - Support comparison operators: `==`, `!=`, `>`, `<`, `>=`, `<=`, `=~` (pattern match), and `=` (single equals)
     - Support logical operators: `and`, `or` with proper precedence (and has higher precedence than or)
     - Support `has()` function for array containment checks
     - Compile queries to DuckDB SQL for execution
     - Timestamps displayed in human-readable format (YYYY-MM-DD HH:MM:SS)
+    - Warning when frontmatter field conflicts with reserved field (except `tags`)
 - **Options**:
     - `<query>` - Query expression (positional argument, required)
     - `-o, --output-format <type>` - Output: table, json, list (default: table)
     - `-l, --limit <n>` - Max results (default: 1000)
-    - `-f, --output-fields <fields>` - Fields to select (default: file.path, file.mtime)
+    - `-f, --output-fields <fields>` - Fields to select (default: path, mtime)
 
 ### Command: `new`
 - **Behavior**: Create a new markdown note with optional template.
@@ -186,11 +186,12 @@ Located in `src/query/`:
 - **compiler.rs**: Compiles AST to DuckDB SQL with field resolution
   ```rust
   pub fn resolve_field(field: &str) -> String {
-      if field.contains('.') {
-          // Handle file.* and note.* namespaces
+      // Reserved fields first, then JSON path for nested/frontmatter properties
+      if RESERVED_FIELDS.contains(&field) {
+          return field.to_string();
       }
-      // Shorthand: native columns first, then frontmatter properties
-      format!("json_extract_string(properties, '$.{}')", field)
+      // Handle nested JSON paths like "a.b.c"
+      format!("json_extract_string(properties, '$.\"{}\"')", field.replace('.', "\".\""))
   }
   ```
 
@@ -244,7 +245,7 @@ See [README.md](./README.md#project-structure) for the complete project structur
 ### Completed ✅
 - Core indexing functionality
 - Query system (SQL-like expressions)
-- Field-based queries (file.*, note.*, shorthand)
+- Field-based queries (reserved fields + frontmatter, simplified resolution)
 - Query operators (==, !=, >, <, >=, <=, =~, =)
 - Logical operators (and, or) with precedence
 - has() function for array containment
@@ -257,6 +258,8 @@ See [README.md](./README.md#project-structure) for the complete project structur
 - Note creation with templates (new command)
 - Single equals operator (=) support
 - Database lock release in watch mode for concurrent queries
+- Simplified field resolution (no file.*/note.* namespaces)
+- Frontmatter conflict warnings (reserved fields except tags)
 
 ### Technical Debt / Future Improvements
 - ✅ ~~Add unit tests for tokenizer, parser, and compiler~~ (Completed - 95 tests total)

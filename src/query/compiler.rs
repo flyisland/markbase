@@ -1,19 +1,5 @@
 use super::parser::AstNode;
-
-const FILE_FIELDS: &[&str] = &[
-    "path",
-    "folder",
-    "name",
-    "ext",
-    "size",
-    "ctime",
-    "mtime",
-    "content",
-    "tags",
-    "links",
-    "backlinks",
-    "embeds",
-];
+use crate::constants::RESERVED_FIELDS;
 
 fn check_field_arg_not_quoted(node: &AstNode, func_name: &str) -> Option<String> {
     match node {
@@ -27,32 +13,23 @@ fn is_array_field(field: &str) -> bool {
     matches!(field, "tags" | "links" | "backlinks" | "embeds")
 }
 
-fn is_native_field(field: &str) -> bool {
-    FILE_FIELDS.contains(&field)
+fn is_reserved_field(field: &str) -> bool {
+    RESERVED_FIELDS.contains(&field)
 }
 
 pub fn resolve_field(field: &str) -> String {
-    if let Some(name) = field.strip_prefix("file.") && FILE_FIELDS.contains(&name) {
-        return name.to_string();
-    }
-
-    if let Some(json_path) = field.strip_prefix("note.") {
-        return format!("json_extract_string(properties, '$.{}')", json_path);
+    if is_reserved_field(field) {
+        return field.to_string();
     }
 
     if field.contains('.') {
-        let parts: Vec<&str> = field.split('.').collect();
         let json_path = "$".to_string()
-            + &parts
-                .iter()
+            + &field
+                .split('.')
                 .map(|p| format!(".\"{}\"", p))
                 .collect::<Vec<_>>()
                 .join("");
         return format!("json_extract_string(properties, '{}')", json_path);
-    }
-
-    if FILE_FIELDS.contains(&field) {
-        return field.to_string();
     }
 
     format!("json_extract_string(properties, '$.{}')", field)
@@ -107,17 +84,14 @@ pub fn compile(node: &AstNode) -> String {
                     _ => return "1=1".to_string(),
                 };
 
-                let bare_field = field_name.strip_prefix("file.").unwrap_or(&field_name);
-
-                return if is_array_field(bare_field) {
-                    format!("array_length({}) > 0", bare_field)
-                } else if is_native_field(bare_field) {
-                    format!("{} IS NOT NULL AND {} != ''", bare_field, bare_field)
+                return if is_array_field(&field_name) {
+                    format!("array_length({}) > 0", field_name)
+                } else if is_reserved_field(&field_name) {
+                    format!("{} IS NOT NULL AND {} != ''", field_name, field_name)
                 } else {
-                    let json_path = bare_field.strip_prefix("note.").unwrap_or(bare_field);
                     format!(
                         "NOT (json_extract(properties, '$.{}') IS NULL OR (json_type(properties, '$.{}') = 'STRING' AND json_extract_string(properties, '$.{}') = '') OR (json_type(properties, '$.{}') = 'ARRAY' AND json_array_length(properties, '$.{}') = 0))",
-                        json_path, json_path, json_path, json_path, json_path
+                        field_name, field_name, field_name, field_name, field_name
                     )
                 };
             }
@@ -151,34 +125,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_resolve_file_field() {
-        assert_eq!(resolve_field("file.name"), "name");
-        assert_eq!(resolve_field("file.size"), "size");
-        assert_eq!(resolve_field("file.path"), "path");
-        assert_eq!(resolve_field("file.folder"), "folder");
-        assert_eq!(resolve_field("file.ext"), "ext");
-        assert_eq!(resolve_field("file.ctime"), "ctime");
-        assert_eq!(resolve_field("file.mtime"), "mtime");
-        assert_eq!(resolve_field("file.content"), "content");
-        assert_eq!(resolve_field("file.tags"), "tags");
-        assert_eq!(resolve_field("file.links"), "links");
-        assert_eq!(resolve_field("file.backlinks"), "backlinks");
-        assert_eq!(resolve_field("file.embeds"), "embeds");
-    }
-
-    #[test]
-    fn test_resolve_note_property() {
-        assert_eq!(
-            resolve_field("note.custom_field"),
-            "json_extract_string(properties, '$.custom_field')"
-        );
-        assert_eq!(
-            resolve_field("note.alias"),
-            "json_extract_string(properties, '$.alias')"
-        );
-    }
-
-    #[test]
     fn test_resolve_shorthand_property() {
         assert_eq!(
             resolve_field("category"),
@@ -207,23 +153,31 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_note_custom_property() {
-        assert_eq!(
-            resolve_field("note.custom_field"),
-            "json_extract_string(properties, '$.custom_field')"
-        );
+    fn test_resolve_reserved_field() {
+        assert_eq!(resolve_field("name"), "name");
+        assert_eq!(resolve_field("path"), "path");
+        assert_eq!(resolve_field("folder"), "folder");
+        assert_eq!(resolve_field("ext"), "ext");
+        assert_eq!(resolve_field("size"), "size");
+        assert_eq!(resolve_field("ctime"), "ctime");
+        assert_eq!(resolve_field("mtime"), "mtime");
+        assert_eq!(resolve_field("content"), "content");
+        assert_eq!(resolve_field("tags"), "tags");
+        assert_eq!(resolve_field("links"), "links");
+        assert_eq!(resolve_field("backlinks"), "backlinks");
+        assert_eq!(resolve_field("embeds"), "embeds");
     }
 
     #[test]
     fn test_compile_equality() {
-        let ast = super::super::parser::parse("file.name == 'readme'");
+        let ast = super::super::parser::parse("name == 'readme'");
         let sql = compile(&ast);
         assert_eq!(sql, "name = 'readme'");
     }
 
     #[test]
     fn test_compile_inequality() {
-        let ast = super::super::parser::parse("file.name != 'test'");
+        let ast = super::super::parser::parse("name != 'test'");
         let sql = compile(&ast);
         assert_eq!(sql, "name != 'test'");
     }
@@ -231,10 +185,10 @@ mod tests {
     #[test]
     fn test_compile_comparison_operators() {
         let cases = vec![
-            ("file.size > 1000", "size > 1000"),
-            ("file.size < 1000", "size < 1000"),
-            ("file.size >= 1000", "size >= 1000"),
-            ("file.size <= 1000", "size <= 1000"),
+            ("size > 1000", "size > 1000"),
+            ("size < 1000", "size < 1000"),
+            ("size >= 1000", "size >= 1000"),
+            ("size <= 1000", "size <= 1000"),
         ];
         for (query, expected) in cases {
             let ast = super::super::parser::parse(query);
@@ -245,71 +199,57 @@ mod tests {
 
     #[test]
     fn test_compile_pattern_match() {
-        let ast = super::super::parser::parse("file.name =~ '%test%'");
+        let ast = super::super::parser::parse("name =~ '%test%'");
         let sql = compile(&ast);
         assert_eq!(sql, "name LIKE '%test%'");
     }
 
     #[test]
     fn test_compile_and_operator() {
-        let ast = super::super::parser::parse("file.name == 'a' and file.size > 100");
+        let ast = super::super::parser::parse("name == 'a' and size > 100");
         let sql = compile(&ast);
         assert_eq!(sql, "name = 'a' AND size > 100");
     }
 
     #[test]
     fn test_compile_or_operator() {
-        let ast = super::super::parser::parse("file.name == 'a' or file.name == 'b'");
+        let ast = super::super::parser::parse("name == 'a' or name == 'b'");
         let sql = compile(&ast);
         assert_eq!(sql, "name = 'a' OR name = 'b'");
     }
 
     #[test]
     fn test_compile_grouping() {
-        let ast = super::super::parser::parse("(file.name == 'a')");
+        let ast = super::super::parser::parse("(name == 'a')");
         let sql = compile(&ast);
         assert_eq!(sql, "(name = 'a')");
     }
 
     #[test]
     fn test_compile_function_has() {
-        let ast = super::super::parser::parse("has(file.tags, 'important')");
+        let ast = super::super::parser::parse("has(tags, 'important')");
         let sql = compile(&ast);
         assert_eq!(sql, "'important' = ANY(tags)");
     }
 
     #[test]
     fn test_compile_complex_query() {
-        let ast = super::super::parser::parse(
-            "file.name == 'readme' and file.size > 1000 or has(file.tags, 'todo')",
-        );
+        let ast =
+            super::super::parser::parse("name == 'readme' and size > 1000 or has(tags, 'todo')");
         let sql = compile(&ast);
         assert_eq!(sql, "name = 'readme' AND size > 1000 OR 'todo' = ANY(tags)");
     }
 
     #[test]
-    fn test_compile_shorthand_property() {
-        let ast = super::super::parser::parse("category == 'project'");
-        let sql = compile(&ast);
-        assert_eq!(
-            sql,
-            "json_extract_string(properties, '$.category') = 'project'"
-        );
-    }
-
-    #[test]
     fn test_compile_string_escaping() {
-        // Single quote in string is escaped by doubling it in SQL
-        let ast = super::super::parser::parse("file.name == 'it''s'");
+        let ast = super::super::parser::parse("name == 'it''s'");
         let sql = compile(&ast);
-        // The tokenizer treats 'it' and 's' as two separate strings due to the quote
-        // The parser creates a binary expression with just the first string
         assert_eq!(sql, "name = 'it'");
     }
 
     #[test]
     fn test_build_sql_with_star() {
-        let result = build_sql("file.name == 'test'", "*");
+        let result = build_sql("name == 'test'", "*");
         assert!(result.is_ok());
         let sql = result.unwrap();
         assert!(sql.contains("SELECT path, folder, name"));
@@ -319,7 +259,7 @@ mod tests {
 
     #[test]
     fn test_build_sql_with_custom_fields() {
-        let result = build_sql("file.name == 'test'", "path,name");
+        let result = build_sql("name == 'test'", "path,name");
         assert!(result.is_ok());
         let sql = result.unwrap();
         assert!(sql.contains("SELECT path, name"));
@@ -328,15 +268,15 @@ mod tests {
 
     #[test]
     fn test_build_sql_with_file_fields() {
-        let result = build_sql("file.tags == 'test'", "path,file.tags");
+        let result = build_sql("tags == 'test'", "path,tags");
         assert!(result.is_ok());
         let sql = result.unwrap();
         assert!(sql.contains("SELECT path, tags"));
     }
 
     #[test]
-    fn test_build_sql_with_note_property() {
-        let result = build_sql("note.category == 'test'", "path,note.category");
+    fn test_build_sql_with_frontmatter_property() {
+        let result = build_sql("category == 'test'", "path,category");
         assert!(result.is_ok());
         let sql = result.unwrap();
         assert!(sql.contains("SELECT path, json_extract_string(properties, '$.category')"));
@@ -352,22 +292,6 @@ mod tests {
             assert!(
                 sql.contains("= ANY("),
                 "has({}) should use = ANY() operator, got: {}",
-                field,
-                sql
-            );
-        }
-    }
-
-    #[test]
-    fn test_has_uses_any_for_file_prefix_array_fields() {
-        let array_fields = vec!["tags", "links", "embeds", "backlinks"];
-        for field in array_fields {
-            let query = format!("has(file.{}, 'value')", field);
-            let ast = super::super::parser::parse(&query);
-            let sql = compile(&ast);
-            assert!(
-                sql.contains("= ANY("),
-                "has(file.{}) should use = ANY() operator, got: {}",
                 field,
                 sql
             );
@@ -392,7 +316,7 @@ mod tests {
 
     #[test]
     fn test_like_operator_for_non_array_fields() {
-        let query = "file.name =~ '%test%'";
+        let query = "name =~ '%test%'";
         let ast = super::super::parser::parse(query);
         let sql = compile(&ast);
         assert!(
