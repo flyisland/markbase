@@ -226,9 +226,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Commands::Template { command } => match command {
             TemplateCommands::List { fields, format } => {
-                let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
-                let pattern = format!("{}/templates/%%", base.display());
-
                 let mut output_fields = vec![
                     "name".to_string(),
                     "_schema.description".to_string(),
@@ -242,7 +239,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
 
                 let fields_str = output_fields.join(", ");
-                let query = format!("path=~\"{}\"", pattern);
+                let query = "folder==templates".to_string();
                 let compiled = query::build_sql(&query, &fields_str).map_err(|e| e.to_string())?;
                 if compiled.contains("_arg_should_not_be_quoted") {
                     return Err("Error: property name in function should not be quoted. Use function(property_name, ...) instead of function('property_name', ...)".into());
