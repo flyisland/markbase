@@ -1,7 +1,10 @@
 [package]
 name = "mdb"
-version = "0.1.0"
+description = "A high-performance CLI tool for indexing and querying Markdown files for AI agent. Obsidian-compatible."
+repository = "https://github.com/flyisland/mdb"
+version = "0.1.0-alpha.1"
 edition = "2024"
+license = "MIT"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive", "env"] }

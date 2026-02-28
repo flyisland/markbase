@@ -1,9 +1,7 @@
 # Markdown Base CLI (mdb)
 
-A high-performance CLI tool for indexing and querying Markdown files with DuckDB. Obsidian-compatible.
+A high-performance CLI tool for indexing and querying Markdown files for AI agent. Obsidian-compatible.
 
-[![Rust](https://img.shields.io/badge/Rust-1.85+-orange?logo=rust)](https://rust-lang.org)
-[![DuckDB](https://img.shields.io/badge/DuckDB-1.4+-yellow?logo=duckdb)](https://duckdb.org)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/flyisland/mdb)
 
 ## Installation
