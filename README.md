@@ -196,14 +196,14 @@ markbase template describe daily        # Show template content
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `MARKBASE_BASE_DIR` | Base directory for indexing | `.` |
-| `MARKBASE_OUTPUT` | Output format for query and template list | `table` |
+| `MARKBASE_OUTPUT_FORMAT` | Output format for query and template list | `table` |
 
 **Priority:** CLI arguments > Environment variables > Defaults
 
 ```bash
 # Set environment variables
 export MARKBASE_BASE_DIR=/path/to/notes
-export MARKBASE_OUTPUT=json
+export MARKBASE_OUTPUT_FORMAT=json
 
 # Use environment variables
 markbase query "has(tags, 'design')"

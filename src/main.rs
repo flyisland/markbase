@@ -14,7 +14,7 @@ use std::sync::Mutex;
 use crate::db::Database;
 
 const ENV_BASE_DIR: &str = "MARKBASE_BASE_DIR";
-const ENV_OUTPUT: &str = "MARKBASE_OUTPUT";
+const ENV_OUTPUT_FORMAT: &str = "MARKBASE_OUTPUT_FORMAT";
 
 const VERSION: &str = concat!(
     env!("CARGO_PKG_VERSION"),
@@ -65,7 +65,7 @@ struct Cli {
     #[arg(
         long = "output-format",
         global = true,
-        env = ENV_OUTPUT,
+        env = ENV_OUTPUT_FORMAT,
         help_heading = "Output",
         help = "Output format: table, json, list"
     )]
@@ -156,7 +156,7 @@ fn get_base_dir_absolute_with_cli(cli_base_dir: Option<PathBuf>) -> Result<PathB
 
 fn get_output_format(cli_format: Option<OutputFormat>) -> OutputFormat {
     cli_format.unwrap_or_else(|| {
-        env::var(ENV_OUTPUT)
+        env::var(ENV_OUTPUT_FORMAT)
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(OutputFormat::Table)
