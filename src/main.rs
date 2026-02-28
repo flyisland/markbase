@@ -16,6 +16,15 @@ use crate::db::Database;
 const ENV_BASE_DIR: &str = "MDB_BASE_DIR";
 const ENV_OUTPUT: &str = "MDB_OUTPUT";
 
+const VERSION: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    " (",
+    env!("VERGEN_GIT_SHA"),
+    " ",
+    env!("VERGEN_GIT_COMMIT_TIMESTAMP"),
+    ")"
+);
+
 #[derive(Clone, ValueEnum, Debug, PartialEq)]
 enum OutputFormat {
     Table,
@@ -38,7 +47,7 @@ impl std::str::FromStr for OutputFormat {
 
 #[derive(Parser)]
 #[command(name = "mdb")]
-#[command(version = "0.1.0")]
+#[command(version = VERSION)]
 #[command(about = "Markdown database CLI - index and query markdown files", long_about = None)]
 struct Cli {
     #[command(subcommand)]
