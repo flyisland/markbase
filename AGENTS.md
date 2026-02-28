@@ -10,7 +10,7 @@ See [README.md](./README.md#tech-stack) for the complete tech stack details.
 
 ## 3. Data Schema
 
-The DuckDB local file (`.mdb/mdb.duckdb`) utilizes the following schema to support Markdown structures:
+The DuckDB local file (`.markbase/markbase.duckdb`) utilizes the following schema to support Markdown structures:
 
 | Property   | Type        | Description                              |
 | ---------- | ----------- | ---------------------------------------- |
@@ -68,7 +68,7 @@ For command usage, options, and examples, see [README.md](./README.md#commands).
 
 > For actual implementation, read the source files directly under `src/`. This section describes each module's responsibilities and key design decisions that are not self-evident from the code.
 
-- **`main.rs`** — CLI entry point using clap derive macros. Handles argument parsing and dispatches to the appropriate command handler. Database path is derived from base-dir as `{{base-dir}}/.mdb/mdb.duckdb`; base-dir can be overridden via environment variable (`MDB_BASE_DIR`) or CLI arg (`--base-dir`).
+- **`main.rs`** — CLI entry point using clap derive macros. Handles argument parsing and dispatches to the appropriate command handler. Database path is derived from base-dir as `{{base-dir}}/.markbase/markbase.duckdb`; base-dir can be overridden via environment variable (`MARKBASE_BASE_DIR`) or CLI arg (`--base-dir`).
 
 - **`scanner.rs`** — Drives the `index` command. Walks the directory tree, compares `mtime` for incremental updates, orchestrates calls to `extractor.rs` and `db.rs`, and computes backlinks as a reverse-lookup pass *after* all documents are inserted.
 
@@ -291,7 +291,7 @@ Before implementing new functionality, always check whether an existing module c
 **Output targets:**
 - Query results and structured data → stdout (so they can be piped).
 - Warnings, errors, and diagnostic messages → stderr.
-- This separation ensures `mdb query "..." | jq` and similar pipelines work correctly.
+- This separation ensures `markbase query "..." | jq` and similar pipelines work correctly.
 
 **Exit codes:**
 - Exit `0` only on full success.
