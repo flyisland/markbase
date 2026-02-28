@@ -2,23 +2,61 @@ pub mod compiler;
 pub mod parser;
 pub mod tokenizer;
 
+use std::path::Path;
+
 pub use compiler::build_sql;
 
 pub fn output_results(
     results: &[Vec<String>],
     format: &str,
     field_names: &[String],
+    base_dir: Option<&Path>,
+    abs_path: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let results = if abs_path {
+        if let Some(dir) = base_dir {
+            convert_to_absolute_paths(results, field_names, dir)
+        } else {
+            results.to_vec()
+        }
+    } else {
+        results.to_vec()
+    };
+
     if results.is_empty() {
         println!("No results found.");
         return Ok(());
     }
 
     match format {
-        "json" | "Json" => output_json(results, field_names),
-        "list" | "List" => output_list(results, field_names),
-        _ => output_table(results, field_names),
+        "json" | "Json" => output_json(&results, field_names),
+        "list" | "List" => output_list(&results, field_names),
+        _ => output_table(&results, field_names),
     }
+}
+
+fn convert_to_absolute_paths(
+    results: &[Vec<String>],
+    field_names: &[String],
+    base_dir: &Path,
+) -> Vec<Vec<String>> {
+    results
+        .iter()
+        .map(|row| {
+            row.iter()
+                .enumerate()
+                .map(|(i, value)| {
+                    let name = field_names.get(i).map_or("", |s| s.as_str());
+                    if name == "path" || name == "folder" {
+                        let abs = base_dir.join(value);
+                        abs.to_string_lossy().to_string()
+                    } else {
+                        value.clone()
+                    }
+                })
+                .collect()
+        })
+        .collect()
 }
 
 fn output_json(
@@ -143,7 +181,7 @@ mod tests {
             vec!["path2".to_string(), "name2".to_string()],
         ];
         let fields = vec!["path".to_string(), "name".to_string()];
-        let result = output_results(&results, "table", &fields);
+        let result = output_results(&results, "table", &fields, None, false);
         assert!(result.is_ok());
     }
 
@@ -154,7 +192,7 @@ mod tests {
             vec!["path2".to_string(), "name2".to_string()],
         ];
         let fields = vec!["path".to_string(), "name".to_string()];
-        let result = output_results(&results, "json", &fields);
+        let result = output_results(&results, "json", &fields, None, false);
         assert!(result.is_ok());
     }
 
@@ -165,7 +203,7 @@ mod tests {
             vec!["path2".to_string(), "name2".to_string()],
         ];
         let fields = vec!["path".to_string(), "name".to_string()];
-        let result = output_results(&results, "list", &fields);
+        let result = output_results(&results, "list", &fields, None, false);
         assert!(result.is_ok());
     }
 
@@ -173,7 +211,7 @@ mod tests {
     fn test_output_results_empty() {
         let results: Vec<Vec<String>> = vec![];
         let fields = vec!["path".to_string()];
-        let result = output_results(&results, "table", &fields);
+        let result = output_results(&results, "table", &fields, None, false);
         assert!(result.is_ok());
     }
 
@@ -181,7 +219,7 @@ mod tests {
     fn test_output_results_default_to_table() {
         let results = vec![vec!["test".to_string()]];
         let fields = vec!["col0".to_string()];
-        let result = output_results(&results, "unknown_format", &fields);
+        let result = output_results(&results, "unknown_format", &fields, None, false);
         assert!(result.is_ok());
     }
 
@@ -246,8 +284,21 @@ mod tests {
         ];
 
         for format in &["table", "json", "list"] {
-            let result = output_results(&results, format, &fields);
+            let result = output_results(&results, format, &fields, None, false);
             assert!(result.is_ok(), "Failed for format: {}", format);
         }
+    }
+
+    #[test]
+    fn test_abs_path_converts_path_and_folder() {
+        let base_dir = std::path::PathBuf::from("/base");
+        let results = vec![
+            vec!["notes/test.md".to_string(), "notes".to_string()],
+            vec!["notes/other.md".to_string(), "notes".to_string()],
+        ];
+        let fields = vec!["path".to_string(), "folder".to_string()];
+
+        let result = output_results(&results, "table", &fields, Some(&base_dir), true);
+        assert!(result.is_ok());
     }
 }

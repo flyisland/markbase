@@ -95,6 +95,9 @@ enum Commands {
 
         #[arg(short, long, default_value_t = 1000)]
         limit: usize,
+
+        #[arg(long = "abs-path")]
+        abs_path: bool,
     },
     #[command(about = "Create a new markdown note with optional template")]
     New {
@@ -135,7 +138,7 @@ fn get_database_path(cli_base_dir: Option<PathBuf>) -> Result<PathBuf, String> {
     let base = get_base_dir_with_cli(cli_base_dir);
     let absolute = base
         .canonicalize()
-        .map_err(|e| format!("Failed to resolve base-dir: {}", e))?;
+        .map_err(|e| format!("Failed to resolve base-dir '{}': {}", base.display(), e))?;
     Ok(absolute.join(".markbase/markbase.duckdb"))
 }
 
@@ -148,7 +151,7 @@ fn get_base_dir_with_cli(cli_base_dir: Option<PathBuf>) -> PathBuf {
 fn get_base_dir_absolute_with_cli(cli_base_dir: Option<PathBuf>) -> Result<PathBuf, String> {
     let base = get_base_dir_with_cli(cli_base_dir);
     base.canonicalize()
-        .map_err(|e| format!("Failed to resolve base-dir: {}", e))
+        .map_err(|e| format!("Failed to resolve base-dir '{}': {}", base.display(), e))
 }
 
 fn get_output_format(cli_format: Option<OutputFormat>) -> OutputFormat {
@@ -224,6 +227,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             format,
             limit,
             fields,
+            abs_path,
         } => {
             let field_names: Vec<String> =
                 fields.split(',').map(|s| s.trim().to_string()).collect();
@@ -239,7 +243,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let results = db
                 .query(&compiled, &fields, limit)
                 .map_err(|e| db::convert_duckdb_error(&e.to_string(), &query))?;
-            query::output_results(&results, format_str, &field_names)?;
+
+            let base_dir = if abs_path {
+                Some(get_base_dir_absolute_with_cli(cli.base_dir.clone())?)
+            } else {
+                None
+            };
+            query::output_results(
+                &results,
+                format_str,
+                &field_names,
+                base_dir.as_deref(),
+                abs_path,
+            )?;
         }
         Commands::New { name, template } => {
             let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
@@ -280,7 +296,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     OutputFormat::Json => "json",
                     OutputFormat::List => "list",
                 };
-                query::output_results(&results, format_str, &output_fields)?;
+                query::output_results(&results, format_str, &output_fields, None, false)?;
             }
             TemplateCommands::Describe { name } => {
                 let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
@@ -338,6 +354,26 @@ mod tests {
         let cli = Cli::parse_from(["markbase", "query", "file.name == 'test'", "-o", "json"]);
         if let Commands::Query { format, .. } = cli.command {
             assert_eq!(format, Some(OutputFormat::Json));
+        } else {
+            panic!("Expected Query command");
+        }
+    }
+
+    #[test]
+    fn test_abs_path_option_default() {
+        let cli = Cli::parse_from(["markbase", "query", "name == 'test'"]);
+        if let Commands::Query { abs_path, .. } = cli.command {
+            assert_eq!(abs_path, false);
+        } else {
+            panic!("Expected Query command");
+        }
+    }
+
+    #[test]
+    fn test_abs_path_option_enabled() {
+        let cli = Cli::parse_from(["markbase", "query", "name == 'test'", "--abs-path"]);
+        if let Commands::Query { abs_path, .. } = cli.command {
+            assert_eq!(abs_path, true);
         } else {
             panic!("Expected Query command");
         }
