@@ -1,7 +1,7 @@
 [package]
-name = "mdb"
+name = "markbase"
 description = "A high-performance CLI tool for indexing and querying Markdown files for AI agent. Obsidian-compatible."
-repository = "https://github.com/flyisland/mdb"
+repository = "https://github.com/flyisland/markbase"
 version = "0.1.0-alpha.1"
 edition = "2024"
 license = "MIT"

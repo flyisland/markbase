@@ -41,12 +41,12 @@ kill -9 <PID>
 2. Re-index your notes:
    ```bash
    rm docs.duckdb
-   mdb index -d ./notes --force
+   markbase index -d ./notes --force
    ```
 
 3. Verify search query:
    ```bash
-   mdb search -q "test" --verbose
+   markbase search -q "test" --verbose
    ```
 
 ### Issue: Slow Indexing
@@ -87,18 +87,18 @@ kill -9 <PID>
 
 Run commands with `--verbose` flag:
 ```bash
-mdb index -d ./notes --verbose
-mdb search -q "test" --verbose
+markbase index -d ./notes --verbose
+markbase search -q "test" --verbose
 ```
 
 ### Check Database Contents
 
 ```bash
 # List all indexed files
-mdb search -q "" --format list
+markbase search -q "" --format list
 
 # Get file count
-mdb search -q "" --format json | jq '. | length'
+markbase search -q "" --format json | jq '. | length'
 ```
 
 ### Report Issues

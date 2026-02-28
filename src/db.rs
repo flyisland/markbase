@@ -72,7 +72,7 @@ impl Database {
     pub fn open_existing(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
         if !path.exists() {
             return Err(format!(
-                "Database not found at {}. Please run 'mdb index' first.",
+                "Database not found at {}. Please run 'markbase index' first.",
                 path.display()
             )
             .into());

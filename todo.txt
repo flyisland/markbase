@@ -1,4 +1,4 @@
 required -> should have
-x 不要 --watch, 让agent每次修改文件后都调用 mdb index
+x 不要 --watch, 让agent每次修改文件后都调用 markbase index
 在 duckdb 记录中保留 file hash, 判断文件是否被修改
 new 命令遇到文件已经存在，如何处理？

@@ -13,8 +13,8 @@ use std::sync::Mutex;
 
 use crate::db::Database;
 
-const ENV_BASE_DIR: &str = "MDB_BASE_DIR";
-const ENV_OUTPUT: &str = "MDB_OUTPUT";
+const ENV_BASE_DIR: &str = "MARKBASE_BASE_DIR";
+const ENV_OUTPUT: &str = "MARKBASE_OUTPUT";
 
 const VERSION: &str = concat!(
     env!("CARGO_PKG_VERSION"),
@@ -46,7 +46,7 @@ impl std::str::FromStr for OutputFormat {
 }
 
 #[derive(Parser)]
-#[command(name = "mdb")]
+#[command(name = "markbase")]
 #[command(version = VERSION)]
 #[command(about = "Markdown database CLI - index and query markdown files", long_about = None)]
 struct Cli {
@@ -136,7 +136,7 @@ fn get_database_path(cli_base_dir: Option<PathBuf>) -> Result<PathBuf, String> {
     let absolute = base
         .canonicalize()
         .map_err(|e| format!("Failed to resolve base-dir: {}", e))?;
-    Ok(absolute.join(".mdb/mdb.duckdb"))
+    Ok(absolute.join(".markbase/markbase.duckdb"))
 }
 
 fn get_base_dir_with_cli(cli_base_dir: Option<PathBuf>) -> PathBuf {
@@ -299,7 +299,7 @@ mod tests {
 
     #[test]
     fn test_default_fields_value() {
-        let cli = Cli::parse_from(["mdb", "query", "name == 'test'"]);
+        let cli = Cli::parse_from(["markbase", "query", "name == 'test'"]);
         if let Commands::Query { fields, .. } = cli.command {
             assert_eq!(fields, "path, mtime");
         } else {
@@ -309,7 +309,7 @@ mod tests {
 
     #[test]
     fn test_all_fields_option() {
-        let cli = Cli::parse_from(["mdb", "query", "file.name == 'test'", "-F", "*"]);
+        let cli = Cli::parse_from(["markbase", "query", "file.name == 'test'", "-F", "*"]);
         if let Commands::Query { fields, .. } = cli.command {
             assert_eq!(fields, "*");
         } else {
@@ -320,7 +320,7 @@ mod tests {
     #[test]
     fn test_specific_field_option() {
         let cli = Cli::parse_from([
-            "mdb",
+            "markbase",
             "query",
             "file.name == 'test'",
             "--output-fields",
@@ -335,7 +335,7 @@ mod tests {
 
     #[test]
     fn test_output_format_option() {
-        let cli = Cli::parse_from(["mdb", "query", "file.name == 'test'", "-o", "json"]);
+        let cli = Cli::parse_from(["markbase", "query", "file.name == 'test'", "-o", "json"]);
         if let Commands::Query { format, .. } = cli.command {
             assert_eq!(format, Some(OutputFormat::Json));
         } else {
@@ -345,7 +345,7 @@ mod tests {
 
     #[test]
     fn test_new_command_basic() {
-        let cli = Cli::parse_from(["mdb", "new", "my-note"]);
+        let cli = Cli::parse_from(["markbase", "new", "my-note"]);
         if let Commands::New { name, template } = cli.command {
             assert_eq!(name, "my-note");
             assert_eq!(template, None);
@@ -356,7 +356,7 @@ mod tests {
 
     #[test]
     fn test_new_command_with_template() {
-        let cli = Cli::parse_from(["mdb", "new", "my-note", "--template", "daily"]);
+        let cli = Cli::parse_from(["markbase", "new", "my-note", "--template", "daily"]);
         if let Commands::New { name, template } = cli.command {
             assert_eq!(name, "my-note");
             assert_eq!(template, Some("daily".to_string()));
@@ -367,7 +367,7 @@ mod tests {
 
     #[test]
     fn test_template_list_command() {
-        let cli = Cli::parse_from(["mdb", "template", "list"]);
+        let cli = Cli::parse_from(["markbase", "template", "list"]);
         if let Commands::Template { command } = cli.command {
             match command {
                 TemplateCommands::List { fields, format } => {
@@ -385,7 +385,7 @@ mod tests {
 
     #[test]
     fn test_template_list_with_fields() {
-        let cli = Cli::parse_from(["mdb", "template", "list", "-F", "tags,type"]);
+        let cli = Cli::parse_from(["markbase", "template", "list", "-F", "tags,type"]);
         if let Commands::Template { command } = cli.command {
             match command {
                 TemplateCommands::List { fields, format } => {
@@ -403,7 +403,7 @@ mod tests {
 
     #[test]
     fn test_template_list_with_output_format() {
-        let cli = Cli::parse_from(["mdb", "template", "list", "-o", "json"]);
+        let cli = Cli::parse_from(["markbase", "template", "list", "-o", "json"]);
         if let Commands::Template { command } = cli.command {
             match command {
                 TemplateCommands::List { fields, format } => {
@@ -421,7 +421,7 @@ mod tests {
 
     #[test]
     fn test_template_describe_command() {
-        let cli = Cli::parse_from(["mdb", "template", "describe", "daily"]);
+        let cli = Cli::parse_from(["markbase", "template", "describe", "daily"]);
         if let Commands::Template { command } = cli.command {
             match command {
                 TemplateCommands::List { .. } => {
@@ -438,14 +438,20 @@ mod tests {
 
     #[test]
     fn test_global_output_format() {
-        let cli = Cli::parse_from(["mdb", "--output-format", "json", "query", "name == 'test'"]);
+        let cli = Cli::parse_from([
+            "markbase",
+            "--output-format",
+            "json",
+            "query",
+            "name == 'test'",
+        ]);
         assert_eq!(cli.output_format, Some(OutputFormat::Json));
     }
 
     #[test]
     fn test_query_format_overrides_global() {
         let cli = Cli::parse_from([
-            "mdb",
+            "markbase",
             "--output-format",
             "json",
             "query",
@@ -463,7 +469,7 @@ mod tests {
     #[test]
     fn test_template_list_format_overrides_global() {
         let cli = Cli::parse_from([
-            "mdb",
+            "markbase",
             "--output-format",
             "table",
             "template",

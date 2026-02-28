@@ -1,8 +1,8 @@
-# Markdown Base CLI (mdb)
+# Markdown Base CLI (markbase)
 
 A high-performance CLI tool for indexing and querying Markdown files for AI agent. Obsidian-compatible.
 
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/flyisland/mdb)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/flyisland/markbase)
 
 ## Installation
 
@@ -11,13 +11,13 @@ A high-performance CLI tool for indexing and querying Markdown files for AI agen
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd mdb
+cd markbase
 
 # Build release binary
 cargo build --release
 
-# The binary will be at target/release/mdb
-./target/release/mdb --help
+# The binary will be at target/release/markbase
+./target/release/markbase --help
 ```
 
 ### Prerequisites
@@ -29,10 +29,10 @@ cargo build --release
 
 ```bash
 # Index notes
-mdb index --base-dir ./my-notes
+markbase index --base-dir ./my-notes
 
 # Query notes
-mdb query "has(tags, 'todo')"
+markbase query "has(tags, 'todo')"
 ```
 
 ## Properties
@@ -60,11 +60,11 @@ Every indexed markdown file has two types of properties: native file metadata an
 
 ```bash
 # Query reserved fields
-mdb query "folder == './notes'"
-mdb query "mtime > '2024-01-01'"
-mdb query "size > 10000"
-mdb query "has(tags, 'todo')"
-mdb query "has(links, 'target-page')"
+markbase query "folder == './notes'"
+markbase query "mtime > '2024-01-01'"
+markbase query "size > 10000"
+markbase query "has(tags, 'todo')"
+markbase query "has(links, 'target-page')"
 ```
 
 ### Frontmatter Properties
@@ -84,10 +84,10 @@ date: 2024-01-15
 
 ```bash
 # Query frontmatter properties (resolved automatically)
-mdb query "author == 'John'"
-mdb query "category == 'project'"
-mdb query "status == 'in-progress'"
-mdb query "has(tags, 'design')"
+markbase query "author == 'John'"
+markbase query "category == 'project'"
+markbase query "status == 'in-progress'"
+markbase query "has(tags, 'design')"
 ```
 
 **Note:** If a frontmatter field conflicts with a reserved field (except `tags`), a warning will be shown during indexing and the frontmatter value will be ignored.
@@ -109,9 +109,9 @@ mdb query "has(tags, 'design')"
 Scans Markdown files and indexes to DuckDB.
 
 ```bash
-mdb index --base-dir ./notes        # Index base directory
-mdb index --base-dir ./notes --force     # Force re-index
-mdb index --base-dir ./notes -v     # Verbose
+markbase index --base-dir ./notes        # Index base directory
+markbase index --base-dir ./notes --force     # Force re-index
+markbase index --base-dir ./notes -v     # Verbose
 ```
 
 ### `query`
@@ -119,35 +119,35 @@ Query indexed files with SQL-like expressions.
 
 ```bash
 # Query reserved fields
-mdb query "has(tags, 'project')"
-mdb query "folder =~ '%projects%'"
-mdb query "mtime > '2024-01-01'"
-mdb query "size > 1000"
+markbase query "has(tags, 'project')"
+markbase query "folder =~ '%projects%'"
+markbase query "mtime > '2024-01-01'"
+markbase query "size > 1000"
 
 # Query frontmatter properties
-mdb query "category == 'work'"
-mdb query "author == 'John'"
+markbase query "category == 'work'"
+markbase query "author == 'John'"
 
 # Nested properties
-mdb query "_schema.strict == 'true'"
+markbase query "_schema.strict == 'true'"
 
 # Output formats
-mdb query "has(tags, 'todo')" -o json
-mdb query "has(tags, 'todo')" -o list
+markbase query "has(tags, 'todo')" -o json
+markbase query "has(tags, 'todo')" -o list
 # Query results include count in output (table/list) or metadata (JSON)
 
 # Select fields (default: path, mtime)
-mdb query "name == 'readme'" -F "path,name,size"
-mdb query "category == 'project'" -F "path,author,category"
+markbase query "name == 'readme'" -F "path,name,size"
+markbase query "category == 'project'" -F "path,author,category"
 ```
 
 ### `new`
 Create a new markdown note with optional template.
 
 ```bash
-mdb new my-note                    # Create note in base-dir
-mdb new notes/my-note              # Create in subdirectory
-mdb new my-note --template daily   # Create with template (outputs path + content)
+markbase new my-note                    # Create note in base-dir
+markbase new notes/my-note              # Create in subdirectory
+markbase new my-note --template daily   # Create with template (outputs path + content)
 ```
 
 **With template:** Returns `path:` and `content:` for agent workflow integration:
@@ -172,11 +172,11 @@ Manage templates (MKS schema-based templates).
 MKS (Markdown Knowledge Schema) is a protocol for connecting unstructured conversation flow with structured knowledge bases. See [spec/schema.md](./spec/schema.md) for the complete specification.
 
 ```bash
-mdb template list                  # List all templates (default: table format)
-mdb template list -o json          # List in JSON format
-mdb template list -o list         # List in list format
-mdb template list -F "tags,type"  # List with additional fields
-mdb template describe daily        # Show template content
+markbase template list                  # List all templates (default: table format)
+markbase template list -o json          # List in JSON format
+markbase template list -o list         # List in list format
+markbase template list -F "tags,type"  # List with additional fields
+markbase template describe daily        # Show template content
 ```
 
 **Note:** Templates are expected in the `templates/` directory under base-dir. Default fields shown: `name`, `_schema.description`, `path`.
@@ -195,22 +195,22 @@ mdb template describe daily        # Show template content
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `MDB_BASE_DIR` | Base directory for indexing | `.` |
-| `MDB_OUTPUT` | Output format for query and template list | `table` |
+| `MARKBASE_BASE_DIR` | Base directory for indexing | `.` |
+| `MARKBASE_OUTPUT` | Output format for query and template list | `table` |
 
 **Priority:** CLI arguments > Environment variables > Defaults
 
 ```bash
 # Set environment variables
-export MDB_BASE_DIR=/path/to/notes
-export MDB_OUTPUT=json
+export MARKBASE_BASE_DIR=/path/to/notes
+export MARKBASE_OUTPUT=json
 
 # Use environment variables
-mdb query "has(tags, 'design')"
+markbase query "has(tags, 'design')"
 
 # CLI arguments override environment variables
-mdb index --base-dir /other/dir
-mdb --output-format json query "..."
+markbase index --base-dir /other/dir
+markbase --output-format json query "..."
 ```
 
 ## Features
@@ -275,7 +275,7 @@ Run tests with: `cargo test`
 ## Project Structure
 
 ```
-mdb/
+markbase/
 ├── Cargo.toml           # Rust dependencies and metadata
 ├── Cargo.lock           # Dependency lock file
 ├── README.md            # User documentation
