@@ -225,12 +225,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 OutputFormat::List => "list",
             };
             let compiled = query::build_sql(&query, &fields).map_err(|e| e.to_string())?;
-            if compiled.contains("_arg_should_not_be_quoted") {
-                return Err("Error: property name in function should not be quoted. Use function(property_name, ...) instead of function('property_name', ...)".into());
-            }
             let db = Mutex::new(Database::open_existing(&db_path)?);
             let db = db.lock().unwrap();
-            let results = db.query(&compiled, &fields, limit)?;
+            let results = db
+                .query(&compiled, &fields, limit)
+                .map_err(|e| db::convert_duckdb_error(&e.to_string(), &query))?;
             query::output_results(&results, format_str, &field_names)?;
         }
         Commands::New { name, template } => {
@@ -260,12 +259,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let fields_str = output_fields.join(", ");
                 let query = "folder=='templates'".to_string();
                 let compiled = query::build_sql(&query, &fields_str).map_err(|e| e.to_string())?;
-                if compiled.contains("_arg_should_not_be_quoted") {
-                    return Err("Error: property name in function should not be quoted. Use function(property_name, ...) instead of function('property_name', ...)".into());
-                }
                 let db = Mutex::new(Database::open_existing(&db_path)?);
                 let db = db.lock().unwrap();
-                let results = db.query(&compiled, &fields_str, 1000)?;
+                let results = db
+                    .query(&compiled, &fields_str, 1000)
+                    .map_err(|e| db::convert_duckdb_error(&e.to_string(), &query))?;
 
                 let effective_format = format.or(cli.output_format).unwrap_or(OutputFormat::Json);
                 let format_str = match effective_format {

@@ -1,6 +1,41 @@
 use duckdb::{Connection, params};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+
+pub fn convert_duckdb_error(error: &str, query: &str) -> String {
+    if let Some(caps) = Regex::new(r#"Referenced column "([^"]+)" not found"#)
+        .ok()
+        .and_then(|r| r.captures(error))
+    {
+        let value = caps.get(1).map_or("", |m| m.as_str());
+        return format!(
+            "{} error: expected a string (use quotes), got unquoted identifier '{}'",
+            query, value
+        );
+    }
+
+    if let Some(caps) = Regex::new(
+        r"Conversion Error: Could not convert string '([^']+)' to (INT32|INTEGER|UINT.*)",
+    )
+    .ok()
+    .and_then(|r| r.captures(error))
+    {
+        let value = caps.get(1).map_or("", |m| m.as_str());
+        return format!(
+            "{} error: expected a number, got a string '{}'",
+            query, value
+        );
+    }
+
+    if Regex::new(r#"Binder Error: Cannot compare values of type (VARCHAR|TEXT) and (INTEGER_LITERAL|INTEGER)"#)
+        .is_ok_and(|r| r.is_match(error))
+    {
+        return format!("{} error: expected a string, got a number", query);
+    }
+
+    error.to_string()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Document {

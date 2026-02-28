@@ -130,6 +130,7 @@ See [README.md](./README.md#project-structure) for the complete project structur
 - `MDB_OUTPUT` environment variable support
 - Global `--output-format` / `-o` option for query and template list
 - `new --template` outputs path + content for agent workflow
+- Query type error transformation (compile-time + runtime)
 
 ### Technical Debt / Future Improvements
 - Add integration tests for full query pipeline
@@ -144,9 +145,9 @@ See [README.md](./README.md#project-structure) for the complete project structur
 | -------------- | ------------------------------------------------------------------- |
 | `tokenizer.rs` | Field tokenization, operators, literals, functions, parentheses     |
 | `parser.rs`    | Expression parsing, operators, grouping, precedence, single equals  |
-| `compiler.rs`  | SQL generation, field resolution, all operators                     |
+| `compiler.rs`  | SQL generation, field resolution, all operators, type checking     |
 | `extractor.rs` | Frontmatter, tags, wiki-links, embeds, edge cases                   |
-| `db.rs`        | Database operations, queries, CRUD                                  |
+| `db.rs`        | Database operations, queries, CRUD, error transformation            |
 | `scanner.rs`   | File scanning, indexing, backlinks, subdirectories                  |
 | `query/mod.rs` | Output formatting (table, JSON, list)                               |
 | `creator.rs`   | Template resolution, file creation                                  |
