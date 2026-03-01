@@ -78,7 +78,6 @@ fn format_type_error(
         FieldType::Integer => "number",
         FieldType::Timestamp => "timestamp",
         FieldType::Array => "array",
-        FieldType::Json => "JSON",
     };
     format!(
         "{} error: expected a {}, got a {}",

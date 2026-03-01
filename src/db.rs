@@ -1,4 +1,4 @@
-use duckdb::{Connection, params};
+use duckdb::{params, Connection};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -154,23 +154,6 @@ impl Database {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn get_document_by_name(
-        &self,
-        name: &str,
-    ) -> Result<Option<Document>, Box<dyn std::error::Error>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT * FROM documents WHERE name = ?")?;
-        let mut rows = stmt.query(params![name])?;
-
-        if let Some(row) = rows.next()? {
-            Ok(Some(self.row_to_document(row)?))
-        } else {
-            Ok(None)
-        }
-    }
-
     pub fn get_documents_by_name(
         &self,
         name: &str,
@@ -205,23 +188,6 @@ impl Database {
         self.conn
             .execute("DELETE FROM documents WHERE path = ?", params![path])?;
         Ok(())
-    }
-
-    #[allow(dead_code)]
-    pub fn get_document_by_path(
-        &self,
-        path: &str,
-    ) -> Result<Option<Document>, Box<dyn std::error::Error>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT * FROM documents WHERE path = ?")?;
-        let mut rows = stmt.query(params![path])?;
-
-        if let Some(row) = rows.next()? {
-            Ok(Some(self.row_to_document(row)?))
-        } else {
-            Ok(None)
-        }
     }
 
     fn row_to_document(&self, row: &duckdb::Row) -> Result<Document, Box<dyn std::error::Error>> {

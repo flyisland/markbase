@@ -211,30 +211,6 @@ fn update_backlinks(
     Ok(())
 }
 
-#[allow(dead_code)]
-pub fn update_backlinks_for_file(
-    db: &Database,
-    file_name: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let link_map = db.get_all_links()?;
-    let mut backlinks: std::collections::HashMap<String, Vec<String>> =
-        std::collections::HashMap::new();
-
-    for (path, links) in &link_map {
-        for link in links {
-            let link_name = link.trim_end_matches(['|', '#']).to_string();
-            backlinks.entry(link_name).or_default().push(path.clone());
-        }
-    }
-
-    if let Some(mut doc) = db.get_document_by_name(file_name)? {
-        doc.backlinks = backlinks.get(&doc.name).cloned().unwrap_or_default();
-        db.upsert_document(&doc)?;
-    }
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

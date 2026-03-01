@@ -1,11 +1,9 @@
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
 pub enum FieldType {
     String,
     Integer,
     Timestamp,
     Array,
-    Json,
 }
 
 pub fn get_reserved_field_type(field: &str) -> Option<FieldType> {
