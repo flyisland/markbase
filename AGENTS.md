@@ -60,9 +60,18 @@ For command usage, options, and examples, see [README.md](./README.md#commands).
 - **Output**: Timestamps displayed as `YYYY-MM-DD HH:MM:SS`; supports table, json, list formats.
 - **SQL safety**: Query compiler generates parameterized SQL to prevent injection.
 
-### Command: `new`
+### Command: `note`
+Manages notes within the vault.
+
+#### `note new`
 - Creates a markdown note at the given path under base-dir.
 - If `--template` is provided, copies and renders the named template from `templates/` under base-dir.
+
+#### `note rename`
+- Renames a note by its name (not path).
+- Fails if the note name is ambiguous (multiple files with same name) or if the new name already exists.
+- Updates all wiki-links pointing to the old name across all files in the vault.
+- Preserves aliases and section anchors in links.
 
 ## 5. Module Responsibilities
 
@@ -76,7 +85,9 @@ For command usage, options, and examples, see [README.md](./README.md#commands).
 
 - **`db.rs`** — All DuckDB interaction. Owns the connection and schema initialization. Uses `INSERT OR REPLACE` for upserts. Row values are accessed via `duckdb::types::Value` — be aware that column index order must match the schema definition exactly.
 
-- **`creator.rs`** — Handles the `new` command. Resolves the template path under `templates/` in base-dir, copies it, and substitutes template variables. Fails explicitly if the target file already exists.
+- **`creator.rs`** — Handles the `note new` command. Resolves the template path under `templates/` in base-dir, copies it, and substitutes template variables. Fails explicitly if the target file already exists.
+
+- **`renamer.rs`** — Handles the `note rename` command. Looks up notes by name, validates uniqueness, renames the file on disk, updates all wiki-links pointing to the old name across all files, and reindexes affected documents. Preserves aliases and section anchors in links.
 
 - **`query/tokenizer.rs`** — Converts a raw query string into a flat token stream. Distinguishes `Function` tokens (identifiers followed by `(`) from `Field` tokens at this stage.
 
@@ -122,14 +133,15 @@ See [README.md](./README.md#project-structure) for the complete project structur
 - Rust migration complete
 - CLI with clap derive macros
 - Incremental updates via mtime comparison
-- Note creation with templates (new command)
+- Note creation with templates (`note new` command)
+- Note renaming with link updates (`note rename` command)
 - Single equals operator (=) support
 - Simplified field resolution (no file.*/note.* namespaces)
 - Frontmatter conflict warnings (reserved fields except tags)
 - `template describe` command
 - `MDB_OUTPUT` environment variable support
 - Global `--output-format` / `-o` option for query and template list
-- `new --template` outputs path + content for agent workflow
+- `note new --template` outputs path + content for agent workflow
 - Query type error transformation (compile-time + runtime)
 
 ### Technical Debt / Future Improvements
@@ -151,6 +163,7 @@ See [README.md](./README.md#project-structure) for the complete project structur
 | `scanner.rs`   | File scanning, indexing, backlinks, subdirectories                  |
 | `query/mod.rs` | Output formatting (table, JSON, list)                               |
 | `creator.rs`   | Template resolution, file creation                                  |
+| `renamer.rs`   | Link updates, note renaming, edge cases                             |
 | `main.rs`      | CLI options, default values, parsing                                |
 
 ## 11. Development Workflow (Agent Guidelines)

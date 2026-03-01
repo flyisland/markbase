@@ -4,6 +4,7 @@ mod db;
 mod describe;
 mod extractor;
 mod query;
+mod renamer;
 mod scanner;
 
 use clap::{Parser, Subcommand, ValueEnum};
@@ -99,6 +100,20 @@ enum Commands {
         #[arg(long = "abs-path")]
         abs_path: bool,
     },
+    #[command(about = "Manage notes")]
+    Note {
+        #[command(subcommand)]
+        command: NoteCommands,
+    },
+    #[command(about = "Manage templates")]
+    Template {
+        #[command(subcommand)]
+        command: TemplateCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum NoteCommands {
     #[command(about = "Create a new markdown note with optional template")]
     New {
         name: String,
@@ -106,11 +121,8 @@ enum Commands {
         #[arg(short, long)]
         template: Option<String>,
     },
-    #[command(about = "Manage templates")]
-    Template {
-        #[command(subcommand)]
-        command: TemplateCommands,
-    },
+    #[command(about = "Rename a note and update all links to it")]
+    Rename { old_name: String, new_name: String },
 }
 
 #[derive(Subcommand)]
@@ -257,16 +269,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 abs_path,
             )?;
         }
-        Commands::New { name, template } => {
-            let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
-            let created = creator::create_note(&base, &name, template.as_deref())?;
-            if template.is_some() {
-                println!("path: {}", created.path.display());
-                println!("content: {}", created.content);
-            } else {
-                println!("Created: {}", created.path.display());
+        Commands::Note { command } => match command {
+            NoteCommands::New { name, template } => {
+                let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
+                let created = creator::create_note(&base, &name, template.as_deref())?;
+                if template.is_some() {
+                    println!("path: {}", created.path.display());
+                    println!("content: {}", created.content);
+                } else {
+                    println!("Created: {}", created.path.display());
+                }
             }
-        }
+            NoteCommands::Rename { old_name, new_name } => {
+                let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
+                let db = Mutex::new(Database::open_existing(&db_path)?);
+                let db = db.lock().unwrap();
+                let result = renamer::rename_note(&base, &db, &old_name, &new_name)?;
+                println!("Renamed: {} → {}", result.old_path, result.new_path);
+                if result.updated_links > 0 {
+                    println!("Updated links in {} file(s)", result.updated_links);
+                }
+            }
+        },
         Commands::Template { command } => match command {
             TemplateCommands::List { fields, format } => {
                 let mut output_fields = vec![
@@ -380,24 +404,50 @@ mod tests {
     }
 
     #[test]
-    fn test_new_command_basic() {
-        let cli = Cli::parse_from(["markbase", "new", "my-note"]);
-        if let Commands::New { name, template } = cli.command {
-            assert_eq!(name, "my-note");
-            assert_eq!(template, None);
+    fn test_note_new_command_basic() {
+        let cli = Cli::parse_from(["markbase", "note", "new", "my-note"]);
+        if let Commands::Note { command } = cli.command {
+            match command {
+                NoteCommands::New { name, template } => {
+                    assert_eq!(name, "my-note");
+                    assert_eq!(template, None);
+                }
+                _ => panic!("Expected New command"),
+            }
         } else {
-            panic!("Expected New command");
+            panic!("Expected Note command");
         }
     }
 
     #[test]
-    fn test_new_command_with_template() {
-        let cli = Cli::parse_from(["markbase", "new", "my-note", "--template", "daily"]);
-        if let Commands::New { name, template } = cli.command {
-            assert_eq!(name, "my-note");
-            assert_eq!(template, Some("daily".to_string()));
+    fn test_note_new_command_with_template() {
+        let cli = Cli::parse_from(["markbase", "note", "new", "my-note", "--template", "daily"]);
+        if let Commands::Note { command } = cli.command {
+            match command {
+                NoteCommands::New { name, template } => {
+                    assert_eq!(name, "my-note");
+                    assert_eq!(template, Some("daily".to_string()));
+                }
+                _ => panic!("Expected New command"),
+            }
         } else {
-            panic!("Expected New command");
+            panic!("Expected Note command");
+        }
+    }
+
+    #[test]
+    fn test_note_rename_command() {
+        let cli = Cli::parse_from(["markbase", "note", "rename", "old-name", "new-name"]);
+        if let Commands::Note { command } = cli.command {
+            match command {
+                NoteCommands::Rename { old_name, new_name } => {
+                    assert_eq!(old_name, "old-name");
+                    assert_eq!(new_name, "new-name");
+                }
+                _ => panic!("Expected Rename command"),
+            }
+        } else {
+            panic!("Expected Note command");
         }
     }
 

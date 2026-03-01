@@ -141,13 +141,16 @@ markbase query "name == 'readme'" -F "path,name,size"
 markbase query "category == 'project'" -F "path,author,category"
 ```
 
-### `new`
+### `note`
+Manage notes (create, rename).
+
+#### `note new`
 Create a new markdown note with optional template.
 
 ```bash
-markbase new my-note                    # Create note in base-dir
-markbase new notes/my-note              # Create in subdirectory
-markbase new my-note --template daily   # Create with template (outputs path + content)
+markbase note new my-note                    # Create note in base-dir
+markbase note new notes/my-note              # Create in subdirectory
+markbase note new my-note --template daily   # Create with template (outputs path + content)
 ```
 
 **With template:** Returns `path:` and `content:` for agent workflow integration:
@@ -164,6 +167,27 @@ tags: []
 ## 今日记录
 
 ---
+```
+
+#### `note rename`
+Rename a note and update all wiki-links pointing to it.
+
+```bash
+markbase note rename old-name new-name
+```
+
+**Behavior:**
+- Looks up note by name (not path)
+- Fails if note name is ambiguous (multiple files with same name)
+- Fails if new name already exists
+- Updates all `[[old-name]]` links to `[[new-name]]` in all files
+- Preserves aliases and section anchors: `[[old-name|alias]]` → `[[new-name|alias]]`
+
+**Example:**
+```bash
+markbase note rename architecture system-design
+# Renames architecture.md → system-design.md
+# Updates all [[architecture]] links to [[system-design]]
 ```
 
 ### `template`
@@ -286,6 +310,7 @@ markbase/
 │   ├── scanner.rs       # File discovery and indexing
 │   ├── extractor.rs     # Markdown content extraction
 │   ├── creator.rs       # Note creation with templates
+│   ├── renamer.rs       # Note renaming with link updates
 │   ├── describe.rs      # Template description
 │   ├── lib.rs           # Library exports
 │   └── query/           # Query system
