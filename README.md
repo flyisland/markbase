@@ -28,8 +28,10 @@ cargo build --release
 ## Quick Start
 
 ```bash
+export MARKBASE_BASE_DIR=./my-notes
+
 # Index notes
-markbase index --base-dir ./my-notes
+markbase index
 
 # Query notes
 markbase query "has(tags, 'todo')"
@@ -109,9 +111,9 @@ markbase query "has(tags, 'design')"
 Scans Markdown files and indexes to DuckDB.
 
 ```bash
-markbase index --base-dir ./notes              # Index base directory
-markbase index --base-dir ./notes --force      # Delete database and rebuild from scratch
-markbase index --base-dir ./notes -v           # Verbose output
+markbase index              # Index base directory
+markbase index --force      # Delete database and rebuild from scratch
+markbase index -v           # Verbose output
 ```
 
 ### `query`
@@ -217,24 +219,27 @@ markbase template describe daily        # Show template content
 
 ## Environment Variables
 
+`MARKBASE_BASE_DIR` is the **primary way** to configure your vault. Set it once in your shell profile (e.g., `~/.bashrc`, `~/.zshrc`) and forget it:
+
+```bash
+export MARKBASE_BASE_DIR=/path/to/your/notes
+```
+
+All `markbase` commands will use this directory by default. No need to pass `--base-dir` with every command.
+
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `MARKBASE_BASE_DIR` | Base directory for indexing | `.` |
+| `MARKBASE_BASE_DIR` | Vault (base) directory for indexing | `.` (current directory) |
 | `MARKBASE_OUTPUT_FORMAT` | Output format for query and template list | `table` |
 
 **Priority:** CLI arguments > Environment variables > Defaults
 
 ```bash
-# Set environment variables
 export MARKBASE_BASE_DIR=/path/to/notes
 export MARKBASE_OUTPUT_FORMAT=json
 
-# Use environment variables
+markbase index
 markbase query "has(tags, 'design')"
-
-# CLI arguments override environment variables
-markbase index --base-dir /other/dir
-markbase --output-format json query "..."
 ```
 
 ## Features
@@ -257,8 +262,9 @@ markbase --output-format json query "..."
 cargo build
 
 # Run in development
-cargo run -- index --base-dir ./notes
-cargo run -- query "file.name == 'readme'"
+export MARKBASE_BASE_DIR=./notes
+cargo run -- index
+cargo run -- query "name == 'readme'"
 
 # Run tests
 cargo test
@@ -270,7 +276,7 @@ cargo test -- --nocapture
 cargo build --release
 
 # Run with verbose output
-cargo run -- index --base-dir ./notes -v
+cargo run -- index -v
 ```
 
 ## Testing
