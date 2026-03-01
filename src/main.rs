@@ -83,22 +83,19 @@ enum Commands {
         #[arg(short, long)]
         verbose: bool,
     },
-    #[command(about = "Query indexed files with SQL-like expressions")]
+    #[command(about = "Query indexed notes")]
     Query {
-        #[arg(value_name = "QUERY")]
-        query: String,
+        #[arg(value_name = "SQL")]
+        sql: Option<String>,
 
         #[arg(short = 'o')]
         format: Option<OutputFormat>,
 
-        #[arg(short = 'F', long = "output-fields", default_value = "path, mtime")]
-        fields: String,
-
-        #[arg(short, long, default_value_t = 1000)]
-        limit: usize,
-
         #[arg(long = "abs-path")]
         abs_path: bool,
+
+        #[arg(long = "dry-run", help = "Show translated SQL without executing")]
+        dry_run: bool,
     },
     #[command(about = "Manage notes")]
     Note {
@@ -240,26 +237,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
         Commands::Query {
-            query,
+            sql,
             format,
-            limit,
-            fields,
             abs_path,
+            dry_run,
         } => {
-            let field_names: Vec<String> =
-                fields.split(',').map(|s| s.trim().to_string()).collect();
             let effective_format = get_output_format(format.or(cli.output_format));
             let format_str = match effective_format {
                 OutputFormat::Table => "table",
                 OutputFormat::Json => "json",
                 OutputFormat::List => "list",
             };
-            let compiled = query::build_sql(&query, &fields).map_err(|e| e.to_string())?;
+
+            if dry_run {
+                let translated =
+                    query::translate_query(sql.as_deref()).map_err(|e| e.to_string())?;
+                println!("{}", translated);
+                return Ok(());
+            }
+
             let db = Mutex::new(Database::open_existing(&db_path)?);
             let db = db.lock().unwrap();
-            let results = db
-                .query(&compiled, &fields, limit)
-                .map_err(|e| db::convert_duckdb_error(&e.to_string(), &query))?;
+            let results = query::execute_query(&db, sql.as_deref()).map_err(|e| e.to_string())?;
+
+            let field_names = vec![
+                "path".to_string(),
+                "name".to_string(),
+                "mtime".to_string(),
+                "size".to_string(),
+                "tags".to_string(),
+            ];
 
             let base_dir = if abs_path {
                 Some(get_base_dir_absolute_with_cli(cli.base_dir.clone())?)
@@ -310,14 +317,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     output_fields.extend(user_fields);
                 }
 
-                let fields_str = output_fields.join(", ");
-                let query = "folder=='templates'".to_string();
-                let compiled = query::build_sql(&query, &fields_str).map_err(|e| e.to_string())?;
+                let sql_expr = "folder=='templates'".to_string();
                 let db = Mutex::new(Database::open_existing(&db_path)?);
-                let db = db.lock().unwrap();
-                let results = db
-                    .query(&compiled, &fields_str, 1000)
-                    .map_err(|e| db::convert_duckdb_error(&e.to_string(), &query))?;
+                let db_ref = db.lock().unwrap();
+                let results =
+                    query::execute_query(&db_ref, Some(&sql_expr)).map_err(|e| e.to_string())?;
 
                 let effective_format = format.or(cli.output_format).unwrap_or(OutputFormat::Json);
                 let format_str = match effective_format {
@@ -343,36 +347,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_default_fields_value() {
+    fn test_query_with_sql() {
         let cli = Cli::parse_from(["markbase", "query", "name == 'test'"]);
-        if let Commands::Query { fields, .. } = cli.command {
-            assert_eq!(fields, "path, mtime");
+        if let Commands::Query { sql, .. } = cli.command {
+            assert_eq!(sql, Some("name == 'test'".to_string()));
         } else {
             panic!("Expected Query command");
         }
     }
 
     #[test]
-    fn test_all_fields_option() {
-        let cli = Cli::parse_from(["markbase", "query", "file.name == 'test'", "-F", "*"]);
-        if let Commands::Query { fields, .. } = cli.command {
-            assert_eq!(fields, "*");
-        } else {
-            panic!("Expected Query command");
-        }
-    }
-
-    #[test]
-    fn test_specific_field_option() {
-        let cli = Cli::parse_from([
-            "markbase",
-            "query",
-            "file.name == 'test'",
-            "--output-fields",
-            "file.name",
-        ]);
-        if let Commands::Query { fields, .. } = cli.command {
-            assert_eq!(fields, "file.name");
+    fn test_query_without_sql() {
+        let cli = Cli::parse_from(["markbase", "query"]);
+        if let Commands::Query { sql, .. } = cli.command {
+            assert_eq!(sql, None);
         } else {
             panic!("Expected Query command");
         }
@@ -380,7 +368,7 @@ mod tests {
 
     #[test]
     fn test_output_format_option() {
-        let cli = Cli::parse_from(["markbase", "query", "file.name == 'test'", "-o", "json"]);
+        let cli = Cli::parse_from(["markbase", "query", "name == 'test'", "-o", "json"]);
         if let Commands::Query { format, .. } = cli.command {
             assert_eq!(format, Some(OutputFormat::Json));
         } else {
@@ -403,6 +391,16 @@ mod tests {
         let cli = Cli::parse_from(["markbase", "query", "name == 'test'", "--abs-path"]);
         if let Commands::Query { abs_path, .. } = cli.command {
             assert_eq!(abs_path, true);
+        } else {
+            panic!("Expected Query command");
+        }
+    }
+
+    #[test]
+    fn test_dry_run_option() {
+        let cli = Cli::parse_from(["markbase", "query", "name == 'test'", "--dry-run"]);
+        if let Commands::Query { dry_run, .. } = cli.command {
+            assert_eq!(dry_run, true);
         } else {
             panic!("Expected Query command");
         }

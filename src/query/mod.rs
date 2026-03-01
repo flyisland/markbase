@@ -1,10 +1,11 @@
-pub mod compiler;
-pub mod parser;
-pub mod tokenizer;
+pub mod detector;
+pub mod error_map;
+pub mod executor;
+pub mod translator;
 
 use std::path::Path;
 
-pub use compiler::build_sql;
+pub use executor::{execute_query, translate_query};
 
 pub fn output_results(
     results: &[Vec<String>],

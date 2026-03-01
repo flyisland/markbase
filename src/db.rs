@@ -1,41 +1,6 @@
 use duckdb::{Connection, params};
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-
-pub fn convert_duckdb_error(error: &str, query: &str) -> String {
-    if let Some(caps) = Regex::new(r#"Referenced column "([^"]+)" not found"#)
-        .ok()
-        .and_then(|r| r.captures(error))
-    {
-        let value = caps.get(1).map_or("", |m| m.as_str());
-        return format!(
-            "{} error: expected a string (use quotes), got unquoted identifier '{}'",
-            query, value
-        );
-    }
-
-    if let Some(caps) = Regex::new(
-        r"Conversion Error: Could not convert string '([^']+)' to (INT32|INTEGER|UINT.*)",
-    )
-    .ok()
-    .and_then(|r| r.captures(error))
-    {
-        let value = caps.get(1).map_or("", |m| m.as_str());
-        return format!(
-            "{} error: expected a number, got a string '{}'",
-            query, value
-        );
-    }
-
-    if Regex::new(r#"Binder Error: Cannot compare values of type (VARCHAR|TEXT) and (INTEGER_LITERAL|INTEGER)"#)
-        .is_ok_and(|r| r.is_match(error))
-    {
-        return format!("{} error: expected a string, got a number", query);
-    }
-
-    error.to_string()
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Note {
@@ -289,10 +254,8 @@ impl Database {
         &self,
         sql: &str,
         _fields: &str,
-        limit: usize,
+        _limit: usize,
     ) -> Result<Vec<Vec<String>>, Box<dyn std::error::Error>> {
-        let sql = format!("{} LIMIT {}", sql, limit);
-
         let mut results = Vec::new();
 
         let con = self
@@ -300,7 +263,7 @@ impl Database {
             .try_clone()
             .map_err(|e| format!("Clone error: {}", e))?;
 
-        let mut stmt = con.prepare(&sql)?;
+        let mut stmt = con.prepare(sql)?;
         stmt.execute([])?;
         let column_count = stmt.column_count();
         let column_names: Vec<String> = (0..column_count)
@@ -552,7 +515,7 @@ mod tests {
             db.upsert_note(&note).unwrap();
         }
 
-        let results = db.query("SELECT * FROM notes", "*", 5).unwrap();
+        let results = db.query("SELECT * FROM notes LIMIT 5", "*", 5).unwrap();
         assert_eq!(results.len(), 5);
 
         cleanup_db(&db_path);

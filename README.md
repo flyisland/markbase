@@ -33,8 +33,11 @@ export MARKBASE_BASE_DIR=./my-notes
 # Index notes
 markbase index
 
-# Query notes
-markbase query "has(tags, 'todo')"
+# Query notes (expression mode)
+markbase query "author == 'Tom'"
+
+# Query notes (SQL mode)
+markbase query "SELECT path, name FROM notes WHERE list_contains(tags, 'todo')"
 ```
 
 ## Properties
@@ -54,7 +57,6 @@ Every indexed markdown note has two types of properties: native note metadata an
 | `size` | INTEGER | Note size in bytes |
 | `ctime` | TIMESTAMP | Created time |
 | `mtime` | TIMESTAMP | Modified time |
-| `content` | TEXT | Full note content |
 | `tags` | VARCHAR[] | Array of `#tags` (from content AND frontmatter) |
 | `links` | VARCHAR[] | Array of `[[wiki-links]]` |
 | `backlinks` | VARCHAR[] | Notes linking to this note |
@@ -65,8 +67,8 @@ Every indexed markdown note has two types of properties: native note metadata an
 markbase query "folder == './notes'"
 markbase query "mtime > '2024-01-01'"
 markbase query "size > 10000"
-markbase query "has(tags, 'todo')"
-markbase query "has(links, 'target-page')"
+markbase query "list_contains(tags, 'todo')"
+markbase query "list_contains(links, 'target-page')"
 ```
 
 ### Frontmatter Properties
@@ -89,7 +91,7 @@ date: 2024-01-15
 markbase query "author == 'John'"
 markbase query "category == 'project'"
 markbase query "status == 'in-progress'"
-markbase query "has(tags, 'design')"
+markbase query "list_contains(tags, 'design')"
 ```
 
 **Note:** If a frontmatter field conflicts with a reserved field (except `tags`), a warning will be shown during indexing and the frontmatter value will be ignored.
@@ -99,11 +101,11 @@ markbase query "has(tags, 'design')"
 | Frontmatter Type | Query Example |
 |-----------------|---------------|
 | String | `author == 'John'` |
-| Number | `year >= 2024` |
+| Number | `year::INTEGER >= 2024` |
 | Boolean | `published == true` |
-| Array | `has(tags, 'design')` |
+| Array | `list_contains(tags, 'design')` |
 | Date | `date > '2024-01-01'` |
-| Exists | `exists(author)` |
+| Exists | `author IS NOT NULL` |
 
 ## Commands
 
@@ -117,30 +119,42 @@ markbase index -v           # Verbose output
 ```
 
 ### `query`
-Query indexed notes with SQL-like expressions.
+Query indexed notes with native DuckDB SQL or expression syntax.
+
+**Two Input Modes:**
+- **Expression mode** (default): Input is wrapped in `SELECT ... FROM notes WHERE ...`
+- **SQL mode**: Input starts with `SELECT`, passed through with field translation
 
 ```bash
-# Query reserved fields
-markbase query "has(tags, 'project')"
-markbase query "folder =~ '%projects%'"
+# Expression mode (WHERE clause only)
+markbase query "author == 'Tom'"
+markbase query "list_contains(tags, 'project')"
 markbase query "mtime > '2024-01-01'"
-markbase query "size > 1000"
 
-# Query frontmatter properties
-markbase query "category == 'work'"
-markbase query "author == 'John'"
+# Expression mode with ORDER BY / LIMIT
+markbase query "author == 'Tom' ORDER BY mtime DESC LIMIT 10"
 
-# Nested properties
-markbase query "_schema.strict == 'true'"
+# SQL mode (full SELECT statement)
+markbase query "SELECT path, name, author FROM notes WHERE author = 'Tom'"
+
+# Show translated SQL without executing
+markbase query --dry-run "author == 'Tom'"
 
 # Output formats
-markbase query "has(tags, 'todo')" -o json
-markbase query "has(tags, 'todo')" -o list
-# Query results include count in output (table/list) or metadata (JSON)
+markbase query "list_contains(tags, 'todo')" -o json
+markbase query "list_contains(tags, 'todo')" -o list
+```
 
-# Select fields (default: path, mtime)
-markbase query "name == 'readme'" -F "path,name,size"
-markbase query "category == 'project'" -F "path,author,category"
+**Field Translation:**
+- Reserved fields (`path`, `name`, `mtime`, etc.) pass through unchanged
+- Frontmatter fields are translated to `json_extract_string(properties, '$."field"')`
+- Nested paths: `_schema.strict` → `json_extract_string(properties, '$."_schema"."strict"')`
+
+**Type Casts:**
+For non-string comparisons, use explicit casts:
+```bash
+markbase query "year::INTEGER >= 2024"
+markbase query "created::TIMESTAMP > '2024-01-01'"
 ```
 
 ### `note`

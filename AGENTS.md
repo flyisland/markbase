@@ -89,11 +89,13 @@ Manages notes within the vault.
 
 - **`renamer.rs`** — Handles the `note rename` command. Looks up notes by name, validates uniqueness, renames the file on disk, updates all wiki-links pointing to the old name across all files, and reindexes affected notes. Preserves aliases and section anchors in links.
 
-- **`query/tokenizer.rs`** — Converts a raw query string into a flat token stream. Distinguishes `Function` tokens (identifiers followed by `(`) from `Field` tokens at this stage.
+- **`query/detector.rs`** — Detects query input mode (SQL vs expression) and validates safety. SQL mode triggers when input starts with `SELECT`; expression mode wraps input in `SELECT ... FROM notes WHERE ...`. Safety validation rejects non-SELECT statements and multi-statement injection.
 
-- **`query/parser.rs`** — Recursive descent parser. Builds an AST from the token stream. Enforces operator precedence: `and` binds tighter than `or`. Grouping with parentheses is supported.
+- **`query/translator.rs`** — Translates field names in SQL text. Reserved fields pass through unchanged; frontmatter fields are translated to `json_extract_string(properties, ...)`. Handles nested paths (e.g. `a.b.c`) and preserves type casts.
 
-- **`query/compiler.rs`** — Walks the AST and emits parameterized DuckDB SQL. Field resolution happens here: reserved fields map directly to column names; all others map to `json_extract_string(properties, ...)`. Nested dot-notation (e.g. `a.b.c`) is handled by splitting on `.` and constructing the JSON path.
+- **`query/error_map.rs`** — Maps DuckDB error messages to user-friendly messages. Covers conversion errors, unknown columns, JSON path errors, and syntax errors.
+
+- **`query/executor.rs`** — Orchestrates query execution. Calls detector, translator, and executes the final SQL against DuckDB. Wraps errors through error_map.
 
 - **`query/mod.rs`** — Output formatting only (table, json, list). No query logic lives here.
 
@@ -108,7 +110,7 @@ Manages notes within the vault.
 - **Graceful Shutdown**: Database connection closed when `Database` struct is dropped.
 - **Error Handling**: Comprehensive use of `Result` type with `?` operator for propagation.
 - **Incremental Updates**: Compare `mtime` to skip unchanged notes.
-- **Parameterized Queries**: Query compiler uses parameterized queries to prevent SQL injection.
+- **Query Safety**: Only SELECT statements allowed; multi-statement injection rejected at detection stage.
 - **Thread Safety**: Uses `Mutex<Database>` for thread-safe access in multi-threaded contexts.
 
 ## 8. Development Commands
@@ -123,11 +125,11 @@ See [README.md](./README.md#project-structure) for the complete project structur
 
 ### Completed ✅
 - Core indexing functionality
-- Query system (SQL-like expressions)
-- Field-based queries (reserved fields + frontmatter, simplified resolution)
-- Query operators (==, !=, >, <, >=, <=, =~, =)
-- Logical operators (and, or) with precedence
-- has() function for array containment
+- Query system with native DuckDB SQL support
+- Two input modes: SQL mode (starts with SELECT) and expression mode
+- Field translation: reserved fields pass through, frontmatter fields use `json_extract_string`
+- Safety validation: non-SELECT statements and multi-statement injection rejected
+- `--dry-run` flag to show translated SQL without executing
 - Multiple output formats (table, json, list)
 - Backlink tracking
 - Rust migration complete
@@ -135,16 +137,13 @@ See [README.md](./README.md#project-structure) for the complete project structur
 - Incremental updates via mtime comparison
 - Note creation with templates (`note new` command)
 - Note renaming with link updates (`note rename` command)
-- Single equals operator (=) support
-- Simplified field resolution (no file.*/note.* namespaces)
-- Frontmatter conflict warnings (reserved fields except tags)
 - `template describe` command
 - `MDB_OUTPUT` environment variable support
 - Global `--output-format` / `-o` option for query and template list
 - `note new --template` outputs path + content for agent workflow
-- Query type error transformation (compile-time + runtime)
 
 ### Technical Debt / Future Improvements
+- Add special handling for `list_contains()` with frontmatter array fields
 - Add integration tests for full query pipeline
 - Benchmark performance against 10,000 notes goal
 - Consider parallel processing for indexing
@@ -155,11 +154,12 @@ See [README.md](./README.md#project-structure) for the complete project structur
 
 | Module         | Coverage                                                            |
 | -------------- | ------------------------------------------------------------------- |
-| `tokenizer.rs` | Field tokenization, operators, literals, functions, parentheses     |
-| `parser.rs`    | Expression parsing, operators, grouping, precedence, single equals  |
-| `compiler.rs`  | SQL generation, field resolution, all operators, type checking     |
+| `detector.rs`  | Mode detection, expression splitting, safety validation             |
+| `translator.rs`| Field translation, reserved fields, nested paths, type casts       |
+| `error_map.rs` | DuckDB error message mapping                                         |
+| `executor.rs`  | Query execution, error wrapping                                      |
 | `extractor.rs` | Frontmatter, tags, wiki-links, embeds, edge cases                   |
-| `db.rs`        | Database operations, queries, CRUD, error transformation            |
+| `db.rs`        | Database operations, queries, CRUD                                   |
 | `scanner.rs`   | Note scanning, indexing, backlinks, subdirectories                  |
 | `query/mod.rs` | Output formatting (table, JSON, list)                               |
 | `creator.rs`   | Template resolution, note creation                                  |
