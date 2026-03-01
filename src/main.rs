@@ -77,7 +77,7 @@ struct Cli {
 enum Commands {
     #[command(about = "Scan and index markdown files into database")]
     Index {
-        #[arg(short, long)]
+        #[arg(short, long, help = "Delete database and rebuild from scratch")]
         force: bool,
 
         #[arg(short, long)]
@@ -183,6 +183,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Commands::Index { force, verbose } => {
             let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
+
+            if force && db_path.exists() {
+                std::fs::remove_file(&db_path)?;
+            }
+
             let db = Mutex::new(Database::new(&db_path)?);
             let db = db.lock().unwrap();
             eprintln!("Indexing {}...", base.display());

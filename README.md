@@ -109,9 +109,9 @@ markbase query "has(tags, 'design')"
 Scans Markdown files and indexes to DuckDB.
 
 ```bash
-markbase index --base-dir ./notes        # Index base directory
-markbase index --base-dir ./notes --force     # Force re-index
-markbase index --base-dir ./notes -v     # Verbose
+markbase index --base-dir ./notes              # Index base directory
+markbase index --base-dir ./notes --force      # Delete database and rebuild from scratch
+markbase index --base-dir ./notes -v           # Verbose output
 ```
 
 ### `query`

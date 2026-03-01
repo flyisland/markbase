@@ -44,6 +44,7 @@ For command usage, options, and examples, see [README.md](./README.md#commands).
 - **Concurrency**: Sequential processing with WalkDir iterator.
 - **Logic**:
     - Perform incremental updates by comparing `mtime`; skip unchanged files.
+    - With `--force`, delete the existing database file and rebuild from scratch.
     - Extract YAML Frontmatter using `gray_matter`.
     - Parse wiki-links `[[link]]`, embeds `![[embed]]`, and tags `#tag` using regex.
     - Calculate backlinks (reverse link lookup) post-indexing across all documents.
