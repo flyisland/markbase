@@ -236,16 +236,64 @@ impl Database {
         let ctime: chrono::DateTime<chrono::Utc> = row.get(5)?;
         let mtime: chrono::DateTime<chrono::Utc> = row.get(6)?;
         let content: String = row.get(7)?;
-        let tags_json: String = row.get(8)?;
-        let links_json: String = row.get(9)?;
-        let backlinks_json: String = row.get(10)?;
-        let embeds_json: String = row.get(11)?;
-        let properties_json: String = row.get(12)?;
 
-        let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
-        let links: Vec<String> = serde_json::from_str(&links_json).unwrap_or_default();
-        let backlinks: Vec<String> = serde_json::from_str(&backlinks_json).unwrap_or_default();
-        let embeds: Vec<String> = serde_json::from_str(&embeds_json).unwrap_or_default();
+        let tags: Vec<String> = {
+            let val: duckdb::types::Value = row.get(8)?;
+            match val {
+                duckdb::types::Value::List(list) => list
+                    .iter()
+                    .filter_map(|v| match v {
+                        duckdb::types::Value::Text(t) => Some(t.clone()),
+                        _ => None,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            }
+        };
+
+        let links: Vec<String> = {
+            let val: duckdb::types::Value = row.get(9)?;
+            match val {
+                duckdb::types::Value::List(list) => list
+                    .iter()
+                    .filter_map(|v| match v {
+                        duckdb::types::Value::Text(t) => Some(t.clone()),
+                        _ => None,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            }
+        };
+
+        let backlinks: Vec<String> = {
+            let val: duckdb::types::Value = row.get(10)?;
+            match val {
+                duckdb::types::Value::List(list) => list
+                    .iter()
+                    .filter_map(|v| match v {
+                        duckdb::types::Value::Text(t) => Some(t.clone()),
+                        _ => None,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            }
+        };
+
+        let embeds: Vec<String> = {
+            let val: duckdb::types::Value = row.get(11)?;
+            match val {
+                duckdb::types::Value::List(list) => list
+                    .iter()
+                    .filter_map(|v| match v {
+                        duckdb::types::Value::Text(t) => Some(t.clone()),
+                        _ => None,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            }
+        };
+
+        let properties_json: String = row.get(12)?;
         let properties: serde_json::Value =
             serde_json::from_str(&properties_json).unwrap_or(serde_json::Value::Null);
 
@@ -679,6 +727,118 @@ mod tests {
             .unwrap();
         assert_eq!(results.len(), 1);
         assert!(results[0][0].contains("doc2"));
+
+        cleanup_db(&db_path);
+    }
+
+    #[test]
+    fn test_get_documents_by_name() {
+        let temp_dir = std::env::temp_dir();
+        let db_path = temp_dir.join(format!(
+            "test_mdb_{}_{}.duckdb",
+            std::process::id(),
+            get_unique_id()
+        ));
+        let db = Database::new(&db_path).unwrap();
+
+        let mut doc = create_test_document("unique-name");
+        doc.tags = vec!["tag1".to_string(), "tag2".to_string()];
+        doc.links = vec!["link1".to_string(), "link2".to_string()];
+        doc.backlinks = vec!["backlink1.md".to_string()];
+        doc.embeds = vec!["image.png".to_string()];
+
+        db.upsert_document(&doc).unwrap();
+
+        let docs = db.get_documents_by_name("unique-name").unwrap();
+        assert_eq!(docs.len(), 1);
+
+        let retrieved = &docs[0];
+        assert_eq!(retrieved.name, "unique-name");
+        assert_eq!(retrieved.tags, vec!["tag1", "tag2"]);
+        assert_eq!(retrieved.links, vec!["link1", "link2"]);
+        assert_eq!(retrieved.backlinks, vec!["backlink1.md"]);
+        assert_eq!(retrieved.embeds, vec!["image.png"]);
+        assert_eq!(retrieved.folder, "/test");
+
+        cleanup_db(&db_path);
+    }
+
+    #[test]
+    fn test_get_documents_by_name_not_found() {
+        let temp_dir = std::env::temp_dir();
+        let db_path = temp_dir.join(format!(
+            "test_mdb_{}_{}.duckdb",
+            std::process::id(),
+            get_unique_id()
+        ));
+        let db = Database::new(&db_path).unwrap();
+
+        let docs = db.get_documents_by_name("nonexistent").unwrap();
+        assert!(docs.is_empty());
+
+        cleanup_db(&db_path);
+    }
+
+    #[test]
+    fn test_get_documents_by_name_multiple() {
+        let temp_dir = std::env::temp_dir();
+        let db_path = temp_dir.join(format!(
+            "test_mdb_{}_{}.duckdb",
+            std::process::id(),
+            get_unique_id()
+        ));
+        let db = Database::new(&db_path).unwrap();
+
+        let mut doc1 = create_test_document("same-name");
+        doc1.path = "/folder1/same-name.md".to_string();
+        doc1.folder = "/folder1".to_string();
+        doc1.tags = vec!["tag1".to_string()];
+
+        let mut doc2 = create_test_document("same-name");
+        doc2.path = "/folder2/same-name.md".to_string();
+        doc2.folder = "/folder2".to_string();
+        doc2.tags = vec!["tag2".to_string()];
+
+        db.upsert_document(&doc1).unwrap();
+        db.upsert_document(&doc2).unwrap();
+
+        let docs = db.get_documents_by_name("same-name").unwrap();
+        assert_eq!(docs.len(), 2);
+
+        let folders: std::collections::HashSet<_> =
+            docs.iter().map(|d| d.folder.as_str()).collect();
+        assert!(folders.contains("/folder1"));
+        assert!(folders.contains("/folder2"));
+
+        cleanup_db(&db_path);
+    }
+
+    #[test]
+    fn test_row_to_document_empty_arrays() {
+        let temp_dir = std::env::temp_dir();
+        let db_path = temp_dir.join(format!(
+            "test_mdb_{}_{}.duckdb",
+            std::process::id(),
+            get_unique_id()
+        ));
+        let db = Database::new(&db_path).unwrap();
+
+        let mut doc = create_test_document("empty-arrays");
+        doc.tags = vec![];
+        doc.links = vec![];
+        doc.backlinks = vec![];
+        doc.embeds = vec![];
+
+        db.upsert_document(&doc).unwrap();
+
+        let docs = db.get_documents_by_name("empty-arrays").unwrap();
+        assert_eq!(docs.len(), 1);
+
+        let retrieved = &docs[0];
+        assert!(retrieved.tags.is_empty());
+        assert!(retrieved.links.is_empty());
+        assert!(retrieved.backlinks.is_empty());
+        assert!(retrieved.embeds.is_empty());
 
         cleanup_db(&db_path);
     }
