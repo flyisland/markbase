@@ -179,7 +179,8 @@ pub fn build_sql(query: &str, fields: &str) -> Result<String, String> {
     let where_clause = compile(&parsed, Some(query))?;
 
     let select_fields: String = if fields == "*" {
-        "path, folder, name, ext, size, ctime, mtime, content, tags, links, backlinks, embeds, properties".to_string()
+        "path, folder, name, ext, size, ctime, mtime, tags, links, backlinks, embeds, properties"
+            .to_string()
     } else {
         let resolved: Vec<String> = fields.split(',').map(|f| resolve_field(f.trim())).collect();
         resolved.join(", ")
@@ -232,7 +233,6 @@ mod tests {
         assert_eq!(resolve_field("size"), "size");
         assert_eq!(resolve_field("ctime"), "ctime");
         assert_eq!(resolve_field("mtime"), "mtime");
-        assert_eq!(resolve_field("content"), "content");
         assert_eq!(resolve_field("tags"), "tags");
         assert_eq!(resolve_field("links"), "links");
         assert_eq!(resolve_field("backlinks"), "backlinks");

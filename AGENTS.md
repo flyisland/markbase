@@ -21,7 +21,6 @@ The DuckDB local file (`.markbase/markbase.duckdb`) utilizes the following schem
 | size       | INTEGER     | File size in bytes                       |
 | ctime      | TIMESTAMPTZ | Created time                             |
 | mtime      | TIMESTAMPTZ | Modified time                            |
-| content    | TEXT        | Full file content (including frontmatter)|
 | tags       | VARCHAR[]   | Array of tags                            |
 | links      | VARCHAR[]   | Array of wiki-links                      |
 | backlinks  | VARCHAR[]   | Array of backlink files                  |

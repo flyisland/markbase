@@ -264,24 +264,20 @@ mod tests {
             vec![
                 "path1".to_string(),
                 "name1".to_string(),
-                "content1".to_string(),
+                "tags1".to_string(),
             ],
             vec![
                 "path2".to_string(),
                 "name2".to_string(),
-                "content2".to_string(),
+                "tags2".to_string(),
             ],
             vec![
                 "path3".to_string(),
                 "name3".to_string(),
-                "content3".to_string(),
+                "tags3".to_string(),
             ],
         ];
-        let fields = vec![
-            "path".to_string(),
-            "name".to_string(),
-            "content".to_string(),
-        ];
+        let fields = vec!["path".to_string(), "name".to_string(), "tags".to_string()];
 
         for format in &["table", "json", "list"] {
             let result = output_results(&results, format, &fields, None, false);

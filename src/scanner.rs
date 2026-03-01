@@ -173,7 +173,6 @@ fn index_single_file(
         size,
         ctime,
         mtime,
-        content: extracted.full_content,
         tags: extracted.tags,
         links: extracted.links,
         backlinks: vec![],

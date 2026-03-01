@@ -1,4 +1,4 @@
-use duckdb::{Connection, params};
+use duckdb::{params, Connection};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -46,7 +46,6 @@ pub struct Document {
     pub size: u64,
     pub ctime: i64,
     pub mtime: i64,
-    pub content: String,
     pub tags: Vec<String>,
     pub links: Vec<String>,
     pub backlinks: Vec<String>,
@@ -92,7 +91,6 @@ impl Database {
                 size INTEGER NOT NULL,
                 ctime TIMESTAMPTZ NOT NULL,
                 mtime TIMESTAMPTZ NOT NULL,
-                content TEXT,
                 tags VARCHAR[],
                 links VARCHAR[],
                 backlinks VARCHAR[],
@@ -122,8 +120,8 @@ impl Database {
 
         self.conn.execute(
             "INSERT OR REPLACE INTO documents 
-             (path, folder, name, ext, size, ctime, mtime, content, tags, links, backlinks, embeds, properties)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             (path, folder, name, ext, size, ctime, mtime, tags, links, backlinks, embeds, properties)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 &doc.path,
                 &doc.folder,
@@ -132,7 +130,6 @@ impl Database {
                 doc.size as i64,
                 ctime_dt,
                 mtime_dt,
-                &doc.content,
                 serde_json::to_string(&doc.tags)?,
                 serde_json::to_string(&doc.links)?,
                 serde_json::to_string(&doc.backlinks)?,
@@ -235,10 +232,9 @@ impl Database {
         let size: i64 = row.get(4)?;
         let ctime: chrono::DateTime<chrono::Utc> = row.get(5)?;
         let mtime: chrono::DateTime<chrono::Utc> = row.get(6)?;
-        let content: String = row.get(7)?;
 
         let tags: Vec<String> = {
-            let val: duckdb::types::Value = row.get(8)?;
+            let val: duckdb::types::Value = row.get(7)?;
             match val {
                 duckdb::types::Value::List(list) => list
                     .iter()
@@ -252,7 +248,7 @@ impl Database {
         };
 
         let links: Vec<String> = {
-            let val: duckdb::types::Value = row.get(9)?;
+            let val: duckdb::types::Value = row.get(8)?;
             match val {
                 duckdb::types::Value::List(list) => list
                     .iter()
@@ -266,7 +262,7 @@ impl Database {
         };
 
         let backlinks: Vec<String> = {
-            let val: duckdb::types::Value = row.get(10)?;
+            let val: duckdb::types::Value = row.get(9)?;
             match val {
                 duckdb::types::Value::List(list) => list
                     .iter()
@@ -280,7 +276,7 @@ impl Database {
         };
 
         let embeds: Vec<String> = {
-            let val: duckdb::types::Value = row.get(11)?;
+            let val: duckdb::types::Value = row.get(10)?;
             match val {
                 duckdb::types::Value::List(list) => list
                     .iter()
@@ -293,7 +289,7 @@ impl Database {
             }
         };
 
-        let properties_json: String = row.get(12)?;
+        let properties_json: String = row.get(11)?;
         let properties: serde_json::Value =
             serde_json::from_str(&properties_json).unwrap_or(serde_json::Value::Null);
 
@@ -305,7 +301,6 @@ impl Database {
             size: size as u64,
             ctime: ctime.timestamp(),
             mtime: mtime.timestamp(),
-            content,
             tags,
             links,
             backlinks,
@@ -417,7 +412,6 @@ mod tests {
             size: 1000,
             ctime: 1704067200,
             mtime: 1704067200,
-            content: format!("Content of {}", name),
             tags: vec!["test".to_string(), "example".to_string()],
             links: vec!["link1".to_string()],
             backlinks: vec![],
