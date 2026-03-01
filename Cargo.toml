@@ -2,7 +2,7 @@
 name = "markbase"
 description = "A high-performance CLI tool for indexing and querying Markdown files for AI agent. Obsidian-compatible."
 repository = "https://github.com/flyisland/markbase"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3-dev"
 edition = "2024"
 license = "MIT"
 
