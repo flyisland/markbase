@@ -2,7 +2,7 @@
 
 ## 1. Project Overview
 
-The goal is to build a high-performance Command Line Interface (CLI) tool designed to scan, parse, and index Markdown files into a **DuckDB** database for instantaneous metadata searching with Obsidian compatibility in mind.
+The goal is to build a high-performance Command Line Interface (CLI) tool designed to scan, parse, and index Markdown notes into a **DuckDB** database for instantaneous metadata searching with Obsidian compatibility in mind.
 
 ## 2. Technical Stack
 
@@ -14,16 +14,16 @@ The DuckDB local file (`.markbase/markbase.duckdb`) utilizes the following schem
 
 | Property   | Type        | Description                              |
 | ---------- | ----------- | ---------------------------------------- |
-| path       | TEXT        | File path relative to base-dir (primary key) |
+| path       | TEXT        | Note path relative to base-dir (primary key) |
 | folder     | TEXT        | Directory path relative to base-dir     |
 | name       | TEXT        | File name (without extension)            |
-| ext        | TEXT        | File extension                           |
-| size       | INTEGER     | File size in bytes                       |
+| ext        | TEXT        | Note extension                           |
+| size       | INTEGER     | Note size in bytes                       |
 | ctime      | TIMESTAMPTZ | Created time                             |
 | mtime      | TIMESTAMPTZ | Modified time                            |
 | tags       | VARCHAR[]   | Array of tags                            |
 | links      | VARCHAR[]   | Array of wiki-links                      |
-| backlinks  | VARCHAR[]   | Array of backlink files                  |
+| backlinks  | VARCHAR[]   | Array of backlink notes                   |
 | embeds     | VARCHAR[]   | Array of embeds                          |
 | properties | JSON        | Frontmatter properties                   |
 
@@ -31,9 +31,9 @@ The DuckDB local file (`.markbase/markbase.duckdb`) utilizes the following schem
 
 ### 3.1 Indexes
 ```sql
-CREATE INDEX IF NOT EXISTS idx_mtime ON documents(mtime);
-CREATE INDEX IF NOT EXISTS idx_folder ON documents(folder);
-CREATE INDEX IF NOT EXISTS idx_name ON documents(name);
+CREATE INDEX IF NOT EXISTS idx_mtime ON notes(mtime);
+CREATE INDEX IF NOT EXISTS idx_folder ON notes(folder);
+CREATE INDEX IF NOT EXISTS idx_name ON notes(name);
 ```
 
 ## 4. Operational Requirements
@@ -43,12 +43,12 @@ For command usage, options, and examples, see [README.md](./README.md#commands).
 ### Command: `index`
 - **Concurrency**: Sequential processing with WalkDir iterator.
 - **Logic**:
-    - Perform incremental updates by comparing `mtime`; skip unchanged files.
+    - Perform incremental updates by comparing `mtime`; skip unchanged notes.
     - With `--force`, delete the existing database file and rebuild from scratch.
     - Extract YAML Frontmatter using `gray_matter`.
     - Parse wiki-links `[[link]]`, embeds `![[embed]]`, and tags `#tag` using regex.
-    - Calculate backlinks (reverse link lookup) post-indexing across all documents.
-    - Insert documents using parameterized queries with `duckdb::params!`.
+    - Calculate backlinks (reverse link lookup) post-indexing across all notes.
+    - Insert notes using parameterized queries with `duckdb::params!`.
     - Warn if a frontmatter field conflicts with a reserved field (except `tags`).
 
 ### Command: `query`
@@ -79,15 +79,15 @@ Manages notes within the vault.
 
 - **`main.rs`** — CLI entry point using clap derive macros. Handles argument parsing and dispatches to the appropriate command handler. Database path is derived from base-dir as `{{base-dir}}/.markbase/markbase.duckdb`; base-dir can be overridden via environment variable (`MARKBASE_BASE_DIR`) or CLI arg (`--base-dir`).
 
-- **`scanner.rs`** — Drives the `index` command. Walks the directory tree, compares `mtime` for incremental updates, orchestrates calls to `extractor.rs` and `db.rs`, and computes backlinks as a reverse-lookup pass *after* all documents are inserted.
+- **`scanner.rs`** — Drives the `index` command. Walks the directory tree, compares `mtime` for incremental updates, orchestrates calls to `extractor.rs` and `db.rs`, and computes backlinks as a reverse-lookup pass *after* all notes are inserted.
 
-- **`extractor.rs`** — Stateless parsing of a single file's content. Extracts frontmatter (via `gray_matter`), wiki-links, embeds, and tags using regex. Tags are merged from both content (`#tag`) and frontmatter (`tags:` field). Returns a `Document` struct; has no knowledge of the database.
+- **`extractor.rs`** — Stateless parsing of a single note's content. Extracts frontmatter (via `gray_matter`), wiki-links, embeds, and tags using regex. Tags are merged from both content (`#tag`) and frontmatter (`tags:` field). Returns a `Note` struct; has no knowledge of the database.
 
 - **`db.rs`** — All DuckDB interaction. Owns the connection and schema initialization. Uses `INSERT OR REPLACE` for upserts. Row values are accessed via `duckdb::types::Value` — be aware that column index order must match the schema definition exactly.
 
 - **`creator.rs`** — Handles the `note new` command. Resolves the template path under `templates/` in base-dir, copies it, and substitutes template variables. Fails explicitly if the target file already exists.
 
-- **`renamer.rs`** — Handles the `note rename` command. Looks up notes by name, validates uniqueness, renames the file on disk, updates all wiki-links pointing to the old name across all files, and reindexes affected documents. Preserves aliases and section anchors in links.
+- **`renamer.rs`** — Handles the `note rename` command. Looks up notes by name, validates uniqueness, renames the file on disk, updates all wiki-links pointing to the old name across all files, and reindexes affected notes. Preserves aliases and section anchors in links.
 
 - **`query/tokenizer.rs`** — Converts a raw query string into a flat token stream. Distinguishes `Function` tokens (identifiers followed by `(`) from `Field` tokens at this stage.
 
@@ -98,7 +98,7 @@ Manages notes within the vault.
 - **`query/mod.rs`** — Output formatting only (table, json, list). No query logic lives here.
 
 ## 6. Performance Goals
-- **Indexing Speed**: < 5 seconds for 10,000 files (cold start).
+- **Indexing Speed**: < 5 seconds for 10,000 notes (cold start).
 - **Search Latency**: < 50ms for complex queries on 10,000 rows.
 - **Query Latency**: < 100ms for complex query expressions.
 - **Binary Size**: Optimized release builds with `strip = true` in Cargo.toml.
@@ -107,7 +107,7 @@ Manages notes within the vault.
 - **Single Writer**: Only one `index` process can run at a time (DuckDB constraint).
 - **Graceful Shutdown**: Database connection closed when `Database` struct is dropped.
 - **Error Handling**: Comprehensive use of `Result` type with `?` operator for propagation.
-- **Incremental Updates**: Compare `mtime` to skip unchanged files.
+- **Incremental Updates**: Compare `mtime` to skip unchanged notes.
 - **Parameterized Queries**: Query compiler uses parameterized queries to prevent SQL injection.
 - **Thread Safety**: Uses `Mutex<Database>` for thread-safe access in multi-threaded contexts.
 
@@ -146,7 +146,7 @@ See [README.md](./README.md#project-structure) for the complete project structur
 
 ### Technical Debt / Future Improvements
 - Add integration tests for full query pipeline
-- Benchmark performance against 10,000 files goal
+- Benchmark performance against 10,000 notes goal
 - Consider parallel processing for indexing
 - Add configuration file support
 - Implement query result caching
@@ -160,9 +160,9 @@ See [README.md](./README.md#project-structure) for the complete project structur
 | `compiler.rs`  | SQL generation, field resolution, all operators, type checking     |
 | `extractor.rs` | Frontmatter, tags, wiki-links, embeds, edge cases                   |
 | `db.rs`        | Database operations, queries, CRUD, error transformation            |
-| `scanner.rs`   | File scanning, indexing, backlinks, subdirectories                  |
+| `scanner.rs`   | Note scanning, indexing, backlinks, subdirectories                  |
 | `query/mod.rs` | Output formatting (table, JSON, list)                               |
-| `creator.rs`   | Template resolution, file creation                                  |
+| `creator.rs`   | Template resolution, note creation                                  |
 | `renamer.rs`   | Link updates, note renaming, edge cases                             |
 | `main.rs`      | CLI options, default values, parsing                                |
 
@@ -225,7 +225,7 @@ Use conventional commits format:
 # Examples:
 feat(query): add exists() function support
 fix(scanner): handle symlink cycles in walkdir
-refactor(db): simplify upsert_document params
+refactor(db): simplify upsert_note params
 test(compiler): add coverage for nested JSON paths
 docs(readme): update query operator table
 ```

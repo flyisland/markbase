@@ -1,6 +1,6 @@
 # Markdown Base CLI (markbase)
 
-A high-performance CLI tool for indexing and querying Markdown files for AI agent. Obsidian-compatible.
+A high-performance CLI tool for indexing and querying Markdown notes for AI agent. Obsidian-compatible.
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/flyisland/markbase)
 
@@ -39,7 +39,7 @@ markbase query "has(tags, 'todo')"
 
 ## Properties
 
-Every indexed markdown file has two types of properties: native file metadata and frontmatter properties.
+Every indexed markdown note has two types of properties: native note metadata and frontmatter properties.
 
 **Field Resolution**: Reserved fields are checked first, then frontmatter properties.
 
@@ -51,13 +51,13 @@ Every indexed markdown file has two types of properties: native file metadata an
 | `folder` | TEXT | Directory path relative to base-dir |
 | `name` | TEXT | File name (without extension) |
 | `ext` | TEXT | File extension (e.g., `md`) |
-| `size` | INTEGER | File size in bytes |
+| `size` | INTEGER | Note size in bytes |
 | `ctime` | TIMESTAMP | Created time |
 | `mtime` | TIMESTAMP | Modified time |
-| `content` | TEXT | Full file content |
+| `content` | TEXT | Full note content |
 | `tags` | VARCHAR[] | Array of `#tags` (from content AND frontmatter) |
 | `links` | VARCHAR[] | Array of `[[wiki-links]]` |
-| `backlinks` | VARCHAR[] | Files linking to this file |
+| `backlinks` | VARCHAR[] | Notes linking to this note |
 | `embeds` | VARCHAR[] | Array of `![[embeds]]` |
 
 ```bash
@@ -108,7 +108,7 @@ markbase query "has(tags, 'design')"
 ## Commands
 
 ### `index`
-Scans Markdown files and indexes to DuckDB.
+Scans Markdown notes and indexes to DuckDB.
 
 ```bash
 markbase index              # Index base directory
@@ -117,7 +117,7 @@ markbase index -v           # Verbose output
 ```
 
 ### `query`
-Query indexed files with SQL-like expressions.
+Query indexed notes with SQL-like expressions.
 
 ```bash
 # Query reserved fields
@@ -182,7 +182,7 @@ markbase note rename old-name new-name
 - Looks up note by name (not path)
 - Fails if note name is ambiguous (multiple files with same name)
 - Fails if new name already exists
-- Updates all `[[old-name]]` links to `[[new-name]]` in all files
+- Updates all `[[old-name]]` links to `[[new-name]]` in all notes
 - Preserves aliases and section anchors: `[[old-name|alias]]` → `[[new-name|alias]]`
 
 **Example:**
@@ -287,7 +287,7 @@ The project includes comprehensive unit tests covering all major components:
 - **Query System**: Tokenizer, parser, compiler, and SQL generation
 - **Content Extraction**: Frontmatter, tags, wiki-links, embeds
 - **Database**: CRUD operations, queries, and filtering
-- **Scanner**: File discovery, indexing, and backlink tracking
+- **Scanner**: Note discovery, indexing, and backlink tracking
 - **Watcher**: File monitoring and incremental indexing
 - **Output**: Table, JSON, and list formatting
 
@@ -313,7 +313,7 @@ markbase/
 ├── src/
 │   ├── main.rs          # CLI entry point with clap
 │   ├── db.rs            # DuckDB database operations
-│   ├── scanner.rs       # File discovery and indexing
+│   ├── scanner.rs       # Note discovery and indexing
 │   ├── extractor.rs     # Markdown content extraction
 │   ├── creator.rs       # Note creation with templates
 │   ├── renamer.rs       # Note renaming with link updates

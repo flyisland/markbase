@@ -1,4 +1,4 @@
-use duckdb::{params, Connection};
+use duckdb::{Connection, params};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -38,7 +38,7 @@ pub fn convert_duckdb_error(error: &str, query: &str) -> String {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Document {
+pub struct Note {
     pub path: String,
     pub folder: String,
     pub name: String,
@@ -83,7 +83,7 @@ impl Database {
 
     fn init_schema(&self) -> Result<(), Box<dyn std::error::Error>> {
         self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS documents (
+            "CREATE TABLE IF NOT EXISTS notes (
                 path TEXT PRIMARY KEY,
                 folder TEXT NOT NULL,
                 name TEXT NOT NULL,
@@ -100,41 +100,37 @@ impl Database {
             [],
         )?;
 
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_mtime ON documents(mtime)",
-            [],
-        )?;
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_folder ON documents(folder)",
-            [],
-        )?;
         self.conn
-            .execute("CREATE INDEX IF NOT EXISTS idx_name ON documents(name)", [])?;
+            .execute("CREATE INDEX IF NOT EXISTS idx_mtime ON notes(mtime)", [])?;
+        self.conn
+            .execute("CREATE INDEX IF NOT EXISTS idx_folder ON notes(folder)", [])?;
+        self.conn
+            .execute("CREATE INDEX IF NOT EXISTS idx_name ON notes(name)", [])?;
 
         Ok(())
     }
 
-    pub fn upsert_document(&self, doc: &Document) -> Result<(), Box<dyn std::error::Error>> {
-        let ctime_dt = chrono::DateTime::from_timestamp(doc.ctime, 0).unwrap();
-        let mtime_dt = chrono::DateTime::from_timestamp(doc.mtime, 0).unwrap();
+    pub fn upsert_note(&self, note: &Note) -> Result<(), Box<dyn std::error::Error>> {
+        let ctime_dt = chrono::DateTime::from_timestamp(note.ctime, 0).unwrap();
+        let mtime_dt = chrono::DateTime::from_timestamp(note.mtime, 0).unwrap();
 
         self.conn.execute(
-            "INSERT OR REPLACE INTO documents 
+            "INSERT OR REPLACE INTO notes 
              (path, folder, name, ext, size, ctime, mtime, tags, links, backlinks, embeds, properties)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
-                &doc.path,
-                &doc.folder,
-                &doc.name,
-                &doc.ext,
-                doc.size as i64,
+                &note.path,
+                &note.folder,
+                &note.name,
+                &note.ext,
+                note.size as i64,
                 ctime_dt,
                 mtime_dt,
-                serde_json::to_string(&doc.tags)?,
-                serde_json::to_string(&doc.links)?,
-                serde_json::to_string(&doc.backlinks)?,
-                serde_json::to_string(&doc.embeds)?,
-                serde_json::to_string(&doc.properties)?,
+                serde_json::to_string(&note.tags)?,
+                serde_json::to_string(&note.links)?,
+                serde_json::to_string(&note.backlinks)?,
+                serde_json::to_string(&note.embeds)?,
+                serde_json::to_string(&note.properties)?,
             ],
         )?;
         Ok(())
@@ -143,7 +139,7 @@ impl Database {
     pub fn get_mtime(&self, path: &str) -> Result<Option<i64>, Box<dyn std::error::Error>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT mtime FROM documents WHERE path = ?")?;
+            .prepare("SELECT mtime FROM notes WHERE path = ?")?;
         let mut rows = stmt.query(params![path])?;
 
         if let Some(row) = rows.next()? {
@@ -154,26 +150,21 @@ impl Database {
         }
     }
 
-    pub fn get_documents_by_name(
-        &self,
-        name: &str,
-    ) -> Result<Vec<Document>, Box<dyn std::error::Error>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT * FROM documents WHERE name = ?")?;
+    pub fn get_notes_by_name(&self, name: &str) -> Result<Vec<Note>, Box<dyn std::error::Error>> {
+        let mut stmt = self.conn.prepare("SELECT * FROM notes WHERE name = ?")?;
         let mut rows = stmt.query(params![name])?;
 
-        let mut docs = Vec::new();
+        let mut notes = Vec::new();
         while let Some(row) = rows.next()? {
-            docs.push(self.row_to_document(row)?);
+            notes.push(self.row_to_note(row)?);
         }
-        Ok(docs)
+        Ok(notes)
     }
 
     pub fn name_exists(&self, name: &str) -> Result<bool, Box<dyn std::error::Error>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT COUNT(*) FROM documents WHERE name = ?")?;
+            .prepare("SELECT COUNT(*) FROM notes WHERE name = ?")?;
         let mut rows = stmt.query(params![name])?;
 
         if let Some(row) = rows.next()? {
@@ -184,13 +175,13 @@ impl Database {
         }
     }
 
-    pub fn delete_document(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn delete_note(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
         self.conn
-            .execute("DELETE FROM documents WHERE path = ?", params![path])?;
+            .execute("DELETE FROM notes WHERE path = ?", params![path])?;
         Ok(())
     }
 
-    fn row_to_document(&self, row: &duckdb::Row) -> Result<Document, Box<dyn std::error::Error>> {
+    fn row_to_note(&self, row: &duckdb::Row) -> Result<Note, Box<dyn std::error::Error>> {
         let path: String = row.get(0)?;
         let folder: String = row.get(1)?;
         let name: String = row.get(2)?;
@@ -259,7 +250,7 @@ impl Database {
         let properties: serde_json::Value =
             serde_json::from_str(&properties_json).unwrap_or(serde_json::Value::Null);
 
-        Ok(Document {
+        Ok(Note {
             path,
             folder,
             name,
@@ -280,7 +271,7 @@ impl Database {
     ) -> Result<std::collections::HashMap<String, Vec<String>>, Box<dyn std::error::Error>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT path, to_json(links) FROM documents")?;
+            .prepare("SELECT path, to_json(links) FROM notes")?;
         let mut rows = stmt.query([])?;
 
         let mut link_map = std::collections::HashMap::new();
@@ -369,8 +360,8 @@ mod tests {
         TEST_COUNTER.fetch_add(1, Ordering::SeqCst)
     }
 
-    fn create_test_document(name: &str) -> Document {
-        Document {
+    fn create_test_note(name: &str) -> Note {
+        Note {
             path: format!("/test/{}.md", name),
             folder: "/test".to_string(),
             name: name.to_string(),
@@ -417,12 +408,12 @@ mod tests {
         ));
         let db = Database::new(&db_path).unwrap();
 
-        let doc = create_test_document("test1");
-        db.upsert_document(&doc).unwrap();
+        let note = create_test_note("test1");
+        db.upsert_note(&note).unwrap();
 
-        let mtime = db.get_mtime(&doc.path).unwrap();
+        let mtime = db.get_mtime(&note.path).unwrap();
         assert!(mtime.is_some());
-        assert_eq!(mtime.unwrap(), doc.mtime);
+        assert_eq!(mtime.unwrap(), note.mtime);
 
         cleanup_db(&db_path);
     }
@@ -454,20 +445,20 @@ mod tests {
         ));
         let db = Database::new(&db_path).unwrap();
 
-        let mut doc = create_test_document("test1");
-        db.upsert_document(&doc).unwrap();
+        let mut note = create_test_note("test1");
+        db.upsert_note(&note).unwrap();
 
-        // Update document
-        doc.size = 2000;
-        doc.mtime = 1704153600;
-        db.upsert_document(&doc).unwrap();
+        // Update note
+        note.size = 2000;
+        note.mtime = 1704153600;
+        db.upsert_note(&note).unwrap();
 
-        let mtime = db.get_mtime(&doc.path).unwrap();
+        let mtime = db.get_mtime(&note.path).unwrap();
         let actual_mtime = mtime.unwrap();
         assert_eq!(
             actual_mtime, 1704153600,
             "Expected mtime 1704153600 but got {}. Path: {}",
-            actual_mtime, doc.path
+            actual_mtime, note.path
         );
 
         cleanup_db(&db_path);
@@ -483,24 +474,24 @@ mod tests {
         ));
         let db = Database::new(&db_path).unwrap();
 
-        let doc1 = create_test_document("doc1");
-        let mut doc2 = create_test_document("doc2");
-        doc2.links = vec!["doc1".to_string()];
+        let note1 = create_test_note("note1");
+        let mut note2 = create_test_note("note2");
+        note2.links = vec!["note1".to_string()];
 
-        db.upsert_document(&doc1).unwrap();
-        db.upsert_document(&doc2).unwrap();
+        db.upsert_note(&note1).unwrap();
+        db.upsert_note(&note2).unwrap();
 
         let link_map = db.get_all_links().unwrap();
         assert_eq!(link_map.len(), 2);
-        assert!(link_map.contains_key(&doc1.path));
-        assert!(link_map.contains_key(&doc2.path));
-        assert_eq!(link_map[&doc2.path], vec!["doc1"]);
+        assert!(link_map.contains_key(&note1.path));
+        assert!(link_map.contains_key(&note2.path));
+        assert_eq!(link_map[&note2.path], vec!["note1"]);
 
         cleanup_db(&db_path);
     }
 
     #[test]
-    fn test_query_documents() {
+    fn test_query_notes() {
         let temp_dir = std::env::temp_dir();
         let db_path = temp_dir.join(format!(
             "test_mdb_{}_{}.duckdb",
@@ -509,14 +500,14 @@ mod tests {
         ));
         let db = Database::new(&db_path).unwrap();
 
-        let doc1 = create_test_document("doc1");
-        let mut doc2 = create_test_document("doc2");
-        doc2.name = "other".to_string();
+        let note1 = create_test_note("note1");
+        let mut note2 = create_test_note("note2");
+        note2.name = "other".to_string();
 
-        db.upsert_document(&doc1).unwrap();
-        db.upsert_document(&doc2).unwrap();
+        db.upsert_note(&note1).unwrap();
+        db.upsert_note(&note2).unwrap();
 
-        let results = db.query("SELECT * FROM documents", "*", 10).unwrap();
+        let results = db.query("SELECT * FROM notes", "*", 10).unwrap();
         assert_eq!(results.len(), 2);
 
         cleanup_db(&db_path);
@@ -532,14 +523,14 @@ mod tests {
         ));
         let db = Database::new(&db_path).unwrap();
 
-        let doc1 = create_test_document("special");
-        let doc2 = create_test_document("other");
+        let note1 = create_test_note("special");
+        let note2 = create_test_note("other");
 
-        db.upsert_document(&doc1).unwrap();
-        db.upsert_document(&doc2).unwrap();
+        db.upsert_note(&note1).unwrap();
+        db.upsert_note(&note2).unwrap();
 
         let results = db
-            .query("SELECT * FROM documents WHERE name = 'special'", "*", 10)
+            .query("SELECT * FROM notes WHERE name = 'special'", "*", 10)
             .unwrap();
         assert_eq!(results.len(), 1);
 
@@ -557,11 +548,11 @@ mod tests {
         let db = Database::new(&db_path).unwrap();
 
         for i in 0..10 {
-            let doc = create_test_document(&format!("doc{}", i));
-            db.upsert_document(&doc).unwrap();
+            let note = create_test_note(&format!("note{}", i));
+            db.upsert_note(&note).unwrap();
         }
 
-        let results = db.query("SELECT * FROM documents", "*", 5).unwrap();
+        let results = db.query("SELECT * FROM notes", "*", 5).unwrap();
         assert_eq!(results.len(), 5);
 
         cleanup_db(&db_path);
@@ -577,24 +568,20 @@ mod tests {
         ));
         let db = Database::new(&db_path).unwrap();
 
-        let mut doc1 = create_test_document("doc1");
-        doc1.tags = vec!["design".to_string(), "technical".to_string()];
+        let mut note1 = create_test_note("note1");
+        note1.tags = vec!["design".to_string(), "technical".to_string()];
 
-        let mut doc2 = create_test_document("doc2");
-        doc2.tags = vec!["todo".to_string()];
+        let mut note2 = create_test_note("note2");
+        note2.tags = vec!["todo".to_string()];
 
-        db.upsert_document(&doc1).unwrap();
-        db.upsert_document(&doc2).unwrap();
+        db.upsert_note(&note1).unwrap();
+        db.upsert_note(&note2).unwrap();
 
         let results = db
-            .query(
-                "SELECT * FROM documents WHERE 'design' = ANY(tags)",
-                "*",
-                10,
-            )
+            .query("SELECT * FROM notes WHERE 'design' = ANY(tags)", "*", 10)
             .unwrap();
         assert_eq!(results.len(), 1);
-        assert!(results[0][0].contains("doc1"));
+        assert!(results[0][0].contains("note1"));
 
         cleanup_db(&db_path);
     }
@@ -609,24 +596,24 @@ mod tests {
         ));
         let db = Database::new(&db_path).unwrap();
 
-        let mut doc1 = create_test_document("doc1");
-        doc1.links = vec!["architecture".to_string(), "readme".to_string()];
+        let mut note1 = create_test_note("note1");
+        note1.links = vec!["architecture".to_string(), "readme".to_string()];
 
-        let mut doc2 = create_test_document("doc2");
-        doc2.links = vec!["other".to_string()];
+        let mut note2 = create_test_note("note2");
+        note2.links = vec!["other".to_string()];
 
-        db.upsert_document(&doc1).unwrap();
-        db.upsert_document(&doc2).unwrap();
+        db.upsert_note(&note1).unwrap();
+        db.upsert_note(&note2).unwrap();
 
         let results = db
             .query(
-                "SELECT * FROM documents WHERE 'architecture' = ANY(links)",
+                "SELECT * FROM notes WHERE 'architecture' = ANY(links)",
                 "*",
                 10,
             )
             .unwrap();
         assert_eq!(results.len(), 1);
-        assert!(results[0][0].contains("doc1"));
+        assert!(results[0][0].contains("note1"));
 
         cleanup_db(&db_path);
     }
@@ -641,24 +628,24 @@ mod tests {
         ));
         let db = Database::new(&db_path).unwrap();
 
-        let mut doc1 = create_test_document("doc1");
-        doc1.embeds = vec!["diagram.png".to_string(), "chart.jpg".to_string()];
+        let mut note1 = create_test_note("note1");
+        note1.embeds = vec!["diagram.png".to_string(), "chart.jpg".to_string()];
 
-        let mut doc2 = create_test_document("doc2");
-        doc2.embeds = vec!["other.png".to_string()];
+        let mut note2 = create_test_note("note2");
+        note2.embeds = vec!["other.png".to_string()];
 
-        db.upsert_document(&doc1).unwrap();
-        db.upsert_document(&doc2).unwrap();
+        db.upsert_note(&note1).unwrap();
+        db.upsert_note(&note2).unwrap();
 
         let results = db
             .query(
-                "SELECT * FROM documents WHERE 'diagram.png' = ANY(embeds)",
+                "SELECT * FROM notes WHERE 'diagram.png' = ANY(embeds)",
                 "*",
                 10,
             )
             .unwrap();
         assert_eq!(results.len(), 1);
-        assert!(results[0][0].contains("doc1"));
+        assert!(results[0][0].contains("note1"));
 
         cleanup_db(&db_path);
     }
@@ -673,26 +660,26 @@ mod tests {
         ));
         let db = Database::new(&db_path).unwrap();
 
-        let mut doc1 = create_test_document("doc1");
-        doc1.tags = vec![];
+        let mut note1 = create_test_note("note1");
+        note1.tags = vec![];
 
-        let mut doc2 = create_test_document("doc2");
-        doc2.tags = vec!["tag1".to_string()];
+        let mut note2 = create_test_note("note2");
+        note2.tags = vec!["tag1".to_string()];
 
-        db.upsert_document(&doc1).unwrap();
-        db.upsert_document(&doc2).unwrap();
+        db.upsert_note(&note1).unwrap();
+        db.upsert_note(&note2).unwrap();
 
         let results = db
-            .query("SELECT * FROM documents WHERE 'tag1' = ANY(tags)", "*", 10)
+            .query("SELECT * FROM notes WHERE 'tag1' = ANY(tags)", "*", 10)
             .unwrap();
         assert_eq!(results.len(), 1);
-        assert!(results[0][0].contains("doc2"));
+        assert!(results[0][0].contains("note2"));
 
         cleanup_db(&db_path);
     }
 
     #[test]
-    fn test_get_documents_by_name() {
+    fn test_get_notes_by_name() {
         let temp_dir = std::env::temp_dir();
         let db_path = temp_dir.join(format!(
             "test_mdb_{}_{}.duckdb",
@@ -701,18 +688,18 @@ mod tests {
         ));
         let db = Database::new(&db_path).unwrap();
 
-        let mut doc = create_test_document("unique-name");
-        doc.tags = vec!["tag1".to_string(), "tag2".to_string()];
-        doc.links = vec!["link1".to_string(), "link2".to_string()];
-        doc.backlinks = vec!["backlink1.md".to_string()];
-        doc.embeds = vec!["image.png".to_string()];
+        let mut note = create_test_note("unique-name");
+        note.tags = vec!["tag1".to_string(), "tag2".to_string()];
+        note.links = vec!["link1".to_string(), "link2".to_string()];
+        note.backlinks = vec!["backlink1.md".to_string()];
+        note.embeds = vec!["image.png".to_string()];
 
-        db.upsert_document(&doc).unwrap();
+        db.upsert_note(&note).unwrap();
 
-        let docs = db.get_documents_by_name("unique-name").unwrap();
-        assert_eq!(docs.len(), 1);
+        let notes = db.get_notes_by_name("unique-name").unwrap();
+        assert_eq!(notes.len(), 1);
 
-        let retrieved = &docs[0];
+        let retrieved = &notes[0];
         assert_eq!(retrieved.name, "unique-name");
         assert_eq!(retrieved.tags, vec!["tag1", "tag2"]);
         assert_eq!(retrieved.links, vec!["link1", "link2"]);
@@ -724,7 +711,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_documents_by_name_not_found() {
+    fn test_get_notes_by_name_not_found() {
         let temp_dir = std::env::temp_dir();
         let db_path = temp_dir.join(format!(
             "test_mdb_{}_{}.duckdb",
@@ -733,14 +720,14 @@ mod tests {
         ));
         let db = Database::new(&db_path).unwrap();
 
-        let docs = db.get_documents_by_name("nonexistent").unwrap();
-        assert!(docs.is_empty());
+        let notes = db.get_notes_by_name("nonexistent").unwrap();
+        assert!(notes.is_empty());
 
         cleanup_db(&db_path);
     }
 
     #[test]
-    fn test_get_documents_by_name_multiple() {
+    fn test_get_notes_by_name_multiple() {
         let temp_dir = std::env::temp_dir();
         let db_path = temp_dir.join(format!(
             "test_mdb_{}_{}.duckdb",
@@ -749,24 +736,24 @@ mod tests {
         ));
         let db = Database::new(&db_path).unwrap();
 
-        let mut doc1 = create_test_document("same-name");
-        doc1.path = "/folder1/same-name.md".to_string();
-        doc1.folder = "/folder1".to_string();
-        doc1.tags = vec!["tag1".to_string()];
+        let mut note1 = create_test_note("same-name");
+        note1.path = "/folder1/same-name.md".to_string();
+        note1.folder = "/folder1".to_string();
+        note1.tags = vec!["tag1".to_string()];
 
-        let mut doc2 = create_test_document("same-name");
-        doc2.path = "/folder2/same-name.md".to_string();
-        doc2.folder = "/folder2".to_string();
-        doc2.tags = vec!["tag2".to_string()];
+        let mut note2 = create_test_note("same-name");
+        note2.path = "/folder2/same-name.md".to_string();
+        note2.folder = "/folder2".to_string();
+        note2.tags = vec!["tag2".to_string()];
 
-        db.upsert_document(&doc1).unwrap();
-        db.upsert_document(&doc2).unwrap();
+        db.upsert_note(&note1).unwrap();
+        db.upsert_note(&note2).unwrap();
 
-        let docs = db.get_documents_by_name("same-name").unwrap();
-        assert_eq!(docs.len(), 2);
+        let notes = db.get_notes_by_name("same-name").unwrap();
+        assert_eq!(notes.len(), 2);
 
         let folders: std::collections::HashSet<_> =
-            docs.iter().map(|d| d.folder.as_str()).collect();
+            notes.iter().map(|n| n.folder.as_str()).collect();
         assert!(folders.contains("/folder1"));
         assert!(folders.contains("/folder2"));
 
@@ -774,7 +761,7 @@ mod tests {
     }
 
     #[test]
-    fn test_row_to_document_empty_arrays() {
+    fn test_row_to_note_empty_arrays() {
         let temp_dir = std::env::temp_dir();
         let db_path = temp_dir.join(format!(
             "test_mdb_{}_{}.duckdb",
@@ -783,18 +770,18 @@ mod tests {
         ));
         let db = Database::new(&db_path).unwrap();
 
-        let mut doc = create_test_document("empty-arrays");
-        doc.tags = vec![];
-        doc.links = vec![];
-        doc.backlinks = vec![];
-        doc.embeds = vec![];
+        let mut note = create_test_note("empty-arrays");
+        note.tags = vec![];
+        note.links = vec![];
+        note.backlinks = vec![];
+        note.embeds = vec![];
 
-        db.upsert_document(&doc).unwrap();
+        db.upsert_note(&note).unwrap();
 
-        let docs = db.get_documents_by_name("empty-arrays").unwrap();
-        assert_eq!(docs.len(), 1);
+        let notes = db.get_notes_by_name("empty-arrays").unwrap();
+        assert_eq!(notes.len(), 1);
 
-        let retrieved = &docs[0];
+        let retrieved = &notes[0];
         assert!(retrieved.tags.is_empty());
         assert!(retrieved.links.is_empty());
         assert!(retrieved.backlinks.is_empty());

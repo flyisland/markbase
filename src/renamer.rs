@@ -17,12 +17,12 @@ pub fn rename_note(
     old_name: &str,
     new_name: &str,
 ) -> Result<RenameResult, Box<dyn std::error::Error>> {
-    let docs = db.get_documents_by_name(old_name)?;
-    if docs.is_empty() {
+    let notes = db.get_notes_by_name(old_name)?;
+    if notes.is_empty() {
         return Err(format!("Note '{}' not found", old_name).into());
     }
-    if docs.len() > 1 {
-        let paths: Vec<&str> = docs.iter().map(|d| d.path.as_str()).collect();
+    if notes.len() > 1 {
+        let paths: Vec<&str> = notes.iter().map(|n| n.path.as_str()).collect();
         return Err(format!(
             "Multiple notes named '{}' found: {}",
             old_name,
@@ -35,8 +35,8 @@ pub fn rename_note(
         return Err(format!("Note '{}' already exists", new_name).into());
     }
 
-    let doc = &docs[0];
-    let old_file_path = base_dir.join(&doc.path);
+    let note = &notes[0];
+    let old_file_path = base_dir.join(&note.path);
 
     if !old_file_path.exists() {
         return Err(format!("File '{}' not found on disk", old_file_path.display()).into());
@@ -50,28 +50,28 @@ pub fn rename_note(
         return Err(format!("File '{}' already exists on disk", new_file_path.display()).into());
     }
 
-    let new_relative_path = if doc.folder.is_empty() || doc.folder == "." {
+    let new_relative_path = if note.folder.is_empty() || note.folder == "." {
         new_file_name.clone()
     } else {
-        format!("{}/{}", doc.folder, new_file_name)
+        format!("{}/{}", note.folder, new_file_name)
     };
 
     let updated_files =
-        update_links_in_backlinked_files(base_dir, &doc.backlinks, old_name, new_name)?;
+        update_links_in_backlinked_files(base_dir, &note.backlinks, old_name, new_name)?;
 
     fs::rename(&old_file_path, &new_file_path)?;
 
-    db.delete_document(&doc.path)?;
+    db.delete_note(&note.path)?;
 
     let new_content = fs::read_to_string(&new_file_path)?;
     let extracted = Extractor::extract(&new_content);
-    let new_doc = crate::db::Document {
+    let new_note = crate::db::Note {
         path: new_relative_path.clone(),
-        folder: doc.folder.clone(),
+        folder: note.folder.clone(),
         name: new_name.to_string(),
         ext: "md".to_string(),
         size: new_content.len() as u64,
-        ctime: doc.ctime,
+        ctime: note.ctime,
         mtime: std::fs::metadata(&new_file_path)?
             .modified()?
             .duration_since(std::time::UNIX_EPOCH)?
@@ -82,14 +82,14 @@ pub fn rename_note(
         embeds: extracted.embeds,
         properties: extracted.frontmatter,
     };
-    db.upsert_document(&new_doc)?;
+    db.upsert_note(&new_note)?;
 
     for file_path in &updated_files {
         reindex_file(base_dir, db, file_path)?;
     }
 
     Ok(RenameResult {
-        old_path: doc.path.clone(),
+        old_path: note.path.clone(),
         new_path: new_relative_path,
         updated_links: updated_files.len(),
     })
@@ -178,7 +178,7 @@ fn reindex_file(
         .unwrap_or("")
         .to_string();
 
-    let doc = crate::db::Document {
+    let note = crate::db::Note {
         path: relative_path.to_string(),
         folder,
         name,
@@ -199,7 +199,7 @@ fn reindex_file(
         properties: extracted.frontmatter,
     };
 
-    db.upsert_document(&doc)?;
+    db.upsert_note(&note)?;
     Ok(())
 }
 

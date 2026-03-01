@@ -1,5 +1,5 @@
 use crate::constants::RESERVED_FIELDS;
-use crate::db::{Database, Document};
+use crate::db::{Database, Note};
 use crate::extractor::Extractor;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -64,7 +64,7 @@ pub fn index_directory(
 ) -> Result<IndexStats, Box<dyn std::error::Error>> {
     let start = Instant::now();
     let mut stats = IndexStats::new(abs_base_dir);
-    let mut all_docs: Vec<Document> = Vec::new();
+    let mut all_notes: Vec<Note> = Vec::new();
 
     for entry in WalkDir::new(abs_base_dir)
         .follow_links(true)
@@ -84,14 +84,14 @@ pub fn index_directory(
             let exists = db.get_mtime(&path_str)?.is_some();
 
             match index_single_file(path, abs_base_dir, db, force) {
-                Ok(Some(doc)) => {
-                    all_docs.push(doc.clone());
+                Ok(Some(note)) => {
+                    all_notes.push(note.clone());
                     if exists {
                         stats.updated += 1;
-                        stats.updated_files.push(doc.path.clone());
+                        stats.updated_files.push(note.path.clone());
                     } else {
                         stats.new += 1;
-                        stats.new_files.push(doc.path.clone());
+                        stats.new_files.push(note.path.clone());
                     }
                 }
                 Ok(None) => {
@@ -107,7 +107,7 @@ pub fn index_directory(
         }
     }
 
-    update_backlinks(db, &all_docs)?;
+    update_backlinks(db, &all_notes)?;
 
     stats.duration_ms = start.elapsed().as_millis() as u64;
 
@@ -119,7 +119,7 @@ fn index_single_file(
     base_dir: &Path,
     db: &Database,
     force: bool,
-) -> Result<Option<Document>, Box<dyn std::error::Error>> {
+) -> Result<Option<Note>, Box<dyn std::error::Error>> {
     let rel_path = path.strip_prefix(base_dir).map_err(|_| {
         format!(
             "Path {} is not under base dir {}",
@@ -165,7 +165,7 @@ fn index_single_file(
     let ctime = metadata.created()?.duration_since(UNIX_EPOCH)?.as_secs() as i64;
     let mtime = metadata.modified()?.duration_since(UNIX_EPOCH)?.as_secs() as i64;
 
-    let doc = Document {
+    let note = Note {
         path: path_str,
         folder: parent,
         name: file_name.trim_end_matches(".md").to_string(),
@@ -180,14 +180,14 @@ fn index_single_file(
         properties: extracted.frontmatter,
     };
 
-    db.upsert_document(&doc)?;
+    db.upsert_note(&note)?;
 
-    Ok(Some(doc))
+    Ok(Some(note))
 }
 
 fn update_backlinks(
     db: &Database,
-    indexed_docs: &[Document],
+    indexed_notes: &[Note],
 ) -> Result<(), Box<dyn std::error::Error>> {
     let link_map = db.get_all_links()?;
     let mut backlinks: std::collections::HashMap<String, Vec<String>> =
@@ -200,11 +200,11 @@ fn update_backlinks(
         }
     }
 
-    for doc in indexed_docs {
-        if let Some(back_links) = backlinks.get(&doc.name) {
-            let mut updated_doc = doc.clone();
-            updated_doc.backlinks = back_links.clone();
-            db.upsert_document(&updated_doc)?;
+    for note in indexed_notes {
+        if let Some(back_links) = backlinks.get(&note.name) {
+            let mut updated_note = note.clone();
+            updated_note.backlinks = back_links.clone();
+            db.upsert_note(&updated_note)?;
         }
     }
 

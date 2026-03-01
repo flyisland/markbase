@@ -186,7 +186,7 @@ pub fn build_sql(query: &str, fields: &str) -> Result<String, String> {
     };
 
     Ok(format!(
-        "SELECT {} FROM documents WHERE {}",
+        "SELECT {} FROM notes WHERE {}",
         select_fields, where_clause
     ))
 }
@@ -323,7 +323,7 @@ mod tests {
         assert!(result.is_ok());
         let sql = result.unwrap();
         assert!(sql.contains("SELECT path, folder, name"));
-        assert!(sql.contains("FROM documents"));
+        assert!(sql.contains("FROM notes"));
         assert!(sql.contains("name = 'test'"));
     }
 
@@ -333,7 +333,7 @@ mod tests {
         assert!(result.is_ok());
         let sql = result.unwrap();
         assert!(sql.contains("SELECT path, name"));
-        assert!(sql.contains("FROM documents"));
+        assert!(sql.contains("FROM notes"));
     }
 
     #[test]
