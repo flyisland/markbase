@@ -76,7 +76,6 @@ pub fn rename_note(
             .modified()?
             .duration_since(std::time::UNIX_EPOCH)?
             .as_secs() as i64,
-        content: new_content,
         tags: extracted.tags,
         links: extracted.links,
         backlinks: vec![],
@@ -193,7 +192,6 @@ fn reindex_file(
             .modified()?
             .duration_since(std::time::UNIX_EPOCH)?
             .as_secs() as i64,
-        content,
         tags: extracted.tags,
         links: extracted.links,
         backlinks: vec![],

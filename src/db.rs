@@ -1,4 +1,4 @@
-use duckdb::{params, Connection};
+use duckdb::{Connection, params};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
