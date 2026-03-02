@@ -1,4 +1,4 @@
-use duckdb::{Connection, params};
+use duckdb::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -76,21 +76,30 @@ impl Database {
     }
 
     pub fn upsert_note(&self, note: &Note) -> Result<(), Box<dyn std::error::Error>> {
-        let ctime_dt = chrono::DateTime::from_timestamp(note.ctime, 0).unwrap();
-        let mtime_dt = chrono::DateTime::from_timestamp(note.mtime, 0).unwrap();
-
         self.conn.execute(
-            "INSERT OR REPLACE INTO notes 
+            "INSERT INTO notes 
              (path, folder, name, ext, size, ctime, mtime, tags, links, backlinks, embeds, properties)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             VALUES (?, ?, ?, ?, ?, to_timestamp(?), to_timestamp(?), ?, ?, ?, ?, ?)
+             ON CONFLICT (path) DO UPDATE SET
+                folder = excluded.folder,
+                name = excluded.name,
+                ext = excluded.ext,
+                size = excluded.size,
+                ctime = excluded.ctime,
+                mtime = excluded.mtime,
+                tags = excluded.tags,
+                links = excluded.links,
+                backlinks = excluded.backlinks,
+                embeds = excluded.embeds,
+                properties = excluded.properties",
             params![
                 &note.path,
                 &note.folder,
                 &note.name,
                 &note.ext,
                 note.size as i64,
-                ctime_dt,
-                mtime_dt,
+                note.ctime,
+                note.mtime,
                 serde_json::to_string(&note.tags)?,
                 serde_json::to_string(&note.links)?,
                 serde_json::to_string(&note.backlinks)?,
