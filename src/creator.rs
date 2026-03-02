@@ -1,11 +1,20 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use gray_matter::Matter;
 use gray_matter::engine::YAML;
 use regex::Regex;
 use serde_json::Value;
+
+static RE_NAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\{\{\s*name\s*\}\}").unwrap());
+static RE_DATE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\{\{\s*date\s*\}\}").unwrap());
+static RE_TIME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\{\{\s*time\s*\}\}").unwrap());
+static RE_DATETIME: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\{\{\s*datetime\s*\}\}").unwrap());
+static RE_DIRECTIVES: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?s)<!--\s*\[[^\]]+\].*?-->").unwrap());
 
 #[derive(Debug)]
 pub struct CreatedNote {
@@ -64,15 +73,10 @@ pub fn create_note(
 fn replace_template_variables(content: &str, name: &str) -> String {
     let now = chrono_lite_now();
 
-    let re_name = Regex::new(r"\{\{\s*name\s*\}\}").unwrap();
-    let re_date = Regex::new(r"\{\{\s*date\s*\}\}").unwrap();
-    let re_time = Regex::new(r"\{\{\s*time\s*\}\}").unwrap();
-    let re_datetime = Regex::new(r"\{\{\s*datetime\s*\}\}").unwrap();
-
-    let result = re_name.replace_all(content, name);
-    let result = re_date.replace_all(&result, &now.date);
-    let result = re_time.replace_all(&result, &now.time);
-    re_datetime.replace_all(&result, &now.datetime).to_string()
+    let result = RE_NAME.replace_all(content, name);
+    let result = RE_DATE.replace_all(&result, &now.date);
+    let result = RE_TIME.replace_all(&result, &now.time);
+    RE_DATETIME.replace_all(&result, &now.datetime).to_string()
 }
 
 fn process_template(
@@ -111,10 +115,10 @@ fn process_template(
             }
 
             let clean_body = clean_body_directives(&body);
-            let skeleton_frontmatter = build_skeleton_frontmatter(&outer_fields)?;
+            let skeleton_frontmatter = build_skeleton_frontmatter(&outer_fields);
 
             let final_content = if skeleton_frontmatter.is_empty() {
-                clean_body.clone()
+                clean_body
             } else {
                 format!("---\n{}---\n\n{}", skeleton_frontmatter, clean_body)
             };
@@ -125,11 +129,9 @@ fn process_template(
     }
 }
 
-fn build_skeleton_frontmatter(
-    outer_fields: &HashMap<String, String>,
-) -> Result<String, Box<dyn std::error::Error>> {
+fn build_skeleton_frontmatter(outer_fields: &HashMap<String, String>) -> String {
     if outer_fields.is_empty() {
-        return Ok(String::new());
+        return String::new();
     }
 
     let mut lines = Vec::new();
@@ -152,12 +154,11 @@ fn build_skeleton_frontmatter(
 
     let mut result = lines.join("\n");
     result.push('\n');
-    Ok(result)
+    result
 }
 
 fn clean_body_directives(body: &str) -> String {
-    let re = Regex::new(r"(?s)<!--\s*\[[^\]]+\].*?-->").unwrap();
-    re.replace_all(body, "").to_string()
+    RE_DIRECTIVES.replace_all(body, "").to_string()
 }
 
 fn chrono_lite_now() -> ChronoLite {
