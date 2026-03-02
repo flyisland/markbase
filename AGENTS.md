@@ -43,7 +43,9 @@ For command usage, options, and examples, see [README.md](./README.md#commands).
 ### Command: `index`
 - **Concurrency**: Sequential processing with WalkDir iterator.
 - **Logic**:
-    - Perform incremental updates by comparing `mtime`; skip unchanged notes.
+    - Perform incremental updates by comparing `mtime + size`; skip unchanged notes.
+    - Detect deleted files (in DB but not on filesystem) and remove from database.
+    - Detect name conflicts (multiple files with same name) and skip with warning.
     - With `--force`, delete the existing database file and rebuild from scratch.
     - Extract YAML Frontmatter using `gray_matter`.
     - Parse wiki-links `[[link]]`, embeds `![[embed]]`, and tags `#tag` using regex.
@@ -79,7 +81,7 @@ Manages notes within the vault.
 
 - **`main.rs`** — CLI entry point using clap derive macros. Handles argument parsing and dispatches to the appropriate command handler. Database path is derived from base-dir as `{{base-dir}}/.markbase/markbase.duckdb`; base-dir can be overridden via environment variable (`MARKBASE_BASE_DIR`) or CLI arg (`--base-dir`).
 
-- **`scanner.rs`** — Drives the `index` command. Walks the directory tree, compares `mtime` for incremental updates, orchestrates calls to `extractor.rs` and `db.rs`, and computes backlinks as a reverse-lookup pass *after* all notes are inserted.
+- **`scanner.rs`** — Drives the `index` command. Walks the directory tree, compares `mtime + size` for incremental updates, detects deleted files and removes them from DB, detects name conflicts (skips with warning), orchestrates calls to `extractor.rs` and `db.rs`, and computes backlinks as a reverse-lookup pass *after* all notes are inserted.
 
 - **`extractor.rs`** — Stateless parsing of a single note's content. Extracts frontmatter (via `gray_matter`), wiki-links, embeds, and tags using regex. Tags are merged from both content (`#tag`) and frontmatter (`tags:` field). Returns a `Note` struct; has no knowledge of the database.
 
@@ -134,7 +136,9 @@ See [README.md](./README.md#project-structure) for the complete project structur
 - Backlink tracking
 - Rust migration complete
 - CLI with clap derive macros
-- Incremental updates via mtime comparison
+- Incremental updates via mtime + size comparison
+- Deleted file detection and removal
+- Name conflict detection with warnings
 - Note creation with templates (`note new` command)
 - Note renaming with link updates (`note rename` command)
 - `template describe` command
@@ -160,7 +164,7 @@ See [README.md](./README.md#project-structure) for the complete project structur
 | `executor.rs`  | Query execution, error wrapping                                      |
 | `extractor.rs` | Frontmatter, tags, wiki-links, embeds, edge cases                   |
 | `db.rs`        | Database operations, queries, CRUD                                   |
-| `scanner.rs`   | Note scanning, indexing, backlinks, subdirectories                  |
+| `scanner.rs`   | Note scanning, indexing, backlinks, subdirectories, deleted files, name conflicts |
 | `query/mod.rs` | Output formatting (table, JSON, list)                               |
 | `creator.rs`   | Template resolution, note creation                                  |
 | `renamer.rs`   | Link updates, note renaming, edge cases                             |

@@ -101,18 +101,20 @@ impl Database {
         Ok(())
     }
 
-    pub fn get_mtime(&self, path: &str) -> Result<Option<i64>, Box<dyn std::error::Error>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT mtime FROM notes WHERE path = ?")?;
-        let mut rows = stmt.query(params![path])?;
+    pub fn get_all_mtime_and_size(
+        &self,
+    ) -> Result<std::collections::HashMap<String, (i64, u64)>, Box<dyn std::error::Error>> {
+        let mut stmt = self.conn.prepare("SELECT path, mtime, size FROM notes")?;
+        let mut rows = stmt.query([])?;
 
-        if let Some(row) = rows.next()? {
-            let mtime: chrono::DateTime<chrono::Utc> = row.get(0)?;
-            Ok(Some(mtime.timestamp()))
-        } else {
-            Ok(None)
+        let mut map = std::collections::HashMap::new();
+        while let Some(row) = rows.next()? {
+            let path: String = row.get(0)?;
+            let mtime: chrono::DateTime<chrono::Utc> = row.get(1)?;
+            let size: i64 = row.get(2)?;
+            map.insert(path, (mtime.timestamp(), size as u64));
         }
+        Ok(map)
     }
 
     pub fn get_notes_by_name(&self, name: &str) -> Result<Vec<Note>, Box<dyn std::error::Error>> {
@@ -362,7 +364,7 @@ mod tests {
     }
 
     #[test]
-    fn test_upsert_and_get_mtime() {
+    fn test_get_all_mtime_and_size() {
         let temp_dir = std::env::temp_dir();
         let db_path = temp_dir.join(format!(
             "test_mdb_{}_{}.duckdb",
@@ -371,58 +373,19 @@ mod tests {
         ));
         let db = Database::new(&db_path).unwrap();
 
-        let note = create_test_note("test1");
-        db.upsert_note(&note).unwrap();
+        let note1 = create_test_note("note1");
+        let note2 = create_test_note("note2");
+        db.upsert_note(&note1).unwrap();
+        db.upsert_note(&note2).unwrap();
 
-        let mtime = db.get_mtime(&note.path).unwrap();
-        assert!(mtime.is_some());
-        assert_eq!(mtime.unwrap(), note.mtime);
+        let records = db.get_all_mtime_and_size().unwrap();
+        assert_eq!(records.len(), 2);
+        assert!(records.contains_key(&note1.path));
+        assert!(records.contains_key(&note2.path));
 
-        cleanup_db(&db_path);
-    }
-
-    #[test]
-    fn test_get_mtime_nonexistent() {
-        let temp_dir = std::env::temp_dir();
-        let db_path = temp_dir.join(format!(
-            "test_mdb_{}_{}.duckdb",
-            std::process::id(),
-            get_unique_id()
-        ));
-        let db = Database::new(&db_path).unwrap();
-
-        let mtime = db.get_mtime("/nonexistent/path.md").unwrap();
-        assert!(mtime.is_none());
-
-        cleanup_db(&db_path);
-    }
-
-    #[test]
-    #[ignore = "DuckDB INSERT OR REPLACE behavior issue - works correctly in production"]
-    fn test_upsert_updates_existing() {
-        let temp_dir = std::env::temp_dir();
-        let db_path = temp_dir.join(format!(
-            "test_mdb_{}_{}.duckdb",
-            std::process::id(),
-            get_unique_id()
-        ));
-        let db = Database::new(&db_path).unwrap();
-
-        let mut note = create_test_note("test1");
-        db.upsert_note(&note).unwrap();
-
-        // Update note
-        note.size = 2000;
-        note.mtime = 1704153600;
-        db.upsert_note(&note).unwrap();
-
-        let mtime = db.get_mtime(&note.path).unwrap();
-        let actual_mtime = mtime.unwrap();
-        assert_eq!(
-            actual_mtime, 1704153600,
-            "Expected mtime 1704153600 but got {}. Path: {}",
-            actual_mtime, note.path
-        );
+        let (mtime, size) = records.get(&note1.path).unwrap();
+        assert_eq!(*mtime, note1.mtime);
+        assert_eq!(*size, note1.size);
 
         cleanup_db(&db_path);
     }

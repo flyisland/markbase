@@ -1,6 +1,7 @@
 use crate::constants::RESERVED_FIELDS;
 use crate::db::{Database, Note};
 use crate::extractor::Extractor;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Instant, UNIX_EPOCH};
@@ -10,10 +11,13 @@ use walkdir::WalkDir;
 pub struct IndexStats {
     pub new: usize,
     pub updated: usize,
+    pub deleted: usize,
     pub errors: usize,
     pub skipped: Vec<(String, String)>,
     pub new_files: Vec<String>,
     pub updated_files: Vec<String>,
+    pub deleted_files: Vec<String>,
+    pub name_conflicts: Vec<(String, String)>,
     pub duration_ms: u64,
     pub base_dir: PathBuf,
 }
@@ -23,10 +27,13 @@ impl IndexStats {
         Self {
             new: 0,
             updated: 0,
+            deleted: 0,
             errors: 0,
             skipped: Vec::new(),
             new_files: Vec::new(),
             updated_files: Vec::new(),
+            deleted_files: Vec::new(),
+            name_conflicts: Vec::new(),
             duration_ms: 0,
             base_dir: base_dir.to_path_buf(),
         }
@@ -47,10 +54,13 @@ impl Default for IndexStats {
         Self {
             new: 0,
             updated: 0,
+            deleted: 0,
             errors: 0,
             skipped: Vec::new(),
             new_files: Vec::new(),
             updated_files: Vec::new(),
+            deleted_files: Vec::new(),
+            name_conflicts: Vec::new(),
             duration_ms: 0,
             base_dir: PathBuf::new(),
         }
@@ -65,6 +75,14 @@ pub fn index_directory(
     let start = Instant::now();
     let mut stats = IndexStats::new(abs_base_dir);
     let mut all_notes: Vec<Note> = Vec::new();
+    let mut seen_paths: HashSet<String> = HashSet::new();
+    let mut name_to_path: HashMap<String, String> = HashMap::new();
+
+    let existing_records: HashMap<String, (i64, u64)> = if !force {
+        db.get_all_mtime_and_size()?
+    } else {
+        HashMap::new()
+    };
 
     for entry in WalkDir::new(abs_base_dir)
         .follow_links(true)
@@ -81,12 +99,29 @@ pub fn index_directory(
                 )
             })?;
             let path_str = rel_path.to_string_lossy().to_string();
-            let exists = db.get_mtime(&path_str)?.is_some();
+            seen_paths.insert(path_str.clone());
 
-            match index_single_file(path, abs_base_dir, db, force) {
+            let file_name = path.file_name().unwrap().to_string_lossy();
+            let name = file_name.trim_end_matches(".md").to_string();
+
+            if let Some(existing_path) = name_to_path.get(&name) {
+                stats
+                    .name_conflicts
+                    .push((path_str.clone(), existing_path.clone()));
+                eprintln!(
+                    "⚠ Skipped: {} — name conflict with {}",
+                    path_str, existing_path
+                );
+                continue;
+            }
+            name_to_path.insert(name, path_str.clone());
+
+            let existing_record = existing_records.get(&path_str).copied();
+
+            match index_single_file(path, abs_base_dir, db, existing_record) {
                 Ok(Some(note)) => {
                     all_notes.push(note.clone());
-                    if exists {
+                    if existing_records.contains_key(&note.path) {
                         stats.updated += 1;
                         stats.updated_files.push(note.path.clone());
                     } else {
@@ -107,6 +142,14 @@ pub fn index_directory(
         }
     }
 
+    for path in existing_records.keys() {
+        if !seen_paths.contains(path) {
+            db.delete_note(path)?;
+            stats.deleted += 1;
+            stats.deleted_files.push(path.clone());
+        }
+    }
+
     update_backlinks(db, &all_notes)?;
 
     stats.duration_ms = start.elapsed().as_millis() as u64;
@@ -118,7 +161,7 @@ fn index_single_file(
     path: &Path,
     base_dir: &Path,
     db: &Database,
-    force: bool,
+    existing_record: Option<(i64, u64)>,
 ) -> Result<Option<Note>, Box<dyn std::error::Error>> {
     let rel_path = path.strip_prefix(base_dir).map_err(|_| {
         format!(
@@ -129,17 +172,17 @@ fn index_single_file(
     })?;
     let path_str = rel_path.to_string_lossy().to_string();
 
-    if !force && let Some(db_mtime) = db.get_mtime(&path_str)? {
-        let file_mtime = fs::metadata(path)?
-            .modified()?
-            .duration_since(UNIX_EPOCH)?
-            .as_secs() as i64;
-        if file_mtime <= db_mtime {
-            return Ok(None);
-        }
+    let metadata = fs::metadata(path)?;
+    let file_mtime = metadata.modified()?.duration_since(UNIX_EPOCH)?.as_secs() as i64;
+    let file_size = metadata.len();
+
+    if let Some((db_mtime, db_size)) = existing_record
+        && file_mtime <= db_mtime
+        && file_size == db_size
+    {
+        return Ok(None);
     }
 
-    let metadata = fs::metadata(path)?;
     let file_name = path.file_name().unwrap().to_string_lossy().to_string();
     let parent = rel_path
         .parent()
@@ -274,8 +317,8 @@ mod tests {
         let result = index_directory(&test_dir, &db, false);
         assert!(result.is_ok());
 
-        let mtime = db.get_mtime("test.md").unwrap();
-        assert!(mtime.is_some());
+        let records = db.get_all_mtime_and_size().unwrap();
+        assert!(records.contains_key("test.md"));
 
         cleanup(&test_dir, &db_path);
     }
@@ -396,8 +439,8 @@ See [[other]] for more."#;
         let result = index_directory(&test_dir, &db, false);
         assert!(result.is_ok());
 
-        let mtime = db.get_mtime("tagged.md").unwrap();
-        assert!(mtime.is_some());
+        let records = db.get_all_mtime_and_size().unwrap();
+        assert!(records.contains_key("tagged.md"));
 
         cleanup(&test_dir, &db_path);
     }
@@ -416,8 +459,8 @@ See [[other]] for more."#;
         let result = index_directory(&test_dir, &db, false);
         assert!(result.is_ok());
 
-        let mtime = db.get_mtime("with_embeds.md").unwrap();
-        assert!(mtime.is_some());
+        let records = db.get_all_mtime_and_size().unwrap();
+        assert!(records.contains_key("with_embeds.md"));
 
         cleanup(&test_dir, &db_path);
     }
@@ -432,7 +475,8 @@ See [[other]] for more."#;
 
         // First index
         index_directory(&test_dir, &db, false).unwrap();
-        let mtime1 = db.get_mtime("test.md").unwrap();
+        let records1 = db.get_all_mtime_and_size().unwrap();
+        let mtime1 = records1.get("test.md").map(|(m, _)| *m);
 
         // Wait a bit and update file
         std::thread::sleep(std::time::Duration::from_millis(100));
@@ -440,7 +484,8 @@ See [[other]] for more."#;
 
         // Re-index with force
         index_directory(&test_dir, &db, true).unwrap();
-        let mtime2 = db.get_mtime("test.md").unwrap();
+        let records2 = db.get_all_mtime_and_size().unwrap();
+        let mtime2 = records2.get("test.md").map(|(m, _)| *m);
 
         // Should have been updated
         assert!(mtime2.unwrap() >= mtime1.unwrap());
@@ -458,6 +503,93 @@ See [[other]] for more."#;
 
         let link_map = db.get_all_links().unwrap();
         assert!(link_map.is_empty());
+
+        cleanup(&test_dir, &db_path);
+    }
+
+    #[test]
+    fn test_index_detects_deleted_files() {
+        let (test_dir, db_path) = create_test_directory();
+
+        create_test_file(&test_dir, "keep.md", "# Keep");
+        create_test_file(&test_dir, "delete.md", "# Delete");
+
+        let db = Database::new(&db_path).unwrap();
+        index_directory(&test_dir, &db, false).unwrap();
+
+        let records = db.get_all_mtime_and_size().unwrap();
+        assert_eq!(records.len(), 2);
+
+        fs::remove_file(test_dir.join("delete.md")).unwrap();
+
+        let result = index_directory(&test_dir, &db, false).unwrap();
+        assert_eq!(result.deleted, 1);
+        assert!(result.deleted_files.contains(&"delete.md".to_string()));
+
+        let records = db.get_all_mtime_and_size().unwrap();
+        assert_eq!(records.len(), 1);
+        assert!(records.contains_key("keep.md"));
+
+        cleanup(&test_dir, &db_path);
+    }
+
+    #[test]
+    fn test_index_detects_name_conflict() {
+        let (test_dir, db_path) = create_test_directory();
+
+        let subdir = test_dir.join("subdir");
+        fs::create_dir(&subdir).unwrap();
+
+        create_test_file(&test_dir, "note.md", "# Note 1");
+        create_test_file(&subdir, "note.md", "# Note 2");
+
+        let db = Database::new(&db_path).unwrap();
+        let result = index_directory(&test_dir, &db, false).unwrap();
+
+        assert_eq!(result.name_conflicts.len(), 1);
+        assert_eq!(result.new, 1);
+
+        let records = db.get_all_mtime_and_size().unwrap();
+        assert_eq!(records.len(), 1);
+
+        cleanup(&test_dir, &db_path);
+    }
+
+    #[test]
+    fn test_index_size_change_triggers_update() {
+        let (test_dir, db_path) = create_test_directory();
+
+        create_test_file(&test_dir, "test.md", "# Original content");
+
+        let db = Database::new(&db_path).unwrap();
+        let result1 = index_directory(&test_dir, &db, false).unwrap();
+        assert_eq!(result1.new, 1);
+        assert_eq!(result1.updated, 0);
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        create_test_file(&test_dir, "test.md", "# Much longer content here");
+
+        let result2 = index_directory(&test_dir, &db, false).unwrap();
+        assert_eq!(result2.new, 0);
+        assert_eq!(result2.updated, 1);
+
+        cleanup(&test_dir, &db_path);
+    }
+
+    #[test]
+    fn test_index_unchanged_size_and_mtime_skipped() {
+        let (test_dir, db_path) = create_test_directory();
+
+        create_test_file(&test_dir, "test.md", "# Content");
+
+        let db = Database::new(&db_path).unwrap();
+        let result1 = index_directory(&test_dir, &db, false).unwrap();
+        assert_eq!(result1.new, 1);
+
+        let result2 = index_directory(&test_dir, &db, false).unwrap();
+        assert_eq!(result2.new, 0);
+        assert_eq!(result2.updated, 0);
+        assert!(!result2.skipped.is_empty());
 
         cleanup(&test_dir, &db_path);
     }
