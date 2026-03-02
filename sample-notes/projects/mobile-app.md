@@ -3,6 +3,7 @@ title: Mobile App Development
 tags: [project, mobile, ios, android]
 status: planning
 priority: medium
+attendees: [john, mike]
 ---
 
 # Mobile App Development
