@@ -141,9 +141,9 @@ See [README.md](./README.md#project-structure) for the complete project structur
 - `MDB_OUTPUT` environment variable support
 - Global `--output-format` / `-o` option for query and template list
 - `note new --template` outputs path + content for agent workflow
+- Special handling for `list_contains()` with frontmatter array fields (uses `(properties->'$."field"')::VARCHAR[]`)
 
 ### Technical Debt / Future Improvements
-- Add special handling for `list_contains()` with frontmatter array fields
 - Add integration tests for full query pipeline
 - Benchmark performance against 10,000 notes goal
 - Consider parallel processing for indexing
@@ -155,7 +155,7 @@ See [README.md](./README.md#project-structure) for the complete project structur
 | Module         | Coverage                                                            |
 | -------------- | ------------------------------------------------------------------- |
 | `detector.rs`  | Mode detection, expression splitting, safety validation             |
-| `translator.rs`| Field translation, reserved fields, nested paths, type casts       |
+| `translator.rs`| Field translation, reserved fields, nested paths, type casts, `list_contains` array handling |
 | `error_map.rs` | DuckDB error message mapping                                         |
 | `executor.rs`  | Query execution, error wrapping                                      |
 | `extractor.rs` | Frontmatter, tags, wiki-links, embeds, edge cases                   |

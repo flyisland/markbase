@@ -1,5 +1,25 @@
 use super::detector::{QueryMode, is_reserved_field};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TranslationContext {
+    Normal,
+    ListContainsFirstArg,
+}
+
+struct TranslationState {
+    context: TranslationContext,
+    paren_depth: usize,
+}
+
+impl TranslationState {
+    fn new() -> Self {
+        Self {
+            context: TranslationContext::Normal,
+            paren_depth: 0,
+        }
+    }
+}
+
 const SQL_KEYWORDS: &[&str] = &[
     "SELECT",
     "FROM",
@@ -138,6 +158,7 @@ pub fn translate(sql: &str) -> String {
     let mut string_char = ' ';
     let mut i = 0;
     let chars: Vec<char> = sql.chars().collect();
+    let mut state = TranslationState::new();
 
     while i < chars.len() {
         let c = chars[i];
@@ -194,9 +215,19 @@ pub fn translate(sql: &str) -> String {
             let word: String = chars[start..i].iter().collect();
             let next_char = chars.get(i).copied();
 
-            let translated = translate_identifier(&word, next_char);
+            let translated = translate_identifier(&word, next_char, &mut state);
             result.push_str(&translated);
             continue;
+        }
+
+        if c == '(' {
+            state.paren_depth += 1;
+        } else if c == ')' {
+            if state.paren_depth > 0 {
+                state.paren_depth -= 1;
+            }
+        } else if c == ',' && state.context == TranslationContext::ListContainsFirstArg {
+            state.context = TranslationContext::Normal;
         }
 
         result.push(c);
@@ -206,15 +237,50 @@ pub fn translate(sql: &str) -> String {
     result
 }
 
-fn translate_identifier(word: &str, _next_char: Option<char>) -> String {
+fn translate_identifier(
+    word: &str,
+    next_char: Option<char>,
+    state: &mut TranslationState,
+) -> String {
     let upper = word.to_uppercase();
     let lower = word.to_lowercase();
+
+    if lower == "list_contains" {
+        if next_char == Some('(') {
+            state.context = TranslationContext::ListContainsFirstArg;
+        }
+        return word.to_string();
+    }
 
     if SQL_KEYWORDS.contains(&upper.as_str())
         || SQL_KEYWORDS.contains(&lower.as_str())
         || lower == "notes"
     {
         return word.to_string();
+    }
+
+    if state.context == TranslationContext::ListContainsFirstArg {
+        state.context = TranslationContext::Normal;
+
+        if word.contains('.') {
+            let parts: Vec<&str> = word.split('.').collect();
+            let first = parts[0];
+            if is_reserved_field(first) {
+                return word.to_string();
+            }
+            let json_path = parts
+                .iter()
+                .map(|p| format!("\"{}\"", p))
+                .collect::<Vec<_>>()
+                .join(".");
+            return format!("(properties->'$.{}')::VARCHAR[]", json_path);
+        }
+
+        if is_reserved_field(word) {
+            return word.to_string();
+        }
+
+        return format!("(properties->'$.\"{}\"')::VARCHAR[]", word);
     }
 
     if word.contains('.') {
@@ -293,9 +359,35 @@ mod tests {
     }
 
     #[test]
-    fn test_translate_list_contains() {
+    fn test_translate_list_contains_frontmatter_field() {
         let result = translate("list_contains(categories, 'work')");
-        assert!(result.contains("categories"));
+        assert_eq!(
+            result,
+            "list_contains((properties->'$.\"categories\"')::VARCHAR[], 'work')"
+        );
+    }
+
+    #[test]
+    fn test_translate_list_contains_reserved_field() {
+        let result = translate("list_contains(tags, 'todo')");
+        assert_eq!(result, "list_contains(tags, 'todo')");
+    }
+
+    #[test]
+    fn test_translate_list_contains_in_where() {
+        let result = translate("SELECT * FROM notes WHERE list_contains(categories, 'work')");
+        assert!(
+            result.contains("list_contains((properties->'$.\"categories\"')::VARCHAR[], 'work')")
+        );
+    }
+
+    #[test]
+    fn test_translate_list_contains_nested_field() {
+        let result = translate("list_contains(meta.categories, 'work')");
+        assert_eq!(
+            result,
+            "list_contains((properties->'$.\"meta\".\"categories\"')::VARCHAR[], 'work')"
+        );
     }
 
     #[test]
