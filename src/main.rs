@@ -172,10 +172,34 @@ fn get_output_format(cli_format: Option<OutputFormat>) -> OutputFormat {
     })
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn check_db_exists(
+    db_path: &std::path::Path,
+    base_dir: &std::path::Path,
+) -> Result<(), std::io::Error> {
+    if db_path.exists() {
+        return Ok(());
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        format!(
+            "Database '.markbase/markbase.duckdb' not found at {}. Please confirm the base-dir is correct or run 'markbase index' first.",
+            base_dir.display()
+        ),
+    ))
+}
+
+fn main() {
+    if let Err(e) = run() {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     let db_path = get_database_path(cli.base_dir.clone())?;
+    let base_dir = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
 
     match cli.command {
         Commands::Index { force, verbose } => {
@@ -256,6 +280,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 return Ok(());
             }
 
+            check_db_exists(&db_path, &base_dir)?;
             let db = Mutex::new(Database::open_existing(&db_path)?);
             let db = db.lock().unwrap();
             let results = query::execute_query(&db, sql.as_deref()).map_err(|e| e.to_string())?;
@@ -294,6 +319,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             NoteCommands::Rename { old_name, new_name } => {
                 let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
+                check_db_exists(&db_path, &base_dir)?;
                 let db = Mutex::new(Database::open_existing(&db_path)?);
                 let db = db.lock().unwrap();
                 let result = renamer::rename_note(&base, &db, &old_name, &new_name)?;
@@ -318,6 +344,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
 
                 let sql_expr = "folder=='templates'".to_string();
+                check_db_exists(&db_path, &base_dir)?;
                 let db = Mutex::new(Database::open_existing(&db_path)?);
                 let db_ref = db.lock().unwrap();
                 let results =

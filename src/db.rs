@@ -1,4 +1,4 @@
-use duckdb::{params, Connection};
+use duckdb::{Connection, params};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -34,14 +34,6 @@ impl Database {
     }
 
     pub fn open_existing(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
-        if !path.exists() {
-            return Err(format!(
-                "Database not found at {}. Please run 'markbase index' first.",
-                path.display()
-            )
-            .into());
-        }
-
         let conn = Connection::open(path)?;
         Ok(Database { conn })
     }
