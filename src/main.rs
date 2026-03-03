@@ -126,13 +126,6 @@ enum NoteCommands {
 enum TemplateCommands {
     #[command(about = "List all available templates")]
     List {
-        #[arg(
-            short = 'F',
-            long = "additional-fields",
-            help = "Additional fields to display"
-        )]
-        fields: Option<String>,
-
         #[arg(short = 'o', help = "Output format (default: json)")]
         format: Option<OutputFormat>,
     },
@@ -330,18 +323,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         },
         Commands::Template { command } => match command {
-            TemplateCommands::List { fields, format } => {
-                let mut output_fields = vec![
+            TemplateCommands::List { format } => {
+                let output_fields = vec![
                     "name".to_string(),
                     "_schema.description".to_string(),
                     "path".to_string(),
                 ];
-
-                if let Some(extra) = fields {
-                    let user_fields: Vec<String> =
-                        extra.split(',').map(|s| s.trim().to_string()).collect();
-                    output_fields.extend(user_fields);
-                }
 
                 let sql_expr = "folder=='templates'".to_string();
                 check_db_exists(&db_path, &base_dir)?;
@@ -486,26 +473,7 @@ mod tests {
         let cli = Cli::parse_from(["markbase", "template", "list"]);
         if let Commands::Template { command } = cli.command {
             match command {
-                TemplateCommands::List { fields, format } => {
-                    assert_eq!(fields, None);
-                    assert_eq!(format, None);
-                }
-                TemplateCommands::Describe { .. } => {
-                    panic!("Expected List command, got Describe");
-                }
-            }
-        } else {
-            panic!("Expected Template command");
-        }
-    }
-
-    #[test]
-    fn test_template_list_with_fields() {
-        let cli = Cli::parse_from(["markbase", "template", "list", "-F", "tags,type"]);
-        if let Commands::Template { command } = cli.command {
-            match command {
-                TemplateCommands::List { fields, format } => {
-                    assert_eq!(fields, Some("tags,type".to_string()));
+                TemplateCommands::List { format } => {
                     assert_eq!(format, None);
                 }
                 TemplateCommands::Describe { .. } => {
@@ -522,8 +490,7 @@ mod tests {
         let cli = Cli::parse_from(["markbase", "template", "list", "-o", "json"]);
         if let Commands::Template { command } = cli.command {
             match command {
-                TemplateCommands::List { fields, format } => {
-                    assert_eq!(fields, None);
+                TemplateCommands::List { format } => {
                     assert_eq!(format, Some(OutputFormat::Json));
                 }
                 TemplateCommands::Describe { .. } => {
