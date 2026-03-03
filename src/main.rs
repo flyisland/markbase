@@ -229,23 +229,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             let total = stats.new + stats.updated;
-            let details = if stats.new > 0 || stats.updated > 0 || stats.errors > 0 {
-                format!(
-                    " ({} new, {} updated, {} errors)",
-                    stats.new, stats.updated, stats.errors
-                )
-            } else {
-                String::new()
-            };
+            let details = format!(
+                " ({} new, {} updated, {} deleted, {} errors)",
+                stats.new, stats.updated, stats.deleted, stats.errors
+            );
             let time_str = format!(
                 "{}.{}s",
                 stats.duration_ms / 1000,
                 (stats.duration_ms % 1000) / 100
             );
             println!(
-                "  ✓ {} files indexed{}{}",
+                "  ✓ {} files indexed{} — {} total notes{}",
                 total,
                 details,
+                stats.total,
                 if stats.duration_ms > 0 {
                     format!("  [{}]", time_str)
                 } else {

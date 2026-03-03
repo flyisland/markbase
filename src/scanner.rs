@@ -20,6 +20,7 @@ pub struct IndexStats {
     pub name_conflicts: Vec<(String, String)>,
     pub duration_ms: u64,
     pub base_dir: PathBuf,
+    pub total: usize,
 }
 
 impl IndexStats {
@@ -36,6 +37,7 @@ impl IndexStats {
             name_conflicts: Vec::new(),
             duration_ms: 0,
             base_dir: base_dir.to_path_buf(),
+            total: 0,
         }
     }
 
@@ -63,6 +65,7 @@ impl Default for IndexStats {
             name_conflicts: Vec::new(),
             duration_ms: 0,
             base_dir: PathBuf::new(),
+            total: 0,
         }
     }
 }
@@ -151,6 +154,8 @@ pub fn index_directory(
     }
 
     update_backlinks(db, &all_notes)?;
+
+    stats.total = db.count_notes()?;
 
     stats.duration_ms = start.elapsed().as_millis() as u64;
 

@@ -234,6 +234,13 @@ impl Database {
         })
     }
 
+    pub fn count_notes(&self) -> Result<usize, Box<dyn std::error::Error>> {
+        let count: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM notes", [], |row| row.get(0))?;
+        Ok(count as usize)
+    }
+
     pub fn get_all_links(
         &self,
     ) -> Result<std::collections::HashMap<String, Vec<String>>, Box<dyn std::error::Error>> {
