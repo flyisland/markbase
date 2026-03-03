@@ -59,9 +59,9 @@ Each indexed note has two property types:
 | `ctime` | TIMESTAMPTZ | Created time |
 | `mtime` | TIMESTAMPTZ | Modified time |
 | `tags` | VARCHAR[] | Tags from content (`#tag`) and frontmatter |
-| `links` | VARCHAR[] | Wiki-links `[[link]]` |
-| `backlinks` | VARCHAR[] | Notes linking to this note |
-| `embeds` | VARCHAR[] | Embeds `![[embed]]` |
+| `links` | VARCHAR[] | Wiki-links `[[link]]` + embeds `![[embed]]` from body and frontmatter |
+| `backlinks` | VARCHAR[] | Notes linking to this note (reverse of links) |
+| `embeds` | VARCHAR[] | Embeds `![[embed]]` from body only |
 
 **Frontmatter Properties**: Any YAML frontmatter field is queryable:
 
@@ -187,8 +187,8 @@ markbase note rename old-name new-name
 Behavior:
 - Looks up note by name (not path)
 - Fails if name is ambiguous or new name exists
-- Updates all `[[old-name]]` links across the vault
-- Preserves aliases and section anchors
+- Updates all `[[old-name]]` links and `![[old-name]]` embeds across the vault (body and frontmatter)
+- Preserves aliases, section anchors, and block IDs
 
 ### `template`
 

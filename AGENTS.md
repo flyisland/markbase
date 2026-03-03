@@ -14,7 +14,7 @@ Markbase is a high-performance CLI tool for scanning, parsing, and indexing Mark
 - **CLI Framework**: clap v4.5 (derive feature)
 - **Database**: DuckDB (bundled with `duckdb` crate)
 - **File Traversal**: walkdir v2.5
-- **Parsing**: gray_matter (frontmatter), regex (wiki-links/tags)
+- **Parsing**: gray_matter (frontmatter), regex (wiki-links/tags), serde_yaml (frontmatter rewrite)
 - **Serialization**: serde, serde_json
 
 **Design Principle**: Minimize dependencies, optimize binary size (`strip = true` in Cargo.toml)
@@ -96,7 +96,10 @@ src/
 **`extractor.rs`**:
 - Stateless parser, no database awareness
 - Merges content tags (`#tag`) and frontmatter tags
-- Returns `Note` struct for scanner to consume
+- Extracts links from body (`[[...]]`, `![[...]]`) and frontmatter (`[[...]]`)
+- Shared regex patterns (`EMBED_RE`, `WIKILINK_RE`) exposed as public constants
+- Code blocks in body are excluded from link matching
+- Returns `ExtractedContent` with `links`, `embeds`, `tags`, `frontmatter`
 
 **`db.rs`**:
 - Owns DuckDB connection, implements Drop trait to ensure closure
@@ -159,8 +162,8 @@ SELECT name, json_extract_string(properties, '$."author"') FROM notes WHERE json
 1. Find note by name (not path)
 2. Uniqueness check: if file with same name exists → fail
 3. Rename file
-4. Traverse all `.md` files, update `[[old-name]]` → `[[new-name]]`
-5. Preserve aliases and anchors: `[[old-name|alias]]` → `[[new-name|alias]]`
+4. Full vault scan: update `[[old-name]]` and `![[old-name]]` in body and frontmatter
+5. Preserve aliases, anchors, and block IDs: `[[old-name#Heading|alias]]` → `[[new-name#Heading|alias]]`
 6. Reindex affected notes
 
 ## 7. Performance Targets
