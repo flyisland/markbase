@@ -3,6 +3,7 @@ use crate::db::{Database, Note};
 use crate::extractor::Extractor;
 use ignore::WalkBuilder;
 use ignore::gitignore::Gitignore;
+use ignore::gitignore::GitignoreBuilder;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -88,16 +89,34 @@ pub fn index_directory(
         HashMap::new()
     };
 
-    let gitignore: Option<Gitignore> = {
+    let ignore_patterns: Option<Gitignore> = {
+        let mut builder = GitignoreBuilder::new(abs_base_dir);
+
         let gitignore_path = abs_base_dir.join(".gitignore");
-        if gitignore_path.exists() {
-            match Gitignore::new(&gitignore_path) {
-                (g, None) => Some(g),
-                (_, Some(_)) => None,
+        if gitignore_path.exists()
+            && let Ok(content) = fs::read_to_string(&gitignore_path)
+        {
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                    let _ = builder.add_line(None, trimmed);
+                }
             }
-        } else {
-            None
         }
+
+        let markbaseignore_path = abs_base_dir.join(".markbaseignore");
+        if markbaseignore_path.exists()
+            && let Ok(content) = fs::read_to_string(&markbaseignore_path)
+        {
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                    let _ = builder.add_line(None, trimmed);
+                }
+            }
+        }
+
+        builder.build().ok()
     };
 
     for entry in WalkBuilder::new(abs_base_dir).follow_links(true).build() {
@@ -110,11 +129,11 @@ pub fn index_directory(
         };
         let path = entry.path();
 
-        if let Some(ref gitignore) = gitignore
+        if let Some(ref ignore_patterns) = ignore_patterns
             && let Ok(rel_path) = path.strip_prefix(abs_base_dir)
         {
             let is_dir = path.is_dir();
-            let match_result = gitignore.matched(rel_path, is_dir);
+            let match_result = ignore_patterns.matched(rel_path, is_dir);
             if match_result.is_ignore() {
                 continue;
             }
@@ -124,7 +143,7 @@ pub fn index_directory(
                 if parent.as_os_str().is_empty() {
                     break;
                 }
-                let parent_match = gitignore.matched(parent, true);
+                let parent_match = ignore_patterns.matched(parent, true);
                 if parent_match.is_ignore() {
                     parent_ignored = true;
                     break;
@@ -751,6 +770,69 @@ See [[other]] for more."#;
         let records = db.get_all_mtime_and_size().unwrap();
         assert!(records.contains_key("test.md"));
         assert!(records.contains_key("other.md"));
+
+        cleanup(&test_dir, &db_path);
+    }
+
+    #[test]
+    fn test_index_respects_markbaseignore() {
+        let (test_dir, db_path) = create_test_directory();
+
+        create_test_file(&test_dir, ".markbaseignore", "skip.md\n");
+        create_test_file(&test_dir, "test.md", "# Test");
+        create_test_file(&test_dir, "skip.md", "# Skip");
+
+        let db = Database::new(&db_path).unwrap();
+        let _result = index_directory(&test_dir, &db, false).unwrap();
+
+        let records = db.get_all_mtime_and_size().unwrap();
+        assert!(records.contains_key("test.md"));
+        assert!(!records.contains_key("skip.md"));
+
+        cleanup(&test_dir, &db_path);
+    }
+
+    #[test]
+    fn test_index_markbaseignore_takes_precedence() {
+        let (test_dir, db_path) = create_test_directory();
+
+        create_test_file(&test_dir, ".gitignore", "keep.md\n");
+        create_test_file(&test_dir, ".markbaseignore", "skip.md\n");
+        create_test_file(&test_dir, "keep.md", "# Keep");
+        create_test_file(&test_dir, "skip.md", "# Skip");
+        create_test_file(&test_dir, "other.md", "# Other");
+
+        let db = Database::new(&db_path).unwrap();
+        let _result = index_directory(&test_dir, &db, false).unwrap();
+
+        let records = db.get_all_mtime_and_size().unwrap();
+        assert!(!records.contains_key("keep.md"));
+        assert!(!records.contains_key("skip.md"));
+        assert!(records.contains_key("other.md"));
+
+        cleanup(&test_dir, &db_path);
+    }
+
+    #[test]
+    fn test_index_markbaseignore_with_gitignore() {
+        let (test_dir, db_path) = create_test_directory();
+
+        let private_dir = test_dir.join("private");
+        fs::create_dir(&private_dir).unwrap();
+
+        create_test_file(&test_dir, ".gitignore", "skip.md\n");
+        create_test_file(&test_dir, ".markbaseignore", "private/\n");
+        create_test_file(&test_dir, "main.md", "# Main");
+        create_test_file(&test_dir, "skip.md", "# Skip");
+        create_test_file(&private_dir, "secret.md", "# Secret");
+
+        let db = Database::new(&db_path).unwrap();
+        let _result = index_directory(&test_dir, &db, false).unwrap();
+
+        let records = db.get_all_mtime_and_size().unwrap();
+        assert!(records.contains_key("main.md"));
+        assert!(!records.contains_key("skip.md"));
+        assert!(!records.contains_key("private/secret.md"));
 
         cleanup(&test_dir, &db_path);
     }
