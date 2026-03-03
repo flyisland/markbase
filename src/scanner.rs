@@ -1,11 +1,12 @@
 use crate::constants::RESERVED_FIELDS;
 use crate::db::{Database, Note};
 use crate::extractor::Extractor;
+use ignore::WalkBuilder;
+use ignore::gitignore::Gitignore;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Instant, UNIX_EPOCH};
-use walkdir::WalkDir;
 
 #[derive(Debug, Clone)]
 pub struct IndexStats {
@@ -87,12 +88,53 @@ pub fn index_directory(
         HashMap::new()
     };
 
-    for entry in WalkDir::new(abs_base_dir)
-        .follow_links(true)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
+    let gitignore: Option<Gitignore> = {
+        let gitignore_path = abs_base_dir.join(".gitignore");
+        if gitignore_path.exists() {
+            match Gitignore::new(&gitignore_path) {
+                (g, None) => Some(g),
+                (_, Some(_)) => None,
+            }
+        } else {
+            None
+        }
+    };
+
+    for entry in WalkBuilder::new(abs_base_dir).follow_links(true).build() {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("Warning: error walking directory: {}", e);
+                continue;
+            }
+        };
         let path = entry.path();
+
+        if let Some(ref gitignore) = gitignore
+            && let Ok(rel_path) = path.strip_prefix(abs_base_dir)
+        {
+            let is_dir = path.is_dir();
+            let match_result = gitignore.matched(rel_path, is_dir);
+            if match_result.is_ignore() {
+                continue;
+            }
+
+            let mut parent_ignored = false;
+            for parent in rel_path.ancestors() {
+                if parent.as_os_str().is_empty() {
+                    break;
+                }
+                let parent_match = gitignore.matched(parent, true);
+                if parent_match.is_ignore() {
+                    parent_ignored = true;
+                    break;
+                }
+            }
+            if parent_ignored {
+                continue;
+            }
+        }
+
         if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
             let rel_path = path.strip_prefix(abs_base_dir).map_err(|_| {
                 format!(
@@ -611,6 +653,104 @@ See [[other]] for more."#;
         assert_eq!(result2.new, 0);
         assert_eq!(result2.updated, 0);
         assert!(!result2.skipped.is_empty());
+
+        cleanup(&test_dir, &db_path);
+    }
+
+    #[test]
+    fn test_index_respects_gitignore_file_pattern() {
+        let (test_dir, db_path) = create_test_directory();
+
+        create_test_file(&test_dir, ".gitignore", "skip.md\n");
+        create_test_file(&test_dir, "test.md", "# Test");
+        create_test_file(&test_dir, "skip.md", "# Skip");
+
+        let db = Database::new(&db_path).unwrap();
+        let _result = index_directory(&test_dir, &db, false).unwrap();
+
+        let records = db.get_all_mtime_and_size().unwrap();
+        assert!(records.contains_key("test.md"));
+        assert!(!records.contains_key("skip.md"));
+
+        cleanup(&test_dir, &db_path);
+    }
+
+    #[test]
+    fn test_index_respects_gitignore_directory_pattern() {
+        let (test_dir, db_path) = create_test_directory();
+
+        create_test_file(&test_dir, ".gitignore", "subdir\n");
+
+        let subdir = test_dir.join("subdir");
+        fs::create_dir(&subdir).unwrap();
+
+        create_test_file(&test_dir, "main.md", "# Main");
+        create_test_file(&subdir, "sub.md", "# Sub");
+
+        let db = Database::new(&db_path).unwrap();
+        let _result = index_directory(&test_dir, &db, false).unwrap();
+
+        let records = db.get_all_mtime_and_size().unwrap();
+        assert!(records.contains_key("main.md"));
+        assert!(!records.contains_key("subdir/sub.md"));
+
+        cleanup(&test_dir, &db_path);
+    }
+
+    #[test]
+    fn test_index_respects_gitignore_negation_pattern() {
+        let (test_dir, db_path) = create_test_directory();
+
+        create_test_file(&test_dir, ".gitignore", "test.md\n!important.md\n");
+        create_test_file(&test_dir, "test.md", "# Test");
+        create_test_file(&test_dir, "important.md", "# Important");
+        create_test_file(&test_dir, "other.md", "# Other");
+
+        let db = Database::new(&db_path).unwrap();
+        let _result = index_directory(&test_dir, &db, false).unwrap();
+
+        let records = db.get_all_mtime_and_size().unwrap();
+        assert!(!records.contains_key("test.md"));
+        assert!(records.contains_key("important.md"));
+        assert!(records.contains_key("other.md"));
+
+        cleanup(&test_dir, &db_path);
+    }
+
+    #[test]
+    fn test_index_respects_gitignore_hidden_files() {
+        let (test_dir, db_path) = create_test_directory();
+
+        let hidden = test_dir.join(".hidden");
+        fs::create_dir(&hidden).unwrap();
+
+        create_test_file(&test_dir, ".gitignore", ".hidden/\n");
+        create_test_file(&test_dir, "main.md", "# Main");
+        create_test_file(&hidden, "secret.md", "# Secret");
+
+        let db = Database::new(&db_path).unwrap();
+        let result = index_directory(&test_dir, &db, false).unwrap();
+
+        let records = db.get_all_mtime_and_size().unwrap();
+        assert!(records.contains_key("main.md"));
+        assert!(!records.contains_key(".hidden/secret.md"));
+
+        cleanup(&test_dir, &db_path);
+    }
+
+    #[test]
+    fn test_index_no_gitignore() {
+        let (test_dir, db_path) = create_test_directory();
+
+        create_test_file(&test_dir, "test.md", "# Test");
+        create_test_file(&test_dir, "other.md", "# Other");
+
+        let db = Database::new(&db_path).unwrap();
+        let _result = index_directory(&test_dir, &db, false).unwrap();
+
+        let records = db.get_all_mtime_and_size().unwrap();
+        assert!(records.contains_key("test.md"));
+        assert!(records.contains_key("other.md"));
 
         cleanup(&test_dir, &db_path);
     }
