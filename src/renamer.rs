@@ -1,9 +1,9 @@
-use regex::Regex;
+use crate::db::Database;
+use crate::extractor::{EMBED_RE, Extractor, WIKILINK_RE};
+use gray_matter::Matter;
+use gray_matter::engine::YAML;
 use std::fs;
 use std::path::Path;
-
-use crate::db::Database;
-use crate::extractor::Extractor;
 
 pub struct RenameResult {
     pub old_path: String,
@@ -56,8 +56,7 @@ pub fn rename_note(
         format!("{}/{}", note.folder, new_file_name)
     };
 
-    let updated_files =
-        update_links_in_backlinked_files(base_dir, &note.backlinks, old_name, new_name)?;
+    let updated_files = update_links_in_vault(base_dir, old_name, new_name)?;
 
     fs::rename(&old_file_path, &new_file_path)?;
 
@@ -95,26 +94,39 @@ pub fn rename_note(
     })
 }
 
-fn update_links_in_backlinked_files(
+fn update_links_in_vault(
     base_dir: &Path,
-    backlinks: &[String],
     old_name: &str,
     new_name: &str,
 ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let mut updated_files = Vec::new();
 
-    for backlink_path in backlinks {
-        let full_path = base_dir.join(backlink_path);
-        if !full_path.exists() {
+    for entry in walkdir::WalkDir::new(base_dir)
+        .follow_links(true)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        let path = entry.path();
+        if !path.is_file() || path.extension().is_none_or(|ext| ext != "md") {
             continue;
         }
 
-        let content = fs::read_to_string(&full_path)?;
-        let new_content = update_links_in_content(&content, old_name, new_name);
+        let rel_path = match path.strip_prefix(base_dir) {
+            Ok(p) => p.to_string_lossy().to_string(),
+            Err(_) => continue,
+        };
 
-        if new_content != content {
-            fs::write(&full_path, &new_content)?;
-            updated_files.push(backlink_path.clone());
+        let raw = fs::read_to_string(path)?;
+
+        if !raw.contains(old_name) {
+            continue;
+        }
+
+        let new_content = update_links_in_content(&raw, old_name, new_name);
+
+        if new_content != raw {
+            fs::write(path, &new_content)?;
+            updated_files.push(rel_path);
         }
     }
 
@@ -122,33 +134,136 @@ fn update_links_in_backlinked_files(
 }
 
 fn update_links_in_content(content: &str, old_name: &str, new_name: &str) -> String {
-    let escaped_old = regex::escape(old_name);
+    let (frontmatter, body) = parse_frontmatter(content);
 
-    let patterns = vec![
-        format!(r"\[\[{}(\|[^\]]*)?\]\]", escaped_old),
-        format!(r"\[\[{}(#[^\]\|]*)?(\|[^\]]*)?\]\]", escaped_old),
-    ];
+    let body = EMBED_RE.replace_all(&body, |caps: &regex::Captures| {
+        let target = caps.get(1).map_or("", |m| m.as_str());
+        let normalized_target = Extractor::normalize_link_name(target);
+        if normalized_target == old_name {
+            let normalized_suffix = if let Some((_, tail)) = target.rsplit_once('/') {
+                tail
+            } else {
+                target
+            };
+            let suffix = normalized_suffix
+                .strip_prefix(old_name)
+                .unwrap_or(normalized_suffix);
+            format!("![[{}{}]]", new_name, suffix)
+        } else {
+            caps.get(0).map_or("", |m| m.as_str()).to_string()
+        }
+    });
 
-    let mut result = content.to_string();
+    let body = WIKILINK_RE.replace_all(&body, |caps: &regex::Captures| {
+        let target = caps.get(1).map_or("", |m| m.as_str());
+        let normalized_target = Extractor::normalize_link_name(target);
+        if normalized_target == old_name {
+            let normalized_suffix = if let Some((_, tail)) = target.rsplit_once('/') {
+                tail
+            } else {
+                target
+            };
+            let suffix = normalized_suffix
+                .strip_prefix(old_name)
+                .unwrap_or(normalized_suffix);
+            format!("[[{}{}]]", new_name, suffix)
+        } else {
+            caps.get(0).map_or("", |m| m.as_str()).to_string()
+        }
+    });
 
-    for pattern in patterns {
-        let re = Regex::new(&pattern).unwrap();
-        result = re
-            .replace_all(&result, |caps: &regex::Captures| {
-                let mut replacement = format!("[[{}", new_name);
+    let body_str = body.to_string();
 
-                for i in 1..caps.len() {
-                    if let Some(m) = caps.get(i) {
-                        replacement.push_str(m.as_str());
-                    }
-                }
-                replacement.push_str("]]");
-                replacement
-            })
-            .to_string();
+    if let Some(ref fm) = frontmatter {
+        let new_frontmatter = rewrite_frontmatter_links(fm, old_name, new_name);
+        if let Some(fm) = new_frontmatter {
+            reconstruct_file(&fm, &body_str)
+        } else {
+            body_str
+        }
+    } else {
+        body_str
+    }
+}
+
+fn parse_frontmatter(content: &str) -> (Option<String>, String) {
+    let matter = Matter::<YAML>::new();
+    match matter.parse::<serde_json::Value>(content) {
+        Ok(result) => {
+            if let Some(data) = result.data {
+                let fm_json = serde_json::to_string(&data).ok();
+                (fm_json, result.content)
+            } else {
+                (None, content.to_string())
+            }
+        }
+        Err(_) => (None, content.to_string()),
+    }
+}
+
+fn reconstruct_file(frontmatter_json: &str, body: &str) -> String {
+    let fm: serde_json::Value = match serde_json::from_str(frontmatter_json) {
+        Ok(v) => v,
+        Err(_) => return body.to_string(),
+    };
+
+    if fm.is_null() || fm.as_object().is_none_or(|o| o.is_empty()) {
+        return body.to_string();
     }
 
-    result
+    let yaml = serde_yaml::to_string(&fm).unwrap_or_default();
+    format!("---\n{}---\n\n{}", yaml.trim(), body)
+}
+
+fn rewrite_frontmatter_links(
+    frontmatter_json: &str,
+    old_name: &str,
+    new_name: &str,
+) -> Option<String> {
+    let mut fm: serde_json::Value = serde_json::from_str(frontmatter_json).ok()?;
+
+    rewrite_value_links(&mut fm, old_name, new_name);
+
+    serde_json::to_string(&fm).ok()
+}
+
+fn rewrite_value_links(value: &mut serde_json::Value, old_name: &str, new_name: &str) {
+    match value {
+        serde_json::Value::String(s) => {
+            let new_str = WIKILINK_RE
+                .replace_all(s, |caps: &regex::Captures| {
+                    let original = caps.get(0).map_or("", |m| m.as_str());
+                    let target = caps.get(1).map_or("", |m| m.as_str());
+                    let normalized_target = Extractor::normalize_link_name(target);
+                    if normalized_target == old_name {
+                        let normalized_suffix = if let Some((_, tail)) = target.rsplit_once('/') {
+                            tail
+                        } else {
+                            target
+                        };
+                        let suffix = normalized_suffix
+                            .strip_prefix(old_name)
+                            .unwrap_or(normalized_suffix);
+                        format!("[[{}{}]]", new_name, suffix)
+                    } else {
+                        original.to_string()
+                    }
+                })
+                .to_string();
+            *s = new_str;
+        }
+        serde_json::Value::Array(arr) => {
+            for item in arr.iter_mut() {
+                rewrite_value_links(item, old_name, new_name);
+            }
+        }
+        serde_json::Value::Object(obj) => {
+            for (_, v) in obj.iter_mut() {
+                rewrite_value_links(v, old_name, new_name);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn reindex_file(
@@ -277,5 +392,77 @@ mod tests {
         let content = "See [[old-note-extra]] for details.";
         let result = update_links_in_content(content, "old-note", "new-note");
         assert_eq!(result, "See [[old-note-extra]] for details.");
+    }
+
+    #[test]
+    fn test_update_embeds() {
+        let content = "See ![[old-note]] and ![[old-image.png]].";
+        let result = update_links_in_content(content, "old-note", "new-note");
+        assert_eq!(result, "See ![[new-note]] and ![[old-image.png]].");
+    }
+
+    #[test]
+    fn test_update_embeds_with_section() {
+        let content = "![[old-note#Section]]";
+        let result = update_links_in_content(content, "old-note", "new-note");
+        assert_eq!(result, "![[new-note#Section]]");
+    }
+
+    #[test]
+    fn test_update_frontmatter_links() {
+        let content = r#"---
+related: "[[old-note]]"
+---
+
+Content"#;
+        let result = update_links_in_content(content, "old-note", "new-note");
+        assert!(result.contains("[[new-note]]"));
+        assert!(!result.contains("[[old-note]]"));
+    }
+
+    #[test]
+    fn test_update_frontmatter_links_with_alias() {
+        let content = r#"---
+see: "[[old-note|Alias]]"
+---
+
+Content"#;
+        let result = update_links_in_content(content, "old-note", "new-note");
+        assert!(result.contains("[[new-note|Alias]]"));
+    }
+
+    #[test]
+    fn test_update_frontmatter_links_multiple() {
+        let content = r#"---
+related: "[[old-note]]"
+seeAlso: "[[another-old]]"
+---
+
+Content"#;
+        let result = update_links_in_content(content, "old-note", "new-note");
+        assert!(result.contains("[[new-note]]"));
+        assert!(result.contains("[[another-old]]"));
+    }
+
+    #[test]
+    fn test_update_embeds_and_wikilinks_together() {
+        let content = r#"Body with [[old-note]] and ![[old-note]]."#;
+        let result = update_links_in_content(content, "old-note", "new-note");
+        assert!(result.contains("[[new-note]]"));
+        assert!(result.contains("![[new-note]]"));
+    }
+
+    #[test]
+    fn test_does_not_affect_unrelated_content() {
+        let content = "Some text without links here.";
+        let result = update_links_in_content(content, "old-note", "new-note");
+        assert_eq!(result, content);
+    }
+
+    #[test]
+    fn test_normalize_link_name_in_updates() {
+        let content = "See [[notes/old-note]] for details.";
+        let result = update_links_in_content(content, "old-note", "new-note");
+        assert_eq!(result, "See [[new-note]] for details.");
     }
 }

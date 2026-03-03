@@ -238,8 +238,10 @@ fn update_backlinks(
 
     for (path, links) in &link_map {
         for link in links {
-            let link_name = link.trim_end_matches(['|', '#']).to_string();
-            backlinks.entry(link_name).or_default().push(path.clone());
+            let link_name = Extractor::normalize_link_name(link);
+            if !link_name.is_empty() {
+                backlinks.entry(link_name).or_default().push(path.clone());
+            }
         }
     }
 
