@@ -1,232 +1,316 @@
-# Agent Specification: Markdown Base CLI
+# Markbase 开发指南
 
-## 1. Project Overview
+本文档面向 markbase 的开发者和开发 Agent，包含架构设计、开发规范和实现细节。
 
-The goal is to build a high-performance Command Line Interface (CLI) tool designed to scan, parse, and index Markdown notes into a **DuckDB** database for instantaneous metadata searching with Obsidian compatibility in mind.
+## 1. 项目概述
 
-## 2. Technical Stack
+Markbase 是一个高性能 CLI 工具，用于扫描、解析 Markdown 笔记并索引到 DuckDB 数据库，支持即时元数据查询，兼容 Obsidian。
 
-See [README.md](./README.md#tech-stack) for the complete tech stack details.
+**核心价值**：为 AI Agent 提供结构化的 Markdown 知识库访问能力。
 
-## 3. Data Schema
+## 2. 技术栈
 
-The DuckDB local file (`.markbase/markbase.duckdb`) utilizes the following schema to support Markdown structures:
+- **语言**: Rust 1.85+ (2024 edition)
+- **CLI 框架**: clap v4.5 (derive feature)
+- **数据库**: DuckDB (bundled with `duckdb` crate)
+- **文件遍历**: walkdir v2.5
+- **解析**: gray_matter (frontmatter), regex (wiki-links/tags)
+- **序列化**: serde, serde_json
 
-| Property   | Type        | Description                              |
-| ---------- | ----------- | ---------------------------------------- |
-| path       | TEXT        | Note path relative to base-dir (primary key) |
-| folder     | TEXT        | Directory path relative to base-dir     |
-| name       | TEXT        | File name (without extension)            |
-| ext        | TEXT        | Note extension                           |
-| size       | INTEGER     | Note size in bytes                       |
-| ctime      | TIMESTAMPTZ | Created time                             |
-| mtime      | TIMESTAMPTZ | Modified time                            |
-| tags       | VARCHAR[]   | Array of tags                            |
-| links      | VARCHAR[]   | Array of wiki-links                      |
-| backlinks  | VARCHAR[]   | Array of backlink notes                   |
-| embeds     | VARCHAR[]   | Array of embeds                          |
-| properties | JSON        | Frontmatter properties                   |
+**设计原则**: 最小化依赖，优化二进制体积 (`strip = true` in Cargo.toml)
 
-**Note**: Array types stored as native VARCHAR[] arrays, properties as JSON.
+## 3. 数据模型
 
-### 3.1 Indexes
+### 3.1 Schema
+
+数据库位置: `{{base-dir}}/.markbase/markbase.duckdb`
+
 ```sql
-CREATE INDEX IF NOT EXISTS idx_mtime ON notes(mtime);
-CREATE INDEX IF NOT EXISTS idx_folder ON notes(folder);
-CREATE INDEX IF NOT EXISTS idx_name ON notes(name);
+CREATE TABLE notes (
+    path       TEXT PRIMARY KEY,        -- 相对 base-dir 的路径
+    folder     TEXT,                    -- 目录路径
+    name       TEXT,                    -- 文件名(无扩展名)
+    ext        TEXT,                    -- 扩展名
+    size       INTEGER,                 -- 字节数
+    ctime      TIMESTAMPTZ,             -- 创建时间
+    mtime      TIMESTAMPTZ,             -- 修改时间
+    tags       VARCHAR[],               -- 标签数组
+    links      VARCHAR[],               -- wiki-links 数组
+    backlinks  VARCHAR[],               -- 反向链接数组
+    embeds     VARCHAR[],               -- 嵌入数组
+    properties JSON                     -- frontmatter 属性
+);
 ```
 
-## 4. Operational Requirements
+**索引**:
+```sql
+CREATE INDEX idx_mtime ON notes(mtime);
+CREATE INDEX idx_folder ON notes(folder);
+CREATE INDEX idx_name ON notes(name);
+```
 
-For command usage, options, and examples, see [README.md](./README.md#commands). The following documents the **internal behavior logic** relevant to implementation.
+### 3.2 字段解析优先级
 
-### Command: `index`
-- **Concurrency**: Sequential processing with WalkDir iterator.
-- **Logic**:
-    - Perform incremental updates by comparing `mtime + size`; skip unchanged notes.
-    - Detect deleted files (in DB but not on filesystem) and remove from database.
-    - Detect name conflicts (multiple files with same name) and skip with warning.
-    - With `--force`, delete the existing database file and rebuild from scratch.
-    - Extract YAML Frontmatter using `gray_matter`.
-    - Parse wiki-links `[[link]]`, embeds `![[embed]]`, and tags `#tag` using regex.
-    - Calculate backlinks (reverse link lookup) post-indexing across all notes.
-    - Insert notes using parameterized queries with `duckdb::params!`.
-    - Warn if a frontmatter field conflicts with a reserved field (except `tags`).
+查询字段时:
+1. 先检查保留字段 (`path`, `name`, `mtime` 等)
+2. 未匹配则从 `properties` JSON 中提取: `json_extract_string(properties, '$."field"')`
+3. 支持嵌套路径: `a.b.c` → `json_extract_string(properties, '$."a"."b"."c"')`
 
-### Command: `query`
-- **Field resolution**: Reserved fields are checked first, then frontmatter properties via JSON path.
-- **Nested JSON paths**: `a.b.c` → `json_extract_string(properties, '$."a"."b"."c"')`
-- **Operators**: `==`, `!=`, `>`, `<`, `>=`, `<=`, `=~` (LIKE pattern), `=` (alias for `==`)
-- **Logical operators**: `and` / `or` with standard precedence (`and` binds tighter than `or`)
-- **Functions**: `has(field, value)` for array containment; `exists(field)` for property existence
-- **Output**: Timestamps displayed as `YYYY-MM-DD HH:MM:SS`; supports table, json, list formats.
-- **SQL safety**: Query compiler generates parameterized SQL to prevent injection.
+## 4. 核心模块职责
 
-### Command: `note`
-Manages notes within the vault.
+### 4.1 模块概览
 
-#### `note new`
-- Creates a markdown note at the given path under base-dir.
-- If `--template` is provided, copies and renders the named template from `templates/` under base-dir.
+```
+src/
+├── main.rs          # CLI 入口，参数解析与命令分发
+├── db.rs            # DuckDB 连接管理、Schema 初始化、CRUD
+├── scanner.rs       # index 命令驱动，目录遍历、增量更新、反向链接计算
+├── extractor.rs     # 单文件解析：frontmatter、wiki-links、tags
+├── creator.rs       # note new 命令，模板渲染
+├── renamer.rs       # note rename 命令，链接更新
+├── describe.rs      # template describe 命令
+├── lib.rs           # 库导出
+└── query/
+    ├── mod.rs       # 输出格式化 (table/json/list)
+    ├── detector.rs  # SQL/表达式模式检测、安全验证
+    ├── translator.rs # 字段名翻译
+    ├── error_map.rs # DuckDB 错误映射
+    └── executor.rs  # 查询执行编排
+```
 
-#### `note rename`
-- Renames a note by its name (not path).
-- Fails if the note name is ambiguous (multiple files with same name) or if the new name already exists.
-- Updates all wiki-links pointing to the old name across all files in the vault.
-- Preserves aliases and section anchors in links.
+### 4.2 关键设计决策
 
-## 5. Module Responsibilities
+**`scanner.rs`**:
+- 使用 WalkDir 迭代器顺序处理（避免内存峰值）
+- 增量更新逻辑: 比较 `mtime + size`，跳过未修改文件
+- 删除检测: 遍历后对比 DB 与文件系统，移除已删除条目
+- 冲突处理: 同名文件跳过并警告
+- 反向链接: 所有 note 插入后，执行二次遍历计算 backlinks
 
-> For actual implementation, read the source files directly under `src/`. This section describes each module's responsibilities and key design decisions that are not self-evident from the code.
+**`extractor.rs`**:
+- 无状态解析器，不感知数据库
+- 合并内容标签 (`#tag`) 和 frontmatter 标签
+- 返回 `Note` struct，供 scanner 消费
 
-- **`main.rs`** — CLI entry point using clap derive macros. Handles argument parsing and dispatches to the appropriate command handler. Database path is derived from base-dir as `{{base-dir}}/.markbase/markbase.duckdb`; base-dir can be overridden via environment variable (`MARKBASE_BASE_DIR`) or CLI arg (`--base-dir`).
+**`db.rs`**:
+- 拥有 DuckDB 连接，实现 Drop trait 确保关闭
+- 使用 `INSERT OR REPLACE` 实现 upsert
+- 行值访问通过 `duckdb::types::Value`，注意列顺序必须与 schema 一致
 
-- **`scanner.rs`** — Drives the `index` command. Walks the directory tree, compares `mtime + size` for incremental updates, detects deleted files and removes them from DB, detects name conflicts (skips with warning), orchestrates calls to `extractor.rs` and `db.rs`, and computes backlinks as a reverse-lookup pass *after* all notes are inserted.
+**`query/detector.rs`**:
+- 模式判断: 以 `SELECT` 开头 → SQL 模式，否则 → 表达式模式
+- 安全验证: 拒绝非 SELECT 语句、多语句注入
 
-- **`extractor.rs`** — Stateless parsing of a single note's content. Extracts frontmatter (via `gray_matter`), wiki-links, embeds, and tags using regex. Tags are merged from both content (`#tag`) and frontmatter (`tags:` field). Returns a `Note` struct; has no knowledge of the database.
+**`query/translator.rs`**:
+- 保留字段直接透传
+- Frontmatter 字段翻译为 `json_extract_string(properties, ...)`
+- 保留类型转换语法 (`::INTEGER`, `::TIMESTAMP`)
 
-- **`db.rs`** — All DuckDB interaction. Owns the connection and schema initialization. Uses `INSERT OR REPLACE` for upserts. Row values are accessed via `duckdb::types::Value` — be aware that column index order must match the schema definition exactly.
+## 5. 命令内部逻辑
 
-- **`creator.rs`** — Handles the `note new` command. Resolves the template path under `templates/` in base-dir, copies it, and substitutes template variables. Fails explicitly if the target file already exists.
+详细用法见 README.md，本节说明实现细节。
 
-- **`renamer.rs`** — Handles the `note rename` command. Looks up notes by name, validates uniqueness, renames the file on disk, updates all wiki-links pointing to the old name across all files, and reindexes affected notes. Preserves aliases and section anchors in links.
+### `index`
 
-- **`query/detector.rs`** — Detects query input mode (SQL vs expression) and validates safety. SQL mode triggers when input starts with `SELECT`; expression mode wraps input in `SELECT ... FROM notes WHERE ...`. Safety validation rejects non-SELECT statements and multi-statement injection.
+**流程**:
+1. 遍历目录树 (WalkDir)
+2. 对每个 `.md` 文件:
+   - 比较 DB 中的 `mtime + size`，相同则跳过
+   - 调用 `extractor.rs` 解析内容
+   - 插入/更新 DB
+3. 删除检测: DB 中存在但文件系统不存在的条目 → 删除
+4. 冲突检测: 同名文件 → 警告并跳过
+5. 反向链接计算: 遍历所有 note 的 `links`，填充目标 note 的 `backlinks`
+6. 提交事务
 
-- **`query/translator.rs`** — Translates field names in SQL text. Reserved fields pass through unchanged; frontmatter fields are translated to `json_extract_string(properties, ...)`. Handles nested paths (e.g. `a.b.c`) and preserves type casts.
+**`--force` 标志**: 删除 `.markbase/markbase.duckdb` 后重新索引
 
-- **`query/error_map.rs`** — Maps DuckDB error messages to user-friendly messages. Covers conversion errors, unknown columns, JSON path errors, and syntax errors.
+### `query`
 
-- **`query/executor.rs`** — Orchestrates query execution. Calls detector, translator, and executes the final SQL against DuckDB. Wraps errors through error_map.
+**两种输入模式**:
+- **表达式模式**: `author == 'Tom'` → `SELECT * FROM notes WHERE author == 'Tom'`
+- **SQL 模式**: `SELECT path FROM notes WHERE ...` → 直接执行（仅翻译字段名）
 
-- **`query/mod.rs`** — Output formatting only (table, json, list). No query logic lives here.
+**字段翻译**:
+```sql
+-- 表达式: author == 'John'
+-- 翻译为:
+SELECT * FROM notes WHERE json_extract_string(properties, '$."author"') = 'John'
 
-## 6. Performance Goals
-- **Indexing Speed**: < 5 seconds for 10,000 notes (cold start).
-- **Search Latency**: < 50ms for complex queries on 10,000 rows.
-- **Query Latency**: < 100ms for complex query expressions.
-- **Binary Size**: Optimized release builds with `strip = true` in Cargo.toml.
+-- SQL: SELECT name, author FROM notes WHERE author = 'John'
+-- 翻译为:
+SELECT name, json_extract_string(properties, '$."author"') FROM notes WHERE json_extract_string(properties, '$."author"') = 'John'
+```
 
-## 7. Constraints & Safety
-- **Single Writer**: Only one `index` process can run at a time (DuckDB constraint).
-- **Graceful Shutdown**: Database connection closed when `Database` struct is dropped.
-- **Error Handling**: Comprehensive use of `Result` type with `?` operator for propagation.
-- **Incremental Updates**: Compare `mtime` to skip unchanged notes.
-- **Query Safety**: Only SELECT statements allowed; multi-statement injection rejected at detection stage.
-- **Thread Safety**: Uses `Mutex<Database>` for thread-safe access in multi-threaded contexts.
+**特殊处理**:
+- `list_contains(field, value)` 对 frontmatter 数组字段使用 `(properties->'$."field"')::VARCHAR[]`
 
-## 8. Development Commands
+**错误映射**: DuckDB 错误转换为用户友好消息（未知字段、类型转换失败等）
 
-See [README.md](./README.md#development) for usage examples and [README.md#testing] for test execution.
+### `note rename`
 
-## 9. Project Structure
+**流程**:
+1. 按 name 查找 note（非 path）
+2. 唯一性检查: 同名文件存在 → 失败
+3. 重命名文件
+4. 遍历所有 `.md` 文件，更新 `[[old-name]]` → `[[new-name]]`
+5. 保留别名和锚点: `[[old-name|alias]]` → `[[new-name|alias]]`
+6. 重新索引受影响的 note
 
-See [README.md](./README.md#project-structure) for the complete project structure.
+## 6. 性能目标
 
-## 10. Development Status
+| 指标 | 目标 |
+|------|------|
+| 冷启动索引 10,000 notes | < 5s |
+| 复杂查询延迟 (10k rows) | < 50ms |
+| 复杂表达式编译 | < 100ms |
 
-### Completed ✅
-- Core indexing functionality
-- Query system with native DuckDB SQL support
-- Two input modes: SQL mode (starts with SELECT) and expression mode
-- Field translation: reserved fields pass through, frontmatter fields use `json_extract_string`
-- Safety validation: non-SELECT statements and multi-statement injection rejected
-- `--dry-run` flag to show translated SQL without executing
-- Multiple output formats (table, json, list)
-- Backlink tracking
-- Rust migration complete
-- CLI with clap derive macros
-- Incremental updates via mtime + size comparison
-- Deleted file detection and removal
-- Name conflict detection with warnings
-- Note creation with templates (`note new` command)
-- Note renaming with link updates (`note rename` command)
-- `template describe` command
-- `MDB_OUTPUT` environment variable support
-- Global `--output-format` / `-o` option for query and template list
-- `note new --template` outputs path + content for agent workflow
-- Special handling for `list_contains()` with frontmatter array fields (uses `(properties->'$."field"')::VARCHAR[]`)
+**优化手段**:
+- 增量更新避免全量扫描
+- 索引优化 (mtime, folder, name)
+- 二进制体积优化 (`strip = true`)
 
-### Technical Debt / Future Improvements
-- Add integration tests for full query pipeline
-- Benchmark performance against 10,000 notes goal
-- Consider parallel processing for indexing
-- Add configuration file support
-- Implement query result caching
+## 7. 约束与安全
 
-### Test Coverage Summary
+- **单写入者**: DuckDB 约束，同一时刻只能有一个 `index` 进程
+- **查询安全**: 仅允许 SELECT 语句，拒绝多语句注入
+- **错误处理**: 全面使用 `Result` 和 `?` 操作符
+- **线程安全**: 多线程场景使用 `Mutex<Database>`
+- **优雅关闭**: `Database` 实现 Drop trait
 
-| Module         | Coverage                                                            |
-| -------------- | ------------------------------------------------------------------- |
-| `detector.rs`  | Mode detection, expression splitting, safety validation             |
-| `translator.rs`| Field translation, reserved fields, nested paths, type casts, `list_contains` array handling |
-| `error_map.rs` | DuckDB error message mapping                                         |
-| `executor.rs`  | Query execution, error wrapping                                      |
-| `extractor.rs` | Frontmatter, tags, wiki-links, embeds, edge cases                   |
-| `db.rs`        | Database operations, queries, CRUD                                   |
-| `scanner.rs`   | Note scanning, indexing, backlinks, subdirectories, deleted files, name conflicts |
-| `query/mod.rs` | Output formatting (table, JSON, list)                               |
-| `creator.rs`   | Template resolution, note creation                                  |
-| `renamer.rs`   | Link updates, note renaming, edge cases                             |
-| `main.rs`      | CLI options, default values, parsing                                |
-
-## 11. Development Workflow (Agent Guidelines)
-
-### 11.1 Branch Policy
-
-> **Trigger**: Whenever a user proposes any development task (including bug fixes, new features, documentation changes, etc.), you **must first** check the current branch status.
->
-> If not on `main` branch, check whether you need to create a new branch based on latest `main`.
-> If already on a feature/fix branch, continue working on that branch.
-> **Never** make code changes directly on `main` branch.
-
-- **Never commit directly to `main`.**
-- Always create a new feature branch before starting any development task:
-  ```bash
-  git checkout -b feat/<short-description>
-  # or
-  git checkout -b fix/<short-description>
-  ```
-- Branch naming convention: use `feat/`, `fix/`, `refactor/`, `test/`, `docs/` prefixes.
-
-### 11.2 Pre-commit Validation
-Before marking any task as complete, always run the following in order:
+## 8. 开发命令
 
 ```bash
-# 1. Lint — all warnings treated as errors
-cargo clippy -- -D warnings
+# 开发构建
+cargo build
 
-# 2. Tests — all tests must pass
+# 运行
+export MARKBASE_BASE_DIR=./notes
+cargo run -- index
+cargo run -- query "name == 'readme'"
+
+# 测试
 cargo test
+cargo test -- --nocapture
 
-# 3. Formatting check
+# 发布构建
+cargo build --release
+
+# 代码检查
+cargo clippy -- -D warnings
 cargo fmt --check
 ```
 
-Do not proceed if `clippy` reports errors or any test fails. Fix issues first.
+## 9. 项目结构
 
-### 11.3 Documentation Sync
-After completing a development task, review and update the following files as needed:
-
-- **`README.md`** — update if any of the following changed:
-  - Commands, options, or their behavior
-  - Query operators or supported functions
-  - Environment variables
-  - Tech stack or dependencies
-  - Project structure
-
-- **`AGENTS.md`** — update if any of the following changed:
-  - Data schema (fields, types, indexes)
-  - Implementation details (algorithms, module responsibilities)
-  - Performance goals or constraints
-  - Development status (move items from "Future Improvements" to "Completed ✅")
-
-### 11.4 Commit Message Convention
-Use conventional commits format:
 ```
-<type>(<scope>): <short summary>
+markbase/
+├── Cargo.toml           # 依赖配置
+├── Cargo.lock           # 依赖锁定
+├── README.md            # 用户文档
+├── AGENTS.md            # 本文件
+├── src/
+│   ├── main.rs          # CLI 入口
+│   ├── db.rs            # 数据库操作
+│   ├── scanner.rs       # 索引扫描
+│   ├── extractor.rs     # 内容提取
+│   ├── creator.rs       # Note 创建
+│   ├── renamer.rs       # Note 重命名
+│   ├── describe.rs      # 模板描述
+│   ├── lib.rs           # 库导出
+│   └── query/           # 查询系统
+│       ├── mod.rs       # 输出格式化
+│       ├── detector.rs  # 模式检测
+│       ├── translator.rs # 字段翻译
+│       ├── error_map.rs # 错误映射
+│       └── executor.rs  # 查询执行
+└── target/              # 构建输出
+```
 
-# Examples:
+## 10. 开发状态
+
+### 已完成 ✅
+
+- 核心索引功能
+- 查询系统 (SQL 模式 + 表达式模式)
+- 字段翻译与安全验证
+- 多输出格式 (table/json/list)
+- 反向链接追踪
+- 增量更新与删除检测
+- Note 创建 (模板支持)
+- Note 重命名 (链接更新)
+- Template 管理
+
+### 技术债务
+
+- 集成测试覆盖
+- 性能基准测试 (10k notes 目标)
+- 并行索引处理
+- 配置文件支持
+- 查询结果缓存
+
+### 测试覆盖
+
+| 模块 | 覆盖范围 |
+|------|----------|
+| `detector.rs` | 模式检测、表达式拆分、安全验证 |
+| `translator.rs` | 字段翻译、保留字段、嵌套路径、类型转换、数组处理 |
+| `error_map.rs` | DuckDB 错误映射 |
+| `executor.rs` | 查询执行、错误包装 |
+| `extractor.rs` | Frontmatter、标签、链接、嵌入解析 |
+| `db.rs` | CRUD 操作、查询 |
+| `scanner.rs` | 扫描、索引、反向链接、删除检测、冲突处理 |
+| `query/mod.rs` | 输出格式化 |
+| `creator.rs` | 模板解析、Note 创建 |
+| `renamer.rs` | 链接更新、重命名 |
+| `main.rs` | CLI 参数解析 |
+
+## 11. 开发工作流
+
+### 11.1 分支策略
+
+**禁止直接在 `main` 分支开发**
+
+创建功能分支:
+```bash
+git checkout -b feat/<description>
+git checkout -b fix/<description>
+```
+
+分支前缀: `feat/`, `fix/`, `refactor/`, `test/`, `docs/`
+
+### 11.2 提交前检查
+
+**必须通过以下检查**:
+
+```bash
+cargo clippy -- -D warnings  # Lint
+cargo test                   # 测试
+cargo fmt --check            # 格式
+```
+
+任意一项失败不得提交。
+
+### 11.3 文档同步
+
+**README.md 更新时机**:
+- 命令、选项或行为变更
+- 查询操作符或函数变更
+- 环境变量变更
+
+**AGENTS.md 更新时机**:
+- 依赖或技术栈变更
+- 数据模型变更
+- 架构或算法变更
+- 性能目标或约束变更
+- 开发状态变更
+
+### 11.4 提交信息规范
+
+```
+<type>(<scope>): <summary>
+
+# 示例
 feat(query): add exists() function support
 fix(scanner): handle symlink cycles in walkdir
 refactor(db): simplify upsert_note params
@@ -234,95 +318,100 @@ test(compiler): add coverage for nested JSON paths
 docs(readme): update query operator table
 ```
 
-### 11.5 Definition of Done
+### 11.5 定义完成标准
 
-A task is not complete until all of the following have been performed — not just checked mentally, but actually executed:
+任务完成必须满足:
 
-- [ ] Branch is up to date with `main`
-- [ ] `cargo clippy -- -D warnings` passes clean
-- [ ] `cargo test` — all tests pass
-- [ ] `cargo fmt --check` passes
-- [ ] `README.md` updated if user-facing behavior changed
-- [ ] `AGENTS.md` updated if architecture or schema changed
+- [ ] 分支已同步 main
+- [ ] `cargo clippy -- -D warnings` 通过
+- [ ] `cargo test` 全部通过
+- [ ] `cargo fmt --check` 通过
+- [ ] 用户可见行为变更已更新 README.md
+- [ ] 架构变更已更新 AGENTS.md
 
-### 11.6 Testing Strategy
-The goal is tests that verify **meaningful behavior**, not tests that merely execute code paths.
+## 12. 测试策略
 
-**When tests are required:**
-- Every new feature must be accompanied by unit tests covering its core behavior and key edge cases.
-- Every bug fix must include a regression test that reproduces the original bug.
-- Any change to a public function signature must be followed by a review of existing tests to confirm they still meaningfully validate the intended behavior.
+**测试价值**: 验证有意义的行为，而非仅仅覆盖代码路径
 
-**What a good test verifies:**
-- The correct output or side effect for a given input, not just "it didn't panic".
-- Boundary conditions and error paths, not only the happy path.
-- Behavior that would be broken by a wrong implementation — if a test would pass even with a naive or incorrect version of the code, it has no value.
+**必须编写测试**:
+- 新功能 → 核心行为 + 关键边界
+- Bug 修复 → 回归测试
+- 公共接口变更 → 审查现有测试
 
-**What to avoid:**
-- Tests written solely to increase coverage numbers.
-- Tests that duplicate what another test already covers without adding new signal.
-- Overly brittle tests that break on minor refactors unrelated to the behavior being tested.
+**优秀测试的特征**:
+- 验证正确输出或副作用
+- 覆盖边界条件和错误路径
+- 能被错误实现打破（naive 实现无法通过）
 
-### 11.7 Rust Best Practices
+**避免**:
+- 仅为覆盖率而写
+- 重复现有测试
+- 对无关重构过度敏感
 
-These are points where agent-written Rust code commonly goes wrong, beyond what `clippy` catches automatically.
+## 13. Rust 最佳实践
 
-**Error handling:**
-- Define structured error types with `thiserror` rather than returning bare `Box<dyn Error>` from library functions. Reserve `Box<dyn Error>` only for top-level `main` or quick prototypes.
-- Never use `.unwrap()` or `.expect()` in non-test code. Propagate errors with `?` or handle them explicitly with a clear rationale.
-- Error messages should describe what failed and why, not just the error type (e.g. `"failed to open database at {path}: {source}"` not just `"io error"`).
+### 13.1 错误处理
 
-**Dependencies:**
-- Before adding a new crate, check whether the existing stack already covers the need. This project is binary-size sensitive (`strip = true`).
-- Prefer crates already in `Cargo.toml` over introducing new ones for marginal convenience.
-- Always add new crates via `cargo add <crate>` rather than editing `Cargo.toml` directly. This ensures the version is current, `Cargo.lock` is updated atomically, and features are validated immediately. For crates with required features, use `cargo add <crate> --features <feature>`.
+- 使用 `thiserror` 定义结构化错误类型
+- 非测试代码禁止 `.unwrap()` / `.expect()`
+- 错误消息需说明失败原因: `"failed to open {path}: {source}"` 而非 `"io error"`
 
-**Code style:**
-- Keep functions small and focused. If a function needs a comment to explain what a block does, that block is a candidate for extraction.
-- Avoid premature optimization. Correctness and clarity first; optimize only when there is a measured performance problem.
+### 13.2 依赖管理
 
-### 11.8 Code Reuse
+- 添加新依赖前检查现有依赖是否满足需求
+- 使用 `cargo add <crate>` 而非手动编辑 `Cargo.toml`
+- 需要特性时使用 `cargo add <crate> --features <feature>`
 
-Before implementing new functionality, always check whether an existing module can be extended rather than duplicating logic or adding unnecessary files.
+### 13.3 代码风格
 
-**Respect module boundaries:**
-- Each module owns a specific responsibility. Adding logic that belongs to module A into module B to avoid a refactor is the most common source of long-term debt. If the boundary needs to move, move it explicitly.
-- If an existing module needs to be extended to support a new use case, prefer adding a well-named method to that module over working around it from the outside.
+- 函数保持短小聚焦
+- 需要注释解释的代码块考虑提取
+- 正确性优先，性能优化需有测量依据
 
-**Before adding new code, ask:**
-- Does this logic already exist somewhere? Search before writing.
-- Does this belong in an existing module, or does it genuinely warrant a new one?
-- If creating a new module, does it have a single, clearly statable responsibility?
+## 14. 代码复用
 
-**New CLI subcommands:**
-- Follow the existing pattern in `main.rs` for argument parsing.
-- Implement the command's logic in a dedicated file, not inline in `main.rs`.
+**模块边界尊重**:
+- 每个模块有明确职责
+- 不为避免重构而将逻辑放入错误模块
+- 边界需要移动时显式移动
 
-### 11.9 CLI UX Principles
+**新增功能前检查**:
+- 逻辑是否已存在？先搜索
+- 是否属于现有模块？
+- 新模块是否有单一清晰的职责？
 
-**Output structure:**
-- Default output should provide a structured summary sufficient for the user to confirm what happened — counts, status, and any non-fatal warnings — without requiring `--verbose`.
-- `--verbose` is for process detail: per-file status, intermediate steps, generated SQL, and similar diagnostic information.
-- Never emit content-free confirmations like `"Done!"` or `"Success!"` on their own. If there is nothing meaningful to report, stay silent.
+**新 CLI 子命令**:
+- 遵循 `main.rs` 现有模式
+- 逻辑实现在独立文件，不在 `main.rs` 内联
 
-**Output targets:**
-- Query results and structured data → stdout (so they can be piped).
-- Warnings, errors, and diagnostic messages → stderr.
-- This separation ensures `markbase query "..." | jq` and similar pipelines work correctly.
+## 15. CLI UX 原则
 
-**Exit codes:**
-- Exit `0` only on full success.
-- Exit non-zero on any error that prevented the command from completing its intended effect.
-- Non-fatal warnings (e.g. skipped files) should not cause a non-zero exit, but must be reported on stderr.
+### 15.1 输出结构
 
-**Summary format reference:**
+- 默认输出提供结构化摘要（计数、状态、警告）
+- `--verbose` 用于过程细节
+- 禁止无信息量的确认（如 "Done!"）
+
+### 15.2 输出目标
+
+- 查询结果和结构化数据 → stdout (支持管道)
+- 警告、错误、诊断信息 → stderr
+
+### 15.3 退出码
+
+- 成功 → `0`
+- 错误（影响预期效果）→ 非零
+- 非致命警告 → `0`（但需报告到 stderr）
+
+### 15.4 输出示例
+
 ```
-# index — default output
+# index
 Indexing ./notes...
   ✓ 142 files indexed  (3 new, 5 updated, 0 errors)  [1.2s]
   ⚠ Skipped: notes/broken.md — invalid frontmatter (line 4)
 
-# query — default output
+# query
 path                      mtime
 ────────────────────────  ───────────────────
 ./notes/task-a.md         2025-01-10 09:00:00

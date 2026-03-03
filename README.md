@@ -1,344 +1,225 @@
 # Markdown Base CLI (markbase)
 
-A high-performance CLI tool for indexing and querying Markdown notes for AI agent. Obsidian-compatible.
+A high-performance CLI tool for indexing and querying Markdown notes, designed for both AI agents and human users with Obsidian compatibility in mind.
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/flyisland/markbase)
 
 ## Installation
 
-### From Source
-
 ```bash
-# Clone the repository
 git clone <repository-url>
 cd markbase
-
-# Build release binary
 cargo build --release
-
-# The binary will be at target/release/markbase
 ./target/release/markbase --help
 ```
 
-### Prerequisites
-
-- Rust 1.85+ (2024 edition)
-- DuckDB (bundled with the `duckdb` crate)
+**Prerequisites:** Rust 1.85+ (DuckDB is bundled)
 
 ## Quick Start
 
 ```bash
-export MARKBASE_BASE_DIR=./my-notes
+export MARKBASE_BASE_DIR=/path/to/your/notes
 
-# Index notes
 markbase index
-
-# Query notes (expression mode)
 markbase query "author == 'Tom'"
-
-# Query notes (SQL mode)
 markbase query "SELECT path, name FROM notes WHERE list_contains(tags, 'todo')"
 ```
 
-## Properties
-
-Every indexed markdown note has two types of properties: native note metadata and frontmatter properties.
-
-**Field Resolution**: Reserved fields are checked first, then frontmatter properties.
-
-### Reserved Fields (Native Properties)
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `path` | TEXT | File path relative to base-dir (primary key) |
-| `folder` | TEXT | Directory path relative to base-dir |
-| `name` | TEXT | File name (without extension) |
-| `ext` | TEXT | File extension (e.g., `md`) |
-| `size` | INTEGER | Note size in bytes |
-| `ctime` | TIMESTAMP | Created time |
-| `mtime` | TIMESTAMP | Modified time |
-| `tags` | VARCHAR[] | Array of `#tags` (from content AND frontmatter) |
-| `links` | VARCHAR[] | Array of `[[wiki-links]]` |
-| `backlinks` | VARCHAR[] | Notes linking to this note |
-| `embeds` | VARCHAR[] | Array of `![[embeds]]` |
-
-```bash
-# Query reserved fields
-markbase query "folder == './notes'"
-markbase query "mtime > '2024-01-01'"
-markbase query "size > 10000"
-markbase query "list_contains(tags, 'todo')"
-markbase query "list_contains(links, 'target-page')"
-```
-
-### Frontmatter Properties
-
-Properties defined in YAML frontmatter are also available:
-
-```yaml
----
-title: My Note
-author: John
-category: project
-status: in-progress
-tags: [design, research]
-date: 2024-01-15
----
-```
-
-```bash
-# Query frontmatter properties (resolved automatically)
-markbase query "author == 'John'"
-markbase query "category == 'project'"
-markbase query "status == 'in-progress'"
-markbase query "list_contains(tags, 'design')"
-```
-
-**Note:** If a frontmatter field conflicts with a reserved field (except `tags`), a warning will be shown during indexing and the frontmatter value will be ignored.
-
-### Property Types
-
-| Frontmatter Type | Query Example |
-|-----------------|---------------|
-| String | `author == 'John'` |
-| Number | `year::INTEGER >= 2024` |
-| Boolean | `published == true` |
-| Array | `list_contains(tags, 'design')` |
-| Date | `date > '2024-01-01'` |
-| Exists | `author IS NOT NULL` |
-
-## Commands
-
-### `index`
-Scans Markdown notes and indexes to DuckDB.
-
-```bash
-markbase index              # Index base directory
-markbase index --force      # Delete database and rebuild from scratch
-markbase index -v           # Verbose output
-```
-
-### `query`
-Query indexed notes with native DuckDB SQL or expression syntax.
-
-**Two Input Modes:**
-- **Expression mode** (default): Input is wrapped in `SELECT ... FROM notes WHERE ...`
-- **SQL mode**: Input starts with `SELECT`, passed through with field translation
-
-```bash
-# Expression mode (WHERE clause only)
-markbase query "author == 'Tom'"
-markbase query "list_contains(tags, 'project')"
-markbase query "mtime > '2024-01-01'"
-
-# Expression mode with ORDER BY / LIMIT
-markbase query "author == 'Tom' ORDER BY mtime DESC LIMIT 10"
-
-# SQL mode (full SELECT statement)
-markbase query "SELECT path, name, author FROM notes WHERE author = 'Tom'"
-
-# Show translated SQL without executing
-markbase query --dry-run "author == 'Tom'"
-
-# Output formats
-markbase query "list_contains(tags, 'todo')" -o json
-markbase query "list_contains(tags, 'todo')" -o list
-```
-
-**Field Translation:**
-- Reserved fields (`path`, `name`, `mtime`, etc.) pass through unchanged
-- Frontmatter fields are translated to `json_extract_string(properties, '$."field"')`
-- Nested paths: `_schema.strict` → `json_extract_string(properties, '$."_schema"."strict"')`
-
-**Type Casts:**
-For non-string comparisons, use explicit casts:
-```bash
-markbase query "year::INTEGER >= 2024"
-markbase query "created::TIMESTAMP > '2024-01-01'"
-```
-
-### `note`
-Manage notes (create, rename).
-
-#### `note new`
-Create a new markdown note with optional template.
-
-```bash
-markbase note new my-note                    # Create note in base-dir
-markbase note new notes/my-note              # Create in subdirectory
-markbase note new my-note --template daily   # Create with template (outputs path + content)
-```
-
-**With template:** Returns `path:` and `content:` for agent workflow integration:
-
-```
-path: /home/user/notes/today.md
-content: ---
-date: ""
-mood: ""
-summary: ""
-tags: []
----
-
-## 今日记录
-
----
-```
-
-#### `note rename`
-Rename a note and update all wiki-links pointing to it.
-
-```bash
-markbase note rename old-name new-name
-```
-
-**Behavior:**
-- Looks up note by name (not path)
-- Fails if note name is ambiguous (multiple files with same name)
-- Fails if new name already exists
-- Updates all `[[old-name]]` links to `[[new-name]]` in all notes
-- Preserves aliases and section anchors: `[[old-name|alias]]` → `[[new-name|alias]]`
-
-**Example:**
-```bash
-markbase note rename architecture system-design
-# Renames architecture.md → system-design.md
-# Updates all [[architecture]] links to [[system-design]]
-```
-
-### `template`
-Manage templates (MKS schema-based templates).
-
-MKS (Markdown Knowledge Schema) is a protocol for connecting unstructured conversation flow with structured knowledge bases. See [spec/schema.md](./spec/schema.md) for the complete specification.
-
-```bash
-markbase template list                  # List all templates (default: table format)
-markbase template list -o json          # List in JSON format
-markbase template list -o list         # List in list format
-markbase template list -F "tags,type"  # List with additional fields
-markbase template describe daily        # Show template content
-```
-
-**Note:** Templates are expected in the `templates/` directory under base-dir. Default fields shown: `name`, `_schema.description`, `path`.
-
-**Fields:** Reserved fields (`path`, `folder`, `name`, `ext`, `size`, `ctime`, `mtime`, `content`, `tags`, `links`, `backlinks`, `embeds`) and frontmatter properties (e.g., `author`, `category`). Nested properties supported (e.g., `_schema.strict`).
-
-**Operators:** `==`, `!=`, `>`, `<`, `>=`, `<=`, `=~` (LIKE), `and`, `or`
-
-**Functions:** `has(field, value)` - array containment | `exists(field)` - property existence check
-
-**Note:** Reserved fields are checked first, then frontmatter properties. If a frontmatter field conflicts with a reserved field (except `tags`), a warning will be shown during indexing.
-
-**Note:** Timestamps are displayed in human-readable format (YYYY-MM-DD HH:MM:SS)
-
 ## Environment Variables
-
-`MARKBASE_BASE_DIR` is the **primary way** to configure your vault. Set it once in your shell profile (e.g., `~/.bashrc`, `~/.zshrc`) and forget it:
-
-```bash
-export MARKBASE_BASE_DIR=/path/to/your/notes
-```
-
-All `markbase` commands will use this directory by default. No need to pass `--base-dir` with every command.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `MARKBASE_BASE_DIR` | Vault (base) directory for indexing | `.` (current directory) |
-| `MARKBASE_OUTPUT_FORMAT` | Output format for query and template list | `table` |
+| `MARKBASE_BASE_DIR` | Vault directory | `.` (current directory) |
+| `MARKBASE_OUTPUT_FORMAT` | Output format for query/template list | `table` |
 
-**Priority:** CLI arguments > Environment variables > Defaults
+**Priority:** CLI args > Environment variables > Defaults
 
 ```bash
 export MARKBASE_BASE_DIR=/path/to/notes
 export MARKBASE_OUTPUT_FORMAT=json
 
 markbase index
-markbase query "has(tags, 'design')"
+markbase query "list_contains(tags, 'design')"
 ```
 
-## Features
+## Concepts
 
-- Fast indexing with DuckDB
-- SQL-like query language
-- Obsidian support (wiki-links, embeds, frontmatter, tags)
-- Incremental updates
-- File watching mode for auto-reindexing
-- Multiple output formats (table, json, list)
-- Human-readable timestamps
-- Shorthand field notation for conciseness
-- Note creation with templates
-- Template listing with MKS schema support
+### Note Properties
 
-## Development
+Each indexed note has two property types:
+
+**Reserved Fields** (native metadata):
+| Field | Type | Description |
+|-------|------|-------------|
+| `path` | TEXT | File path relative to base-dir |
+| `folder` | TEXT | Directory path relative to base-dir |
+| `name` | TEXT | File name without extension |
+| `ext` | TEXT | File extension |
+| `size` | INTEGER | File size in bytes |
+| `ctime` | TIMESTAMPTZ | Created time |
+| `mtime` | TIMESTAMPTZ | Modified time |
+| `tags` | VARCHAR[] | Tags from content (`#tag`) and frontmatter |
+| `links` | VARCHAR[] | Wiki-links `[[link]]` |
+| `backlinks` | VARCHAR[] | Notes linking to this note |
+| `embeds` | VARCHAR[] | Embeds `![[embed]]` |
+
+**Frontmatter Properties**: Any YAML frontmatter field is queryable:
+
+```yaml
+---
+title: My Note
+author: John
+status: in-progress
+---
+```
+
+Query it directly: `markbase query "author == 'John'"`
+
+### Field Resolution
+
+Reserved fields are checked first. If a frontmatter field conflicts with a reserved field (except `tags`), it's ignored with a warning during indexing.
+
+### Name Uniqueness
+
+Note names must be unique across the entire vault, regardless of their directory location.
+
+- **Index**: When indexing, if two notes have the same name (different paths), a warning is shown and the duplicate is skipped
+- **Create**: Creating a note fails if a note with that name already exists
+- **Rename**: Renaming a note fails if a note with the target name already exists
+
+### Link Format (Obsidian Style)
+
+Always use the **filename only** — no path, no extension:
+
+```markdown
+# ✅ Correct
+[[中国移动]]
+[[张三]]
+
+# ❌ Wrong
+[[entities/中国移动.md]]
+[[people/张三]]
+```
+
+Wiki-links in **frontmatter properties** must additionally be wrapped in quotes:
+
+```yaml
+# ✅ Correct
+related_customer: "[[中石油]]"
+attendees_internal: ["[[张三]]", "[[李四]]"]
+
+# ❌ Wrong
+related_customer: [[中国移动]]
+attendees_internal: [[[张三]], [[李四]]]
+```
+
+## Commands
+
+### `index`
+
+Index Markdown notes to DuckDB.
 
 ```bash
-# Build debug version
-cargo build
-
-# Run in development
-export MARKBASE_BASE_DIR=./notes
-cargo run -- index
-cargo run -- query "name == 'readme'"
-
-# Run tests
-cargo test
-
-# Run tests with output
-cargo test -- --nocapture
-
-# Build release
-cargo build --release
-
-# Run with verbose output
-cargo run -- index -v
+markbase index              # Index base directory
+markbase index --force      # Rebuild from scratch
+markbase index -v           # Verbose output
 ```
 
-## Testing
+Features:
+- Incremental updates (skips unchanged files)
+- Detects and removes deleted files
+- Obsidian-compatible (wiki-links, embeds, frontmatter, tags)
 
-The project includes comprehensive unit tests covering all major components:
+### `query`
 
-- **127 total tests** across all modules
-- **Query System**: Tokenizer, parser, compiler, and SQL generation
-- **Content Extraction**: Frontmatter, tags, wiki-links, embeds
-- **Database**: CRUD operations, queries, and filtering
-- **Scanner**: Note discovery, indexing, and backlink tracking
-- **Watcher**: File monitoring and incremental indexing
-- **Output**: Table, JSON, and list formatting
+Query indexed notes.
 
-Run tests with: `cargo test`
+**Two input modes:**
 
-## Tech Stack
+```bash
+# Expression mode (WHERE clause only)
+markbase query "author == 'Tom'"
+markbase query "list_contains(tags, 'project')"
+markbase query "author == 'Tom' ORDER BY mtime DESC LIMIT 10"
 
-- **Language:** Rust 1.85+ (2024 edition)
-- **CLI Framework:** clap v4.5 (derive feature)
-- **Database:** DuckDB via `duckdb` crate (bundled feature)
-- **File Discovery:** walkdir v2.5
-- **Parser:** gray_matter (frontmatter), regex (wiki-links/tags)
-- **Serialization:** serde, serde_json
-
-## Project Structure
-
+# SQL mode (full SELECT statement)
+markbase query "SELECT path, name, author FROM notes WHERE author = 'Tom'"
 ```
-markbase/
-├── Cargo.toml           # Rust dependencies and metadata
-├── Cargo.lock           # Dependency lock file
-├── README.md            # User documentation
-├── AGENTS.md            # This file - agent specification
-├── src/
-│   ├── main.rs          # CLI entry point with clap
-│   ├── db.rs            # DuckDB database operations
-│   ├── scanner.rs       # Note discovery and indexing
-│   ├── extractor.rs     # Markdown content extraction
-│   ├── creator.rs       # Note creation with templates
-│   ├── renamer.rs       # Note renaming with link updates
-│   ├── describe.rs      # Template description
-│   ├── lib.rs           # Library exports
-│   └── query/           # Query system
-│       ├── mod.rs       # Output formatting (table/json/list)
-│       ├── tokenizer.rs # Query tokenization
-│       ├── parser.rs    # AST parsing
-│       └── compiler.rs  # SQL compilation
-└── target/              # Build output
+
+**Output formats:**
+
+```bash
+markbase query "list_contains(tags, 'todo')" -o json
+markbase query "list_contains(tags, 'todo')" -o list
+```
+
+**Debug:**
+
+```bash
+markbase query --dry-run "author == 'Tom'"  # Show translated SQL
+```
+
+**Type casts for non-string comparisons:**
+
+```bash
+markbase query "year::INTEGER >= 2024"
+markbase query "created::TIMESTAMP > '2024-01-01'"
+```
+
+### `note`
+
+Create and manage notes.
+
+**Create a note:**
+
+```bash
+markbase note new my-note                    # Create in base-dir
+markbase note new notes/my-note              # Create in subdirectory
+markbase note new my-note --template daily   # Use template
+```
+
+**Rename a note:**
+
+```bash
+markbase note rename old-name new-name
+```
+
+Behavior:
+- Looks up note by name (not path)
+- Fails if name is ambiguous or new name exists
+- Updates all `[[old-name]]` links across the vault
+- Preserves aliases and section anchors
+
+### `template`
+
+Manage MKS templates.
+
+```bash
+markbase template list                  # List templates (table format)
+markbase template list -o json          # JSON format
+markbase template list -F "tags,type"   # Additional fields
+markbase template describe daily        # Show template content
+```
+
+Templates are stored in `templates/` under base-dir.
+
+## Query Syntax
+
+markbase translates field names (reserved fields and frontmatter properties) to DuckDB queries. All DuckDB SQL keywords and operators are supported natively.
+
+**Commonly Used Functions:**
+- `list_contains(field, value)` - Array containment
+
+**Examples:**
+
+```bash
+markbase query "folder == './notes'"
+markbase query "mtime > '2024-01-01'"
+markbase query "size > 10000"
+markbase query "list_contains(tags, 'todo')"
+markbase query "author == 'John' AND status == 'active'"
+markbase query "author IS NOT NULL"
+markbase query "name LIKE '%meeting%'"
 ```
 
 ## License
