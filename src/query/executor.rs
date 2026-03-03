@@ -1,5 +1,5 @@
-use crate::db::Database;
-use crate::query::detector::{QueryMode, detect_mode, validate_safety};
+use crate::db::{Database, QueryResult};
+use crate::query::detector::{detect_mode, validate_safety, QueryMode};
 use crate::query::error_map::map_error;
 use crate::query::translator::build_select_sql;
 
@@ -13,7 +13,7 @@ fn finalize_sql(sql: &str, limit: usize) -> String {
     }
 }
 
-pub fn execute_query(db: &Database, sql_input: Option<&str>) -> Result<Vec<Vec<String>>, String> {
+pub fn execute_query(db: &Database, sql_input: Option<&str>) -> Result<QueryResult, String> {
     let mode = detect_mode(sql_input)?;
     let full_sql = build_select_sql(&mode);
 

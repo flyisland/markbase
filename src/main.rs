@@ -273,15 +273,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             check_db_exists(&db_path, &base_dir)?;
             let db = Mutex::new(Database::open_existing(&db_path)?);
             let db = db.lock().unwrap();
-            let results = query::execute_query(&db, sql.as_deref()).map_err(|e| e.to_string())?;
-
-            let field_names = vec![
-                "path".to_string(),
-                "name".to_string(),
-                "mtime".to_string(),
-                "size".to_string(),
-                "tags".to_string(),
-            ];
+            let (field_names, results) =
+                query::execute_query(&db, sql.as_deref()).map_err(|e| e.to_string())?;
 
             let base_dir = if abs_path {
                 Some(get_base_dir_absolute_with_cli(cli.base_dir.clone())?)
@@ -321,17 +314,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         },
         Commands::Template { command } => match command {
             TemplateCommands::List { format } => {
-                let output_fields = vec![
-                    "name".to_string(),
-                    "_schema.description".to_string(),
-                    "path".to_string(),
-                ];
-
                 let sql_expr = "folder=='templates'".to_string();
                 check_db_exists(&db_path, &base_dir)?;
                 let db = Mutex::new(Database::open_existing(&db_path)?);
                 let db_ref = db.lock().unwrap();
-                let results =
+                let (field_names, results) =
                     query::execute_query(&db_ref, Some(&sql_expr)).map_err(|e| e.to_string())?;
 
                 let effective_format = format.or(cli.output_format).unwrap_or(OutputFormat::Json);
@@ -340,7 +327,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     OutputFormat::Json => "json",
                     OutputFormat::List => "list",
                 };
-                query::output_results(&results, format_str, &output_fields, None, false)?;
+                query::output_results(&results, format_str, &field_names, None, false)?;
             }
             TemplateCommands::Describe { name } => {
                 let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;

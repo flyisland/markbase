@@ -1,6 +1,8 @@
-use duckdb::{Connection, params};
+use duckdb::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+
+pub type QueryResult = (Vec<String>, Vec<Vec<String>>);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Note {
@@ -265,7 +267,7 @@ impl Database {
         sql: &str,
         _fields: &str,
         _limit: usize,
-    ) -> Result<Vec<Vec<String>>, Box<dyn std::error::Error>> {
+    ) -> Result<QueryResult, Box<dyn std::error::Error>> {
         let mut results = Vec::new();
 
         let con = self
@@ -284,7 +286,6 @@ impl Database {
         while let Some(row) = rows.next()? {
             let mut result_row = Vec::new();
             for i in 0..column_count {
-                let _col_name = column_names.get(i).map_or("", |s| s.as_str());
                 let val: duckdb::types::Value = row.get(i)?;
                 let s = match val {
                     duckdb::types::Value::Text(t) => t,
@@ -318,7 +319,7 @@ impl Database {
             results.push(result_row);
         }
 
-        Ok(results)
+        Ok((column_names, results))
     }
 }
 
@@ -441,7 +442,7 @@ mod tests {
         db.upsert_note(&note1).unwrap();
         db.upsert_note(&note2).unwrap();
 
-        let results = db.query("SELECT * FROM notes", "*", 10).unwrap();
+        let (_column_names, results) = db.query("SELECT * FROM notes", "*", 10).unwrap();
         assert_eq!(results.len(), 2);
 
         cleanup_db(&db_path);
@@ -463,7 +464,7 @@ mod tests {
         db.upsert_note(&note1).unwrap();
         db.upsert_note(&note2).unwrap();
 
-        let results = db
+        let (_column_names, results) = db
             .query("SELECT * FROM notes WHERE name = 'special'", "*", 10)
             .unwrap();
         assert_eq!(results.len(), 1);
@@ -486,7 +487,7 @@ mod tests {
             db.upsert_note(&note).unwrap();
         }
 
-        let results = db.query("SELECT * FROM notes LIMIT 5", "*", 5).unwrap();
+        let (_column_names, results) = db.query("SELECT * FROM notes LIMIT 5", "*", 5).unwrap();
         assert_eq!(results.len(), 5);
 
         cleanup_db(&db_path);
@@ -511,7 +512,7 @@ mod tests {
         db.upsert_note(&note1).unwrap();
         db.upsert_note(&note2).unwrap();
 
-        let results = db
+        let (_column_names, results) = db
             .query("SELECT * FROM notes WHERE 'design' = ANY(tags)", "*", 10)
             .unwrap();
         assert_eq!(results.len(), 1);
@@ -539,7 +540,7 @@ mod tests {
         db.upsert_note(&note1).unwrap();
         db.upsert_note(&note2).unwrap();
 
-        let results = db
+        let (_column_names, results) = db
             .query(
                 "SELECT * FROM notes WHERE 'architecture' = ANY(links)",
                 "*",
@@ -571,7 +572,7 @@ mod tests {
         db.upsert_note(&note1).unwrap();
         db.upsert_note(&note2).unwrap();
 
-        let results = db
+        let (_column_names, results) = db
             .query(
                 "SELECT * FROM notes WHERE 'diagram.png' = ANY(embeds)",
                 "*",
@@ -603,7 +604,7 @@ mod tests {
         db.upsert_note(&note1).unwrap();
         db.upsert_note(&note2).unwrap();
 
-        let results = db
+        let (_column_names, results) = db
             .query("SELECT * FROM notes WHERE 'tag1' = ANY(tags)", "*", 10)
             .unwrap();
         assert_eq!(results.len(), 1);
