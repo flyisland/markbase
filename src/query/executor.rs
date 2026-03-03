@@ -1,5 +1,5 @@
 use crate::db::{Database, QueryResult};
-use crate::query::detector::{detect_mode, validate_safety, QueryMode};
+use crate::query::detector::{QueryMode, detect_mode, validate_safety};
 use crate::query::error_map::map_error;
 use crate::query::translator::build_select_sql;
 

@@ -238,14 +238,23 @@ fn update_backlinks(
     indexed_notes: &[Note],
 ) -> Result<(), Box<dyn std::error::Error>> {
     let link_map = db.get_all_links()?;
+
+    let path_to_name: std::collections::HashMap<String, String> = indexed_notes
+        .iter()
+        .map(|note| (note.path.clone(), note.name.clone()))
+        .collect();
+
     let mut backlinks: std::collections::HashMap<String, Vec<String>> =
         std::collections::HashMap::new();
 
     for (path, links) in &link_map {
+        let source_name = path_to_name.get(path);
         for link in links {
             let link_name = Extractor::normalize_link_name(link);
-            if !link_name.is_empty() {
-                backlinks.entry(link_name).or_default().push(path.clone());
+            if !link_name.is_empty()
+                && let Some(name) = source_name
+            {
+                backlinks.entry(link_name).or_default().push(name.clone());
             }
         }
     }
@@ -428,6 +437,11 @@ See [[other]] for more."#;
         // Verify both files are indexed
         let link_map = db.get_all_links().unwrap();
         assert_eq!(link_map.len(), 2);
+
+        // Verify backlinks contain note names (not paths)
+        let target_notes = db.get_notes_by_name("target").unwrap();
+        assert_eq!(target_notes.len(), 1);
+        assert_eq!(target_notes[0].backlinks, vec!["referrer"]);
 
         cleanup(&test_dir, &db_path);
     }
