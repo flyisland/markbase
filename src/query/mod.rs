@@ -48,7 +48,9 @@ fn convert_to_absolute_paths(
                 .enumerate()
                 .map(|(i, value)| {
                     let name = field_names.get(i).map_or("", |s| s.as_str());
-                    if name == "path" || name == "folder" {
+                    // Only convert file.path and file.folder (database file properties)
+                    // Bare 'path' and 'folder' are frontmatter fields, not file paths
+                    if name == "file.path" || name == "file.folder" {
                         let abs = base_dir.join(value);
                         abs.to_string_lossy().to_string()
                     } else {

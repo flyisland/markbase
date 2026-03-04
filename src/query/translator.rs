@@ -6,9 +6,18 @@ enum TranslationContext {
     ListContainsFirstArg,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SelectContext {
+    None,       // Not in SELECT clause
+    Select,     // In SELECT clause, waiting for first field
+    Field,      // In field expression
+    AfterField, // After field, expecting comma or FROM
+}
+
 struct TranslationState {
     context: TranslationContext,
     paren_depth: usize,
+    select_context: SelectContext,
 }
 
 impl TranslationState {
@@ -16,6 +25,7 @@ impl TranslationState {
         Self {
             context: TranslationContext::Normal,
             paren_depth: 0,
+            select_context: SelectContext::None,
         }
     }
 }
@@ -122,7 +132,21 @@ const SQL_KEYWORDS: &[&str] = &[
     "regexp_replace",
 ];
 
-const DEFAULT_FIELDS: &str = "path, name, mtime, size, tags";
+const DEFAULT_FIELDS: &[(&str, &str)] = &[
+    ("path", "file.path"),
+    ("name", "file.name"),
+    ("mtime", "file.mtime"),
+    ("size", "file.size"),
+    ("tags", "file.tags"),
+];
+
+fn build_default_select() -> String {
+    let fields: Vec<String> = DEFAULT_FIELDS
+        .iter()
+        .map(|(col, alias)| format!(r#"{} AS "{}""#, col, alias))
+        .collect();
+    format!("SELECT {} FROM notes", fields.join(", "))
+}
 
 pub fn build_select_sql(mode: &QueryMode) -> String {
     match mode {
@@ -138,13 +162,11 @@ pub fn build_select_sql(mode: &QueryMode) -> String {
 
             let suffix_part = suffix.as_ref().map(|s| translate(s)).unwrap_or_default();
 
-            let full = format!(
-                "SELECT {} FROM notes {} {}",
-                DEFAULT_FIELDS, where_part, suffix_part
-            );
+            let base = build_default_select();
+            let full = format!("{} {} {}", base, where_part, suffix_part);
             normalize_sql(&full)
         }
-        QueryMode::Empty => format!("SELECT {} FROM notes", DEFAULT_FIELDS),
+        QueryMode::Empty => build_default_select(),
     }
 }
 
@@ -159,6 +181,7 @@ pub fn translate(sql: &str) -> String {
     let mut i = 0;
     let chars: Vec<char> = sql.chars().collect();
     let mut state = TranslationState::new();
+    let mut pending_field_alias: Option<String> = None;
 
     while i < chars.len() {
         let c = chars[i];
@@ -215,7 +238,57 @@ pub fn translate(sql: &str) -> String {
             let word: String = chars[start..i].iter().collect();
             let next_char = chars.get(i).copied();
 
+            // Track SELECT keyword
+            if word.to_uppercase() == "SELECT" && state.select_context == SelectContext::None {
+                state.select_context = SelectContext::Select;
+                result.push_str(&word);
+                continue;
+            }
+
+            // Track FROM keyword - exits SELECT context
+            if word.to_uppercase() == "FROM" {
+                // Add pending alias before leaving SELECT context
+                if let Some(alias) = pending_field_alias.take() {
+                    result.push_str(&format!(r#" AS "{}""#, alias));
+                }
+                state.select_context = SelectContext::None;
+                result.push_str(&word);
+                continue;
+            }
+
+            // Check if this is a SQL keyword (for SELECT aliasing purposes)
+            let is_sql_keyword = SQL_KEYWORDS.contains(&word.to_uppercase().as_str())
+                || word.to_lowercase() == "notes";
+
             let translated = translate_identifier(&word, next_char, &mut state);
+
+            // Handle SELECT field aliasing - only for actual field identifiers
+            if !is_sql_keyword && state.select_context != SelectContext::None {
+                match state.select_context {
+                    SelectContext::Select => {
+                        // First field in SELECT
+                        if let Some(alias) = pending_field_alias.take() {
+                            result.push_str(&format!(r#" AS "{}""#, alias));
+                        }
+                        pending_field_alias = Some(word.clone());
+                        state.select_context = SelectContext::Field;
+                    }
+                    SelectContext::AfterField => {
+                        // New field after comma
+                        if let Some(alias) = pending_field_alias.take() {
+                            result.push_str(&format!(r#" AS "{}""#, alias));
+                        }
+                        pending_field_alias = Some(word.clone());
+                        state.select_context = SelectContext::Field;
+                    }
+                    SelectContext::Field if state.paren_depth == 0 => {
+                        // Additional identifier in field expression
+                        // Don't change the alias, the first one wins
+                    }
+                    _ => {}
+                }
+            }
+
             result.push_str(&translated);
             continue;
         }
@@ -226,12 +299,37 @@ pub fn translate(sql: &str) -> String {
             if state.paren_depth > 0 {
                 state.paren_depth -= 1;
             }
-        } else if c == ',' && state.context == TranslationContext::ListContainsFirstArg {
-            state.context = TranslationContext::Normal;
+            if state.paren_depth == 0 && state.select_context == SelectContext::Field {
+                state.select_context = SelectContext::AfterField;
+            }
+        } else if c == ',' {
+            if state.context == TranslationContext::ListContainsFirstArg {
+                state.context = TranslationContext::Normal;
+            }
+            // End of field in SELECT
+            if state.select_context == SelectContext::Field
+                || state.select_context == SelectContext::AfterField
+            {
+                if let Some(alias) = pending_field_alias.take() {
+                    result.push_str(&format!(r#" AS "{}""#, alias));
+                }
+                state.select_context = SelectContext::Select;
+            }
+        } else if c.is_whitespace()
+            && state.select_context == SelectContext::Field
+            && state.paren_depth == 0
+        {
+            // Whitespace after field expression - mark as after field
+            state.select_context = SelectContext::AfterField;
         }
 
         result.push(c);
         i += 1;
+    }
+
+    // Handle trailing field alias at end of SQL
+    if let Some(alias) = pending_field_alias.take() {
+        result.push_str(&format!(r#" AS "{}""#, alias));
     }
 
     result
@@ -342,31 +440,35 @@ mod tests {
 
     #[test]
     fn test_translate_file_property() {
-        // file.* prefix → direct column access
-        assert_eq!(
-            translate("SELECT file.path FROM notes"),
-            "SELECT path FROM notes"
-        );
-        assert_eq!(
-            translate("SELECT file.name, file.mtime FROM notes"),
-            "SELECT name, mtime FROM notes"
-        );
-        assert_eq!(
-            translate("SELECT file.folder, file.ext, file.size FROM notes"),
-            "SELECT folder, ext, size FROM notes"
-        );
+        // file.* prefix → direct column access with alias
+        let result = translate("SELECT file.path FROM notes");
+        assert!(result.contains(r#"AS "file.path""#));
+        assert!(result.contains("FROM notes"));
+
+        let result = translate("SELECT file.name, file.mtime FROM notes");
+        assert!(result.contains(r#"AS "file.name""#));
+        assert!(result.contains(r#"AS "file.mtime""#));
+        assert!(result.contains("FROM notes"));
+
+        let result = translate("SELECT file.folder, file.ext, file.size FROM notes");
+        assert!(result.contains(r#"AS "file.folder""#));
+        assert!(result.contains(r#"AS "file.ext""#));
+        assert!(result.contains(r#"AS "file.size""#));
+        assert!(result.contains("FROM notes"));
     }
 
     #[test]
     fn test_translate_note_prefix() {
-        // note.* prefix → json_extract_string
+        // note.* prefix → json_extract_string with alias
         let result = translate("SELECT note.author FROM notes");
+        assert!(result.contains(r#"AS "note.author""#));
         assert!(result.contains("json_extract_string"));
-        assert!(result.contains("author"));
-        assert!(!result.contains("note.author"));
+        // The AS alias contains note.author, but the raw json_extract_string doesn't
+        assert!(!result.contains("json_extract_string(properties, '$.\"author\"') AS \"author\""));
 
         // note.* with nested path
         let result = translate("SELECT note._schema.strict FROM notes");
+        assert!(result.contains(r#"AS "note._schema.strict""#));
         assert!(result.contains("json_extract_string"));
         assert!(result.contains("_schema"));
         assert!(result.contains("strict"));
@@ -376,6 +478,7 @@ mod tests {
     fn test_translate_bare_field_is_frontmatter() {
         // Bare identifiers are frontmatter (shorthand for note.*)
         let result = translate("SELECT author FROM notes");
+        assert!(result.contains(r#"AS "author""#));
         assert!(result.contains("json_extract_string"));
         assert!(result.contains("author"));
     }
@@ -383,20 +486,26 @@ mod tests {
     #[test]
     fn test_translate_frontmatter_field() {
         let result = translate("SELECT author FROM notes");
+        assert!(result.contains(r#"AS "author""#));
         assert!(result.contains("json_extract_string"));
         assert!(result.contains("author"));
     }
 
     #[test]
     fn test_translate_where_clause() {
+        // WHERE clause should NOT have aliases (only SELECT fields have aliases)
         let result = translate("SELECT * FROM notes WHERE author == 'Tom'");
         assert!(result.contains("json_extract_string"));
         assert!(result.contains("'Tom'"));
+        // Since we use SELECT *, there should be no AS aliases at all
+        // The AS keyword should only appear for explicit field selections in SELECT
+        assert!(!result.contains(" AS "));
     }
 
     #[test]
     fn test_translate_nested_field() {
         let result = translate("SELECT _schema.strict FROM notes");
+        assert!(result.contains(r#"AS "_schema.strict""#));
         assert!(result.contains("json_extract_string"));
         assert!(result.contains("_schema"));
         assert!(result.contains("strict"));
@@ -418,7 +527,7 @@ mod tests {
 
     #[test]
     fn test_translate_list_contains_frontmatter_field() {
-        // Bare field in list_contains → frontmatter
+        // Bare field in list_contains → frontmatter, no alias in function args
         let result = translate("list_contains(categories, 'work')");
         assert_eq!(
             result,
@@ -428,7 +537,7 @@ mod tests {
 
     #[test]
     fn test_translate_list_contains_note_prefix() {
-        // note.* prefix in list_contains → frontmatter
+        // note.* prefix in list_contains → frontmatter, no alias in function args
         let result = translate("list_contains(note.categories, 'work')");
         assert_eq!(
             result,
@@ -438,7 +547,7 @@ mod tests {
 
     #[test]
     fn test_translate_list_contains_file_property() {
-        // file.* prefix in list_contains → direct column
+        // file.* prefix in list_contains → direct column, no alias in function args
         let result = translate("list_contains(file.tags, 'todo')");
         assert_eq!(result, "list_contains(tags, 'todo')");
     }
@@ -453,7 +562,7 @@ mod tests {
 
     #[test]
     fn test_translate_list_contains_nested_field() {
-        // Nested bare field → frontmatter
+        // Nested bare field → frontmatter, no alias in function args
         let result = translate("list_contains(meta.categories, 'work')");
         assert_eq!(
             result,
@@ -463,7 +572,7 @@ mod tests {
 
     #[test]
     fn test_translate_list_contains_note_nested() {
-        // note.* prefix with nested path
+        // note.* prefix with nested path, no alias in function args
         let result = translate("list_contains(note.meta.categories, 'work')");
         assert_eq!(
             result,
@@ -492,10 +601,10 @@ mod tests {
 
     #[test]
     fn test_ignore_sql_keywords() {
-        assert_eq!(translate("SELECT * FROM notes"), "SELECT * FROM notes");
+        assert_eq!(translate("SELECT * FROM notes"), r#"SELECT * FROM notes"#);
         assert_eq!(
             translate("WHERE author = 'x' AND file.tags = 'y'"),
-            "WHERE json_extract_string(properties, '$.\"author\"') = 'x' AND tags = 'y'"
+            r#"WHERE json_extract_string(properties, '$."author"') = 'x' AND tags = 'y'"#
         );
     }
 
@@ -503,7 +612,13 @@ mod tests {
     fn test_build_select_sql_empty() {
         let mode = QueryMode::Empty;
         let sql = build_select_sql(&mode);
-        assert!(sql.contains("SELECT path, name, mtime, size, tags FROM notes"));
+        // Default fields should have file.* aliases
+        assert!(sql.contains(r#"path AS "file.path""#));
+        assert!(sql.contains(r#"name AS "file.name""#));
+        assert!(sql.contains(r#"mtime AS "file.mtime""#));
+        assert!(sql.contains(r#"size AS "file.size""#));
+        assert!(sql.contains(r#"tags AS "file.tags""#));
+        assert!(sql.contains("FROM notes"));
     }
 
     #[test]
@@ -513,7 +628,10 @@ mod tests {
             suffix: None,
         };
         let sql = build_select_sql(&mode);
-        assert!(sql.contains("SELECT path, name, mtime, size, tags FROM notes"));
+        // Default fields should have file.* aliases
+        assert!(sql.contains(r#"path AS "file.path""#));
+        assert!(sql.contains(r#"name AS "file.name""#));
+        assert!(sql.contains("FROM notes"));
         assert!(sql.contains("WHERE"));
         assert!(sql.contains("author"));
     }
@@ -547,6 +665,8 @@ mod tests {
             QueryMode::Sql("SELECT path, author FROM notes WHERE author = 'Tom'".to_string());
         let sql = build_select_sql(&mode);
         assert!(sql.contains("SELECT"));
+        assert!(sql.contains(r#"AS "path""#));
+        assert!(sql.contains(r#"AS "author""#));
         assert!(sql.contains("FROM notes"));
     }
 
@@ -558,9 +678,11 @@ mod tests {
         assert!(result.contains("FROM notes"));
         assert!(result.contains("ORDER BY"));
         assert!(result.contains("LIMIT"));
-        // Verify file.* fields are direct columns
-        assert!(result.contains(" path, ")); // file.path → path
-        assert!(result.contains(" mtime")); // file.mtime → mtime
+        // Verify file.* fields have aliases
+        assert!(result.contains(r#"AS "file.path""#));
+        assert!(result.contains(r#"AS "file.mtime""#));
+        // Verify bare field has alias
+        assert!(result.contains(r#"AS "author""#));
         // Verify bare field is frontmatter
         assert!(result.contains("json_extract_string"));
     }
