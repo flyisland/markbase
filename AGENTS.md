@@ -123,9 +123,10 @@ For detailed usage, see README.md; this section explains implementation details.
 
 **Flow**:
 1. Traverse directory tree (WalkDir)
-2. For each `.md` file:
+2. For each file:
    - Compare `mtime + size` in DB, skip if unchanged
-   - Call `extractor.rs` to parse content
+   - For `.md` files: call `extractor.rs` to parse content, extract links/embeds/tags
+   - For non-`.md` files: `name` includes extension (e.g., `image.png`), no content parsing
    - Insert/update DB
 3. Deletion detection: entries in DB but not in filesystem → delete
 4. Conflict detection: files with same name → warn and skip
@@ -241,6 +242,7 @@ markbase/
 ### Completed ✅
 
 - Core indexing functionality
+- Index all files (not just .md)
 - Query system (SQL mode + expression mode)
 - Field translation and security validation
 - Multiple output formats (table/json/list)

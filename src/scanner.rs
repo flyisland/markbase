@@ -154,7 +154,7 @@ pub fn index_directory(
             }
         }
 
-        if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
+        if path.is_file() && path.extension().is_some() {
             let rel_path = path.strip_prefix(abs_base_dir).map_err(|_| {
                 format!(
                     "Path {} is not under base dir {}",
@@ -166,7 +166,12 @@ pub fn index_directory(
             seen_paths.insert(path_str.clone());
 
             let file_name = path.file_name().unwrap().to_string_lossy();
-            let name = file_name.trim_end_matches(".md").to_string();
+            let ext = path.extension().unwrap().to_string_lossy().to_string();
+            let name = if ext == "md" {
+                file_name.trim_end_matches(".md").to_string()
+            } else {
+                file_name.to_string()
+            };
 
             if let Some(existing_path) = name_to_path.get(&name) {
                 stats
@@ -255,38 +260,58 @@ fn index_single_file(
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default();
 
-    let content = fs::read_to_string(path)?;
-    let extracted = Extractor::extract(&content);
+    let ext = path.extension().unwrap().to_string_lossy().to_string();
+    let is_md = ext == "md";
 
-    if let Some(obj) = extracted.frontmatter.as_object() {
-        for key in obj.keys() {
-            if RESERVED_FIELDS.contains(&key.as_str()) && *key != "tags" {
-                eprintln!(
-                    "⚠ {}: frontmatter field '{}' conflicts with a reserved field and will be ignored.",
-                    path.display(),
-                    key
-                );
+    let (tags, links, embeds, properties) = if is_md {
+        let content = fs::read_to_string(path)?;
+        let extracted = Extractor::extract(&content);
+
+        if let Some(obj) = extracted.frontmatter.as_object() {
+            for key in obj.keys() {
+                if RESERVED_FIELDS.contains(&key.as_str()) && *key != "tags" {
+                    eprintln!(
+                        "⚠ {}: frontmatter field '{}' conflicts with a reserved field and will be ignored.",
+                        path.display(),
+                        key
+                    );
+                }
             }
         }
-    }
+
+        (
+            extracted.tags,
+            extracted.links,
+            extracted.embeds,
+            extracted.frontmatter,
+        )
+    } else {
+        (vec![], vec![], vec![], serde_json::json!(null))
+    };
 
     let size = metadata.len();
     let ctime = metadata.created()?.duration_since(UNIX_EPOCH)?.as_secs() as i64;
     let mtime = metadata.modified()?.duration_since(UNIX_EPOCH)?.as_secs() as i64;
 
+    let name = if is_md {
+        file_name.trim_end_matches(".md").to_string()
+    } else {
+        file_name.clone()
+    };
+
     let note = Note {
         path: path_str,
         folder: parent,
-        name: file_name.trim_end_matches(".md").to_string(),
-        ext: "md".to_string(),
+        name,
+        ext,
         size,
         ctime,
         mtime,
-        tags: extracted.tags,
-        links: extracted.links,
+        tags,
+        links,
         backlinks: vec![],
-        embeds: extracted.embeds,
-        properties: extracted.frontmatter,
+        embeds,
+        properties,
     };
 
     db.upsert_note(&note)?;
@@ -439,7 +464,7 @@ mod tests {
     }
 
     #[test]
-    fn test_index_skips_non_md_files() {
+    fn test_index_all_files() {
         let (test_dir, db_path) = create_test_directory();
 
         create_test_file(&test_dir, "readme.md", "# README");
@@ -450,8 +475,11 @@ mod tests {
         let result = index_directory(&test_dir, &db, false);
         assert!(result.is_ok());
 
-        let link_map = db.get_all_links().unwrap();
-        assert_eq!(link_map.len(), 1);
+        let records = db.get_all_mtime_and_size().unwrap();
+        assert_eq!(records.len(), 3);
+        assert!(records.contains_key("readme.md"));
+        assert!(records.contains_key("notes.txt"));
+        assert!(records.contains_key("data.json"));
 
         cleanup(&test_dir, &db_path);
     }
