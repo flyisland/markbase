@@ -279,8 +279,22 @@ fn index_single_file(
             }
         }
 
+        // Merge frontmatter tags with content tags
+        let mut merged_tags = extracted.tags;
+        if let Some(fm_tags) = extracted.frontmatter.get("tags") {
+            if let Some(tag_array) = fm_tags.as_array() {
+                for tag in tag_array {
+                    if let Some(tag_str) = tag.as_str() {
+                        merged_tags.push(tag_str.to_string());
+                    }
+                }
+            }
+        }
+        merged_tags.sort();
+        merged_tags.dedup();
+
         (
-            extracted.tags,
+            merged_tags,
             extracted.links,
             extracted.embeds,
             extracted.frontmatter,
@@ -861,6 +875,56 @@ See [[other]] for more."#;
         assert!(records.contains_key("main.md"));
         assert!(!records.contains_key("skip.md"));
         assert!(!records.contains_key("private/secret.md"));
+
+        cleanup(&test_dir, &db_path);
+    }
+
+    #[test]
+    fn test_index_file_tags_merge_content_and_frontmatter() {
+        // Test that file.tags contains tags from both content (#tag) and frontmatter
+        let (test_dir, db_path) = create_test_directory();
+
+        let content = r#"---
+title: Test Note
+tags: [fm-tag1, fm-tag2]
+---
+# Test Note
+
+This has #content-tag1 and #content-tag2 in the body."#;
+
+        create_test_file(&test_dir, "test.md", content);
+
+        let db = Database::new(&db_path).unwrap();
+        let result = index_directory(&test_dir, &db, false);
+        assert!(result.is_ok());
+
+        // Query the note and verify all tags are present
+        let notes = db.get_notes_by_name("test").unwrap();
+        assert_eq!(notes.len(), 1);
+
+        let note = &notes[0];
+        assert!(
+            note.tags.contains(&"fm-tag1".to_string()),
+            "Missing frontmatter tag fm-tag1"
+        );
+        assert!(
+            note.tags.contains(&"fm-tag2".to_string()),
+            "Missing frontmatter tag fm-tag2"
+        );
+        assert!(
+            note.tags.contains(&"content-tag1".to_string()),
+            "Missing content tag content-tag1"
+        );
+        assert!(
+            note.tags.contains(&"content-tag2".to_string()),
+            "Missing content tag content-tag2"
+        );
+        assert_eq!(
+            note.tags.len(),
+            4,
+            "Expected exactly 4 tags, got: {:?}",
+            note.tags
+        );
 
         cleanup(&test_dir, &db_path);
     }
