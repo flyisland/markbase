@@ -13,8 +13,6 @@ static RE_DATE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\{\{\s*date\s*\}
 static RE_TIME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\{\{\s*time\s*\}\}").unwrap());
 static RE_DATETIME: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\{\{\s*datetime\s*\}\}").unwrap());
-static RE_DIRECTIVES: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?s)<!--\s*\[[^\]]+\].*?-->").unwrap());
 
 #[derive(Debug)]
 pub struct CreatedNote {
@@ -114,13 +112,12 @@ fn process_template(
                 }
             }
 
-            let clean_body = clean_body_directives(&body);
             let skeleton_frontmatter = build_skeleton_frontmatter(&outer_fields);
 
             let final_content = if skeleton_frontmatter.is_empty() {
-                clean_body
+                body.to_string()
             } else {
-                format!("---\n{}---\n\n{}", skeleton_frontmatter, clean_body)
+                format!("---\n{}---\n\n{}", skeleton_frontmatter, body)
             };
 
             Ok((replace_template_variables(&final_content, name), location))
@@ -155,10 +152,6 @@ fn build_skeleton_frontmatter(outer_fields: &HashMap<String, String>) -> String 
     let mut result = lines.join("\n");
     result.push('\n');
     result
-}
-
-fn clean_body_directives(body: &str) -> String {
-    RE_DIRECTIVES.replace_all(body, "").to_string()
 }
 
 fn chrono_lite_now() -> ChronoLite {
@@ -369,26 +362,6 @@ _schema:
         assert!(!result.contains("_schema"));
         assert!(result.contains("type: company"));
         assert!(result.contains("template: company_customer"));
-    }
-
-    #[test]
-    fn test_process_template_removes_directives() {
-        let content = r#"---
-type: test
----
-# Section 1
-<!-- [Fill]: Write something here -->
-
-## Section 2
-<!-- [Update]: Overwrite
-     Some policy content -->
-Content here"#;
-        let (result, _) = process_template(content, "test").unwrap();
-        assert!(!result.contains("[Fill]"));
-        assert!(!result.contains("[Update]"));
-        assert!(result.contains("# Section 1"));
-        assert!(result.contains("## Section 2"));
-        assert!(result.contains("Content here"));
     }
 
     #[test]

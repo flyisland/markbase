@@ -1,262 +1,360 @@
-# MKS (Markdown Knowledge Schema) v1.10
+# MKS (Markdown Knowledge Schema) v1.11
 
 **Status:** Stable / Production Ready  
-**Date:** 2026-02-26  
+**Date:** 2026-03-04  
 **Target System:** markbase CLI, OpenClaw Agent  
 
 ---
 
-## 1. 核心理念与流程 (Core Philosophy & Workflow)
+## 1. Core Philosophy & Workflow
 
-MKS v1.10 是连接非结构化对话流与结构化知识库的协议。它不仅仅定义数据格式，更定义了知识的全生命周期管理流程：
+MKS v1.11 is a protocol that bridges unstructured conversation streams with a structured knowledge base. It not only defines a data format, but governs the full lifecycle of knowledge:
 
-1. **流式采集 (Stream Collection):**
-   依靠 Frontmatter 中的 `description`（语义路由）和 `properties`（Prompt），指导 Agent 从杂乱的对话流中精准提取信息。
+1. **Stream Collection:** The `description` field in `_schema` (semantic routing) and `properties` (field-level prompts) guide the Agent to extract relevant information precisely from noisy conversation input.
 
-2. **实体对齐 (Entity Alignment):**
-   依靠 `format: link` 和 `target` 约束，强制 Agent 将文本锚定到系统内的唯一实体文件（如 `[[绿米]]`），消除歧义。对于无法立即确认的实体，使用悬空引用语法 `[?[...]]` 占位。
+2. **Entity Alignment:** The `format: link` and `target` constraints require the Agent to resolve any mentioned entity to a unique file in the vault (e.g. `[[Acme Corp]]`), eliminating ambiguity. When an entity cannot be confirmed immediately, a dangling reference `[?[...]]` is used as a placeholder.
 
-3. **结构化沉淀 (Structured Sedimentation):**
-   依靠模板正文中的指令，指导 Agent 在后续活动中，如何将碎片化信息回填到实体档案中，实现知识的动态生长。
+3. **Structured Consolidation:** Agent Callouts embedded in the instance file body instruct the Agent how to back-fill fragmented information into entity records over time, enabling knowledge to grow incrementally.
 
 ---
 
-## Part I: 骨架定义 (Frontmatter Schema)
+## Part I: Frontmatter Schema
 
-位于 Frontmatter 的 `_schema` 属性下。**`_schema` 属性仅存在于模板文件中，实例文件不含此属性。**
+The schema is defined under the `_schema` key in the frontmatter. **`_schema` exists only in template files and is stripped from all instance files.**
 
-### 1.1 根对象 (Root Object)
+### 1.1 Root Object
 
-`_schema` 的定义与 **OpenAPI v3.1 / JSON Schema** 的标准对齐。
+`_schema` follows the **OpenAPI v3.1 / JSON Schema** conventions.
 
 ```yaml
 _schema:
-  # [1. 采集指引]
-  # 必填。Agent 读取此描述，判断当前信息流是否匹配该模版。
+  # [1. Routing prompt]
+  # Required. The Agent reads this to decide whether the current information
+  # stream matches this template.
   description: string
 
-  # [2. 字段校验]
-  # 默认为 false。
-  # strict: true  — Agent 发现未定义字段时报错，拒绝写入。
-  # strict: false — 未定义字段采取「只读透传（read-only passthrough）」策略：
-  #                 读取内容纳入上下文，但不主动写入或修改。
+  # [2. Field validation]
+  # Default: false.
+  # strict: true  — The Agent rejects writes for any field not defined in properties.
+  # strict: false — Undefined fields follow a read-only passthrough policy:
+  #                 their content is loaded into context but never written or modified.
   strict: boolean
 
-  # [3. 数据完整性]
-  # 必填字段的 Key 列表。创建文档时，若上下文无法自动推断，Agent 须向用户提问获取。
-  # 提问时机：先完成实体对齐；仍无法确定时，再向用户提问。
+  # [3. Data integrity]
+  # List of required field keys. If the Agent cannot infer a value from context,
+  # it must ask the user. Entity alignment should be attempted first;
+  # only ask the user if alignment also fails.
   required: [string]
 
-  # [4. 文件命名]
-  # 可选。用自然语言描述文件名的推断规则，指导 Agent 在执行 markbase new 前确定文件名。
-  # 若缺省，Agent 依据上下文自行判断。
+  # [4. File naming]
+  # Optional. A natural-language rule describing how to derive the filename.
+  # If omitted, the Agent uses its own judgment.
   filename:
     description: string
 
-  # [5. 存放路径]
-  # 可选。固定目录路径（相对于 Vault 根目录），末尾须含 /。
-  # 路径应固定，不支持动态分支。
-  # 此字段由 markbase new 内部读取，Agent 无需关心路径拼接，只需提供文件名。
+  # [5. Storage location]
+  # Optional. A fixed directory path relative to the vault root, ending with /.
+  # Paths must be static — dynamic branching is not supported.
+  # markbase note new reads this internally; the Agent only needs to provide the filename.
   location: string
 
-  # [6. 结构定义]
+  # [6. Field definitions]
   properties:
     <field_name>: <SchemaObject>
 ```
 
-### 1.2 实例文件必填 Frontmatter
+### 1.2 Required Instance Frontmatter
 
-所有由模板创建的实例文件，Frontmatter 中必须包含以下两个字段。这两个字段直接定义在模板 Frontmatter 的外层（`_schema` 之外），`markbase new` 创建骨架时原样保留：
+Every instance file created from a template must include the following two fields. Both are defined in the outer frontmatter of the template (outside `_schema`) and are copied as-is by `markbase note new`:
 
-| 字段           | 说明                                                                                          | 示例                            |
-| -------------- | --------------------------------------------------------------------------------------------- | ------------------------------- |
-| **`type`**     | 实体类型。用于跨模板的实体对齐查询（`note.type == 'company'`）。                             | `type: company`                 |
-| **`template`** | 所用模板的文件名（不含路径及md后缀，模板统一存放于 `templates/` 目录）。用于沉淀阶段精确反查模板指令。 | `template: company_customer` |
+| Field           | Description                                                                                                                                                                                   | Example                               |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| **`type`**      | Entity type. Used for cross-template entity alignment queries (e.g. `note.type == 'company'`).                                                                                               | `type: company`                       |
+| **`templates`** | Internal link(s) to the template(s) used to create this file (`list` type, `format: link`). All templates live in the `templates/` directory. Each link element must be quoted. | `templates: ["[[company_customer]]"]` |
 
-> **为何同时需要 `type` 和 `template`：** `type` 用于跨模板的实体查询（如「找所有 person 类型的实体」），`template` 用于精确反查沉淀指令（如同为 `person` 类型，客户人员模板和私人朋友模板的正文指令可能完全不同）。
+> **Why both `type` and `templates`:** `type` enables cross-template entity queries (e.g. "find all entities of type `person`"). `templates` allows the Agent to look up the `_schema` definition when needed (e.g. field constraints, naming rules). Since body directives are carried in the instance file itself, consulting the template is rarely necessary during consolidation. The internal link format also lets Obsidian navigate directly to the template file.
 
-### 1.3 属性定义 (Schema Object)
+### 1.3 Schema Object
 
-类型系统与 [Obsidian Properties](https://help.obsidian.md/properties) 对齐，并在 `format` 上做增强。
+The type system aligns with [Obsidian Properties](https://help.obsidian.md/properties), with an additional `format` extension.
 
-#### 类型定义（`type`）
+#### Field Types (`type`)
 
-| MKS `type`   | Obsidian UI 对应 | 说明                                     |
-| ------------ | ---------------- | ---------------------------------------- |
-| `text`       | Text             | 普通文本                                 |
-| `number`     | Number           | 数值                                     |
-| `boolean`    | Checkbox         | 布尔值，使用 `boolean` 更直观            |
-| `date`       | Date             | 日期，格式 `YYYY-MM-DD`                  |
-| `datetime`   | Date & time      | 日期时间，格式 `YYYY-MM-DDTHH:MM`        |
-| `list`       | List             | 数组，含 aliases、tags 等列表类字段      |
+| MKS `type` | Obsidian UI | Description                                    |
+| ---------- | ----------- | ---------------------------------------------- |
+| `text`     | Text        | Plain text                                     |
+| `number`   | Number      | Numeric value                                  |
+| `boolean`  | Checkbox    | Boolean value                                  |
+| `date`     | Date        | Date in `YYYY-MM-DD` format                    |
+| `datetime` | Date & time | Date and time in `YYYY-MM-DDTHH:MM` format     |
+| `list`     | List        | Array, including fields like `aliases`, `tags` |
 
-#### 格式增强（`format`）
+#### Format Extension (`format`)
 
-`format` 字段仅有一个合法值，专用于双链约束：
+The `format` field has one valid value, used to enforce internal link constraints:
 
-| `format` 值 | 说明                                                                                              |
-| ----------- | ------------------------------------------------------------------------------------------------- |
-| `link`      | 该字段值必须为 Obsidian 双链格式。配合 `target` 指定实体类型约束。仅可用于 `type: text` 或 `type: list` 的字段。 |
+| `format` value | Description                                                                                                                          |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `link`         | The field value must be an Obsidian internal link. Use `target` to constrain the entity type. Valid only on `text` or `list` fields. |
 
-#### 完整 Schema Object 属性表
+#### Schema Object Properties
 
-| 属性 Key          | 类型   | 描述                                                |
-| ----------------- | ------ | --------------------------------------------------- |
-| **`type`**        | string | 见上方类型定义表                                    |
-| **`format`**      | string | 目前仅支持 `link`                                   |
-| **`target`**      | string | 实体类型约束，仅当 `format: link` 时有效            |
-| **`enum`**        | array  | 预设值列表，用于下拉约束和幻觉抑制                  |
-| **`description`** | string | 字段填写的 Prompt 指引，指导 Agent 如何提取和填写   |
-| **`default`**     | any    | 字段默认值，创建实例时若上下文无信息则使用此值      |
+| Key               | Type   | Description                                                                                                                                                                                                                      |
+| ----------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`type`**        | string | See field types table above.                                                                                                                                                                                                     |
+| **`format`**      | string | Currently only `link` is supported.                                                                                                                                                                                              |
+| **`target`**      | string | Entity type constraint, valid only when `format: link`. The value corresponds to the `type` field of instance files (e.g. `company`, `person`). The Agent uses `note.type == '<target>'` to scope entity alignment queries. |
+| **`enum`**        | array  | List of allowed values. Used to constrain input and reduce hallucination.                                                                                                                                                        |
+| **`description`** | string | A prompt that tells the Agent how to extract and fill this field.                                                                                                                                                                |
+| **`default`**     | any    | Default value to use when no information is available in context at creation time.                                                                                                                                               |
 
 ---
 
-## Part II: 血肉定义 (Body Directives)
+## Part II: Body Directives
 
-正文指令**只存在于模板文件**中，不随实例文件复制。Agent 在沉淀阶段通过实例文件的 `template` 字段精确反查对应模板，获取指令后操作实例文件正文。
+Directives are embedded in the instance file body as **Agent Callouts** and are copied from the template along with all other content. The Agent reads and executes directives directly from the instance file during both the collection and consolidation phases — no template lookup is required.
 
-### 2.1 指令语法
+### 2.1 Directive Syntax
+
+MKS uses two dedicated [Obsidian Callout](https://help.obsidian.md/callouts) types to carry directives:
+
+#### `[!agent-fill]` — Initial collection directive
 
 ```markdown
-## 章节标题
-<!-- [Directive]: Policy
-     详细的自然语言描述，说明 Agent 如何填写或更新此章节。
--->
+## Section Title
+
+> [!agent-fill]-
+> Natural-language description of how the Agent should generate this section when first creating the document.
 ```
 
-### 2.2 核心指令集
+#### `[!agent-update]` — Consolidation directive
 
-| 指令 Key       | 作用阶段     | 描述                                                                |
-| -------------- | ------------ | ------------------------------------------------------------------- |
-| **`[Fill]`**   | **初始采集** | 指导 Agent 首次创建文档时，如何生成该段落内容。                     |
-| **`[Update]`** | **后续沉淀** | 定义当新信息出现时，如何修改此段落。这是「结构化沉淀」的核心机制。 |
+```markdown
+## Section Title
 
-> **默认行为：** 模板中无任何指令的章节，Agent 不得写入，留空供人工填写。
+> [!agent-update]- Accumulate
+> Natural-language description of how the Agent should update this section when new information arrives.
+```
 
-### 2.3 更新策略 (`[Update]` Policies)
+The callout title of `[!agent-update]` specifies the update policy. See §2.3 for valid values.
 
-| 策略             | 行为                                                                                                                                                                                         | 适用场景               |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| **`Overwrite`**  | 发现更新的信息时，完全重写该段落。                                                                                                                                                           | 简介、最新状态         |
-| **`Append`**     | 在段落末尾追加新条目，保留完整历史。每条记录须携带时间戳。                                                                                                                                   | 活动日志、大事记       |
-| **`Accumulate`** | 每次发现新信息均追加新条目并携带时间戳，保留全部历史。**不做覆盖或去重**，即使新旧信息指向同一实体的不同状态（如 `GitLab CE → GitLab Duo`），也各自成条，确保演进轨迹可追溯。              | 技术栈画像、关键人清单 |
+### 2.2 Directive Types
 
-> **幂等性保证：** 对于 `Append` 和 `Accumulate` 策略，Agent 在追加前须检查段落内是否已存在来源相同（相同源文件路径）的条目，若存在则跳过，防止重复触发产生重复记录。
+| Callout type       | Phase                  | Description                                                                                                                 |
+| ------------------ | ---------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **`agent-fill`**   | **Initial collection** | Instructs the Agent how to generate this section when first creating the document. The callout is retained after execution. |
+| **`agent-update`** | **Consolidation**      | Defines how to update this section when new information arrives. This is the core mechanism of structured consolidation.   |
 
-### 2.4 悬空引用 (Dangling Reference)
+> **Default behavior:** Sections with no Agent Callout must not be written by the Agent. They are left blank for manual editing.
 
-当 Agent 在信息流中识别到一个应为 `format: link` 的实体，但**无法立即确认其对应的实体文件**时，使用悬空引用语法占位：
+### 2.3 Update Policies (`[!agent-update]` title)
+
+| Policy           | Behavior                                                                                                                                                                                                                                                          | Typical use              |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| **`Overwrite`**  | Completely rewrites the section when updated information is found. The callout itself is not touched.                                                                                                                                                             | Summary, current status  |
+| **`Append`**     | Appends new entries at the end of the section, preserving full history. Each entry must include a timestamp.                                                                                                                                                      | Activity logs, timelines |
+| **`Accumulate`** | Appends a new timestamped entry every time new information is found, with no deduplication. Even when new and old information refer to the same entity in different states (e.g. `GitLab CE → GitLab Duo`), both are kept to preserve the full evolution trail. | Tech stack, key contacts |
+
+> **Idempotency:** For `Append` and `Accumulate`, the Agent must check whether an entry from the same source file already exists in the section before appending. If it does, the write is skipped to prevent duplicate records on repeated triggers.
+
+### 2.4 Callout Lifecycle
+
+| Phase                           | Template file           | Instance file                                                        |
+| ------------------------------- | ----------------------- | -------------------------------------------------------------------- |
+| `markbase note new` creates instance | Callout is copied as-is | Callout is present, awaiting execution                               |
+| Collection (`agent-fill`)       | —                       | Agent reads callout, fills section content. **Callout is retained.** |
+| Consolidation (`agent-update`)  | —                       | Agent reads callout, updates section per policy. **Callout is retained.** |
+
+Callouts are never removed after execution. This allows the Agent to re-read directives at any point, and gives humans a clear record of the intended behavior for each section.
+
+### 2.5 Dangling References
+
+When the Agent identifies an entity that should be a `format: link` field value but **cannot immediately confirm the corresponding file**, it writes a dangling reference as a placeholder:
 
 ```
 [?[David Chen]]
 ```
 
-区别于已确认的 `[[David Chen]]` 双链，悬空引用表示「已识别但待对齐的实体」。
+This is distinct from a confirmed internal link `[[David Chen]]` and means "identified but not yet aligned."
 
-**解除悬空引用的流程：**
-1. 人工（或 Agent）执行实体对齐，确认目标实体文件。
-2. 将文件中的 `[?[David Chen]]` 替换为 `[[David Chen]]`。
-3. 若需要，同步将原始文本添加为目标实体的 `aliases`，并重新执行 `markbase index`。
+**Resolving a dangling reference:**
+1. A human (or the Agent) performs entity alignment and confirms the target file.
+2. Replace `[?[David Chen]]` with `[[David Chen]]` in the file.
+3. If needed, add the original text as an `aliases` entry on the target entity.
+4. Run `markbase index -v` to apply all changes.
 
 ---
 
-## Part III: 实体对齐算法 (Entity Alignment Algorithm)
+## Part III: Entity Alignment Algorithm
 
-当 Agent 处理 `format: link` 字段，或在沉淀阶段识别到需要链接的实体名时，执行以下流程。
+This algorithm runs whenever the Agent processes a `format: link` field, or identifies an entity that needs to be linked during consolidation.
 
-### 步骤 1：搜索
+### Step 1: Search
 
-对目标类型分两步查询，优先精确匹配，再尝试 aliases：
+Run two queries against the target type, preferring exact name match before falling back to aliases:
 
 ```bash
-# 1a. 按文件名精确匹配（name 字段有索引，优先）
-markbase query "name == '绿米' and type == 'company'" -o json
+# 1a. Exact match by filename (indexed, preferred)
+markbase query "file.name == 'Acme' and type == 'company'" -o json
 
-# 1b. 按 aliases 匹配（frontmatter list 字段，has() 支持）
-markbase query "has(aliases, '绿米联合') and type == 'company'" -o json
+# 1b. Match by aliases (frontmatter list field)
+markbase query "list_contains(aliases, 'Acme Corp') and type == 'company'" -o json
 ```
 
-### 步骤 2：结果处理
+### Step 2: Handle Results
 
-| 情况         | Agent 行为                                                                                                                                                                                                       |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **唯一命中** | 直接使用该实体，生成双链 `[[实体名]]`。                                                                                                                                                                          |
-| **多结果**   | Agent 读取各候选文件的 `content` 字段，结合当前上下文自主推断最匹配项（如：某 `person` 文件记录了其所在公司，与当前商机吻合）。若仍无法确定，向用户列出候选项请求澄清。用户确认后，Agent 将原始文本添加为该实体的 `aliases`（见步骤 3）。 |
-| **零结果**   | 写入悬空引用 `[?[实体名]]` 占位，不阻塞主流程。后续由人工或 Agent 批量处理。                                                                                                                                    |
+| Outcome              | Agent action                                                                                                                                                                                                                                                        |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Single match**     | Use the entity directly and write an internal link `[[entity name]]`.                                                                                                                                                                                               |
+| **Multiple matches** | Read the content of each candidate file and infer the best match from context (e.g. a `person` file that references the same company as the current opportunity). If still ambiguous, present the candidates to the user. Once confirmed, add the original text as an `aliases` entry on the chosen entity (see Step 3). |
+| **No match**         | Write a dangling reference `[?[entity name]]` and continue. Resolve later in batch, manually or by the Agent.                                                                                                                                                      |
 
-> **与 `required` 字段的协作：** 若对齐失败的字段同时是 `required` 字段，Agent 须额外向用户提问，确保必填项不以悬空引用状态长期留存。
+> **Interaction with `required` fields:** If alignment fails on a field that is also `required`, the Agent must ask the user to ensure the field is not left as a dangling reference indefinitely.
 
-### 步骤 3：写入 alias（如适用）
+### Step 3: Write Alias (if applicable)
 
-用户指定别名关联到已有实体后，Agent 修改该实体文件的 Frontmatter，并执行 `markbase index` 使变更生效：
+After the user confirms which entity an alias maps to, the Agent updates the entity's frontmatter and runs `markbase index -v` to apply the change:
 
 ```yaml
-# 修改前
-aliases: ["绿米"]
+# Before
+aliases: ["Acme"]
 
-# 修改后（用户用"绿米联合"指代同一实体）
-aliases: ["绿米", "绿米联合"]
+# After (user referred to the same entity as "Acme Corp")
+aliases: ["Acme", "Acme Corp"]
 ```
 
 ---
 
-## Part IV: 文件创建流程 (File Creation Workflow)
+## Part IV: File Creation Workflow
 
-实例文件**必须通过 `markbase new` 创建**，禁止直接复制模板文件，以确保 `_schema` 和正文指令不污染实例文件。
+Instance files **must be created via `markbase note new`**. Copying template files directly is not allowed, as it would pollute instance files with `_schema`.
 
-### 完整流程
+### Workflow
 
 ```
-Step 0  执行 markbase template list（每次会话开始时执行一次）
-        ↓ 将返回的 name / description / path 载入上下文
-        ↓ 作为后续路由判断和模板预读的索引
+Step 0  Run markbase template list (once per session)
+        ↓ Load the returned name / description / path into context
+        ↓ Use as the routing index for all subsequent steps
 
-Step 1  执行 markbase template describe <模板名>（markbase new 之前）
-        ↓ 返回：_schema.required、_schema.strict、_schema.properties
-        ↓ 返回：_schema.filename.description（命名规则）
-        ↓ 返回：各章节的 [Fill] / [Update] 指令内容
+Step 1  Run markbase template describe <template-name> (before markbase note new)
+        ↓ Returns: _schema.required, _schema.strict, _schema.properties
+        ↓ Returns: _schema.filename.description (naming rule)
+        ↓ Note: body directives are carried in the instance file — no need to read them here
 
-Step 2  确定文件名
-        ↓ 依据 _schema.filename.description，从上下文推断文件名
-        ↓ 若 _schema.filename 缺省，Agent 自行判断
-        ↓ 无法推断文件名时，向用户提问
+Step 2  Determine the filename
+        ↓ Infer from context using _schema.filename.description
+        ↓ If _schema.filename is absent, use the Agent's own judgment
+        ↓ Ask the user if the filename cannot be inferred
 
-Step 3  markbase new <实例名> --template <模板文件名>
-        ↓ markbase 从模板的 _schema.location 自动确定存放路径，Agent 无需干预
-        ↓ markbase 过滤掉 _schema 属性和所有 <!-- [...] --> 指令注释
-        ↓ 保留模板外层 Frontmatter（含 type、template 等字段）原样写入骨架文件
-        ↓ 生成干净的骨架文件，命令返回新文件的完整路径
+Step 3  markbase note new <instance-name> --template <template-name>
+        ↓ markbase resolves the storage path from _schema.location — no Agent intervention needed
+        ↓ markbase strips the _schema frontmatter key
+        ↓ All other frontmatter fields (type, templates, etc.) are copied as-is into the instance file
+        ↓ All [!agent-fill] / [!agent-update] callouts are copied as-is into the instance file
+        ↓ Returns the full path of the newly created file
 
-Step 4  Agent 填充 Frontmatter
-        ↓ 从上下文推断各字段值
-        ↓ 对 format: link 字段执行实体对齐（Part III）
-        ↓ required 字段若无法推断，向用户提问
-        ↓ 有 default 值的字段，上下文无信息时使用默认值
+Step 4  Fill frontmatter
+        ↓ Infer each field value from context
+        ↓ Run entity alignment (Part III) for all format: link fields
+        ↓ Ask the user for any required fields that cannot be inferred
+        ↓ Apply default values for fields with no context information
 
-Step 5  Agent 填充正文
-        ↓ 依据 Step 1 记住的 [Fill] 指令，填充对应章节
-        ↓ 无 [Fill] 指令的章节保持空白，不写入
+Step 5  Fill body
+        ↓ Read each [!agent-fill] callout in the instance file and fill the corresponding section
+        ↓ Leave sections with no [!agent-fill] callout blank — do not write to them
+        ↓ Retain all [!agent-fill] callouts after execution — do not remove them
 ```
 
 ---
 
-## Part V: 完整模版范例 (Reference Template)
+## Part V: Reference Template
 
-> 引用文件：`@/templates/company_customer.md`
+The following is a complete example of the `company_customer` template, showing how `_schema`, outer frontmatter, and Agent Callouts work together.
+
+```markdown
+---
+_schema:
+  description: 标准客户档案模版。用于建立新客户的基本信息库，记录组织架构、技术栈和关键活动。
+  strict: false
+  required: [industry, size]
+  filename:
+    description: 使用客户的常用简称作为文件名，如"绿米"而非"绿米联合创新科技有限公司"。
+  location: company/
+  properties:
+    industry:
+      type: text
+      description: 客户所在行业，如"智能家居"、"金融科技"。
+    size:
+      type: text
+      enum: [startup, smb, enterprise]
+      description: 公司规模，从枚举值中选择最匹配的。
+    website:
+      type: text
+      description: 官网 URL。
+    related_contacts:
+      type: list
+      format: link
+      target: person
+      description: 该客户的已知联系人，每人一个双链。
+
+type: company
+templates: ["[[company_customer]]"]
+industry: ""
+size: ""
+website: ""
+related_contacts: []
+tags: []
+aliases: []
+---
+
+## 1. 公司简介
+
+> [!agent-fill]-
+> 用 2-3 句话概括公司的主营业务、市场定位和核心产品。信息来源优先使用对话上下文，不足时可结合 website 字段访问官网补充。
+
+## 2. 组织架构
+
+> [!agent-update]- Accumulate
+> 每次发现新的联系人信息时追加一条记录，格式为：
+> `- [[人员双链]] · 职位 · 备注（来源：[[源文件]]，日期）`
+> 幂等检查：若该来源文件已存在记录则跳过。无法确认人员实体时写悬空引用 [?[姓名]]。
+
+## 3. 技术栈画像
+
+> [!agent-update]- Accumulate
+> 每次发现新的技术信息时追加一条记录，格式为：
+> `- 技术名称 · 用途说明（来源：[[源文件]]，日期）`
+> 即使同一技术出现版本迭代（如 GitLab CE → GitLab Duo），也各自成条保留演进轨迹。
+> 幂等检查：若该来源文件已存在记录则跳过。
+
+## 4. 关键活动
+
+> [!agent-update]- Append
+> 每次有新的拜访、会议、演示等活动时，在末尾追加一条记录，格式为：
+> `- [[日期]] [活动类型] 简要描述 → [[源文件]]`
+> 活动类型枚举：Visit / Call / Demo / Proposal / Contract。
+> 幂等检查：若该来源文件已存在记录则跳过。
+
+## 5. 商机状态
+
+> [!agent-update]- Overwrite
+> 每次获得更新的商机进展时，完整重写本节内容，保留最新状态即可，无需保留历史。
+> 格式参考：阶段（如 Qualification / Proposal / Negotiation）、预计金额、预计签约时间、下一步行动。
+```
 
 ---
 
-## Part VI: Agent 工作流算法 (The Algorithm)
+## Part VI: Agent Workflow Algorithm
 
-### 阶段 0：模板感知 (Template Awareness)
+### Phase 0: Template Awareness
 
-**每次会话开始时执行一次**，为后续所有阶段建立路由基础：
+**Run once at the start of each session** to establish the routing foundation for all subsequent phases:
 
 ```bash
 markbase template list
 ```
 
-输出示例：
+Example output:
 ```
 name: person_work
 _schema.description: 工作相关人员档案模板。适用于客户侧联系人、合作伙伴...
@@ -268,49 +366,49 @@ path: /vault/templates/company_customer.md
 ---
 ```
 
-Agent 将返回的 `name`、`description`、`path` 载入上下文，作为后续路由判断和模板预读的索引。
+Load the returned `name`, `description`, and `path` into context as the routing index for all subsequent decisions.
 
 ---
 
-### 阶段 1：流式采集 (Collection)
+### Phase 1: Stream Collection
 
-1. **用户输入：** "记录一下，今天拜访了绿米..."
-2. **路由：** 依据阶段 0 已加载的模板列表，匹配 `_schema.description`，选中目标模板（此例为 `meeting_log`）。
-3. **关联实体预检（Company Prefetch）：**
-   - 识别对话中涉及的 company 实体（此例为「绿米」）。
-   - 执行实体对齐查询（Part III 算法）：
-     - **命中** → 读取该 company 文件的完整内容载入上下文（包含已有的商机状态、关键人、技术栈等），辅助后续实体识别和信息填充。
-     - **未命中** → 先触发 `company_customer` 模板的完整创建流程（阶段 0 → 阶段 1），创建完成后再继续当前文档的创建。
-4. **预读模板：** 执行 `markbase template describe <模板名>`，获取 `_schema`（含 `filename`）和所有正文指令。
-5. **确定文件名：** 依据 `_schema.filename.description` 从上下文推断文件名，无法推断时向用户提问。
-6. **必填校验：** 对 `required` 字段，先尝试从上下文推断；推断不足时，先走实体对齐；仍无法确定时，向用户提问。
-7. **创建文件：** 调用 `markbase new`，基于模板生成骨架文件。
-8. **填充内容：** 依据预读的指令填充 Frontmatter 和 `[Fill]` 章节。
-
----
-
-### 阶段 2：实体对齐 (Alignment)
-
-1. 读取模板 `properties`，找到所有 `format: link` 字段。
-2. 对每个字段，按 Part III 算法依次执行：文件名精确匹配 → aliases 匹配 → 结果处理。
-3. 唯一命中写双链；多结果推断或询问；零结果写悬空引用。
-4. 示例：生成会议纪要 `logs/2026-02-26_绿米拜访.md`，写入 `related_customer: [[绿米]]`。
+1. **User input:** "Let's log today's visit to Acme..."
+2. **Routing:** Match the input against the `_schema.description` of each template loaded in Phase 0. Select the best-matching template (in this example, `meeting_log`).
+3. **Related entity prefetch:**
+   - Identify any company entities mentioned in the conversation (here: Acme).
+   - Run entity alignment (Part III):
+     - **Hit** → Load the full content of the company file into context (existing opportunity status, key contacts, tech stack, etc.) to assist with entity recognition and field filling.
+     - **Miss** → Trigger the full creation workflow for `company_customer` (Phase 0 → Phase 1), then resume creating the current document.
+4. **Read template schema:** Run `markbase template describe <template-name>` to retrieve `_schema` (`filename`, `required`, `properties`). Body directives will be carried in the instance file — no need to read them from the template.
+5. **Determine filename:** Infer from context using `_schema.filename.description`. Ask the user if it cannot be inferred.
+6. **Validate required fields:** Attempt to infer each `required` field from context. Try entity alignment first; ask the user only if alignment also fails.
+7. **Create file:** Call `markbase note new` to generate the instance file from the template (including Agent Callouts).
+8. **Fill content:** Read each `[!agent-fill]` callout in the instance file and fill the corresponding frontmatter fields and body sections.
 
 ---
 
-### 阶段 3：结构化沉淀 (Sedimentation)
+### Phase 2: Entity Alignment
 
-*此阶段由后台任务或 Agent 的「反思」步骤触发*
+1. Read the template `properties` and identify all `format: link` fields.
+2. For each field, run the Part III algorithm in order: exact filename match → aliases match → handle result.
+3. Write an internal link for a single match; infer or ask for multiple matches; write a dangling reference for no match.
+4. Example: after generating `logs/2026-02-26_acme-visit.md`, write `related_customer: ["[[Acme]]"]`.
 
-1. **触发：** 检测到新创建的会议纪要关联了 `[[绿米]]`。
-2. **加载实例：** 读取 `company/绿米.md`，获取 `template: company_customer`。
-3. **查模板：** 执行 `markbase template describe <模板名>`，获取全部正文指令。
-4. **逐章扫描，按指令执行：**
+---
 
-   | 章节               | 指令                   | 操作                                                                                        |
-   | ------------------ | ---------------------- | ------------------------------------------------------------------------------------------- |
-   | `## 2. 组织架构`   | `[Update]: Accumulate` | 提取会议纪要中出现的人员，实体对齐后追加（不确定者写悬空引用）；幂等检查通过后写入         |
-   | `## 3. 技术栈画像` | `[Update]: Accumulate` | 提取新技术信息，带时间戳追加；幂等检查通过后写入                                           |
-   | `## 4. 关键活动`   | `[Update]: Append`     | 幂等检查通过后，追加：`- [[2026-02-26]] [Visit] 讨论私有化部署 → [[logs/2026-02-26_绿米拜访]]` |
+### Phase 3: Structured Consolidation
 
-5. **重新索引：** 若有 alias 写入，执行 `markbase index` 使变更生效。
+*Triggered by a background task or the Agent's reflection step.*
+
+1. **Trigger:** A newly created meeting log references `[[Acme]]`.
+2. **Load instance:** Read `company/Acme.md` and scan directly for `[!agent-update]` callouts. No `templates` lookup or `markbase template describe` call is needed.
+3. **Process each callout:**
+
+   | Section            | Callout                      | Action                                                                                                                                              |
+   | ------------------ | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | `## 2. 组织架构`   | `[!agent-update] Accumulate` | Extract people mentioned in the meeting log, align entities, append with timestamp. Skip if source already present. Write dangling reference if entity cannot be confirmed. |
+   | `## 3. 技术栈画像` | `[!agent-update] Accumulate` | Extract new technology mentions, append with timestamp. Skip if source already present.                                                             |
+   | `## 4. 关键活动`   | `[!agent-update] Append`     | Append: `- [[2026-02-26]] [Visit] 讨论私有化部署 → [[logs/2026-02-26_acme-visit]]`. Skip if source already present.                                |
+   | `## 5. 商机状态`   | `[!agent-update] Overwrite`  | Rewrite the section with the latest opportunity status.                                                                                             |
+
+4. **Re-index:** Run `markbase index -v` after any file is created or modified.
