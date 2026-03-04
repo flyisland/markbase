@@ -776,7 +776,7 @@ See [[other]] for more."#;
         create_test_file(&hidden, "secret.md", "# Secret");
 
         let db = Database::new(&db_path).unwrap();
-        let result = index_directory(&test_dir, &db, false).unwrap();
+        let _result = index_directory(&test_dir, &db, false).unwrap();
 
         let records = db.get_all_mtime_and_size().unwrap();
         assert!(records.contains_key("main.md"));
