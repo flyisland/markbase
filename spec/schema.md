@@ -6,15 +6,17 @@
 
 ---
 
-## 1. Core Philosophy & Workflow
+## Overview
 
-MKS v1.11 is a protocol that bridges unstructured conversation streams with a structured knowledge base. It not only defines a data format, but governs the full lifecycle of knowledge:
+MKS v1.11 defines a schema format for Markdown-based knowledge vaults. It specifies how templates encode field constraints, how body directives instruct agents to fill and update content, and how instance files are structured after creation.
 
-1. **Stream Collection:** The `description` field in `_schema` (semantic routing) and `properties` (field-level prompts) guide the Agent to extract relevant information precisely from noisy conversation input.
+The schema serves three roles:
 
-2. **Entity Alignment:** The `format: link` and `target` constraints require the Agent to resolve any mentioned entity to a unique file in the vault (e.g. `[[Acme Corp]]`), eliminating ambiguity. When an entity cannot be confirmed immediately, a dangling reference `[?[...]]` is used as a placeholder.
+1. **Semantic routing** — `_schema.description` lets an agent match incoming information to the correct template.
+2. **Field constraints** — `_schema.properties` defines types, formats, enums, and prompts for each frontmatter field.
+3. **Body directives** — `[!agent-fill]` and `[!agent-update]` callouts embedded in the template body are copied into instance files, instructing agents how to generate and update each section.
 
-3. **Structured Consolidation:** Agent Callouts embedded in the instance file body instruct the Agent how to back-fill fragmented information into entity records over time, enabling knowledge to grow incrementally.
+For agent operational procedures (capture, entity alignment, knowledge consolidation), see `SKILL.md`.
 
 ---
 
@@ -67,12 +69,12 @@ _schema:
 
 Every instance file created from a template must include the following two fields. Both are defined in the outer frontmatter of the template (outside `_schema`) and are copied as-is by `markbase note new`:
 
-| Field           | Description                                                                                                                                                                                   | Example                               |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| **`type`**      | Entity type. Used for cross-template entity alignment queries (e.g. `note.type == 'company'`).                                                                                               | `type: company`                       |
+| Field           | Description | Example |
+| --------------- | ----------- | ------- |
+| **`type`**      | Entity type. Used for cross-template entity alignment queries (e.g. `note.type == 'company'`). | `type: company` |
 | **`templates`** | Internal link(s) to the template(s) used to create this file (`list` type, `format: link`). All templates live in the `templates/` directory. Each link element must be quoted. | `templates: ["[[company_customer]]"]` |
 
-> **Why both `type` and `templates`:** `type` enables cross-template entity queries (e.g. "find all entities of type `person`"). `templates` allows the Agent to look up the `_schema` definition when needed (e.g. field constraints, naming rules). Since body directives are carried in the instance file itself, consulting the template is rarely necessary during consolidation. The internal link format also lets Obsidian navigate directly to the template file.
+`type` enables cross-template entity queries. `templates` allows the Agent to look up the `_schema` definition when needed. The internal link format also lets Obsidian navigate directly to the template file.
 
 ### 1.3 Schema Object
 
@@ -80,43 +82,41 @@ The type system aligns with [Obsidian Properties](https://help.obsidian.md/prope
 
 #### Field Types (`type`)
 
-| MKS `type` | Obsidian UI | Description                                    |
-| ---------- | ----------- | ---------------------------------------------- |
-| `text`     | Text        | Plain text                                     |
-| `number`   | Number      | Numeric value                                  |
-| `boolean`  | Checkbox    | Boolean value                                  |
-| `date`     | Date        | Date in `YYYY-MM-DD` format                    |
-| `datetime` | Date & time | Date and time in `YYYY-MM-DDTHH:MM` format     |
+| MKS `type` | Obsidian UI | Description |
+| ---------- | ----------- | ----------- |
+| `text`     | Text        | Plain text |
+| `number`   | Number      | Numeric value |
+| `boolean`  | Checkbox    | Boolean value |
+| `date`     | Date        | Date in `YYYY-MM-DD` format |
+| `datetime` | Date & time | Date and time in `YYYY-MM-DDTHH:MM` format |
 | `list`     | List        | Array, including fields like `aliases`, `tags` |
 
 #### Format Extension (`format`)
 
-The `format` field has one valid value, used to enforce internal link constraints:
-
-| `format` value | Description                                                                                                                          |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `link`         | The field value must be an Obsidian internal link. Use `target` to constrain the entity type. Valid only on `text` or `list` fields. |
+| `format` value | Description |
+| -------------- | ----------- |
+| `link` | The field value must be an Obsidian internal link. Use `target` to constrain the entity type. Valid only on `text` or `list` fields. |
 
 #### Schema Object Properties
 
-| Key               | Type   | Description                                                                                                                                                                                                                      |
-| ----------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`type`**        | string | See field types table above.                                                                                                                                                                                                     |
-| **`format`**      | string | Currently only `link` is supported.                                                                                                                                                                                              |
-| **`target`**      | string | Entity type constraint, valid only when `format: link`. The value corresponds to the `type` field of instance files (e.g. `company`, `person`). The Agent uses `note.type == '<target>'` to scope entity alignment queries. |
-| **`enum`**        | array  | List of allowed values. Used to constrain input and reduce hallucination.                                                                                                                                                        |
-| **`description`** | string | A prompt that tells the Agent how to extract and fill this field.                                                                                                                                                                |
-| **`default`**     | any    | Default value to use when no information is available in context at creation time.                                                                                                                                               |
+| Key | Type | Description |
+| --- | ---- | ----------- |
+| **`type`** | string | See field types table above. |
+| **`format`** | string | Currently only `link` is supported. |
+| **`target`** | string | Entity type constraint, valid only when `format: link`. The value corresponds to the `type` field of instance files (e.g. `company`, `person`). |
+| **`enum`** | array | List of allowed values. Used to constrain input and reduce hallucination. |
+| **`description`** | string | A prompt that tells the Agent how to extract and fill this field. |
+| **`default`** | any | Default value to use when no information is available in context at creation time. |
 
 ---
 
 ## Part II: Body Directives
 
-Directives are embedded in the instance file body as **Agent Callouts** and are copied from the template along with all other content. The Agent reads and executes directives directly from the instance file during both the collection and consolidation phases — no template lookup is required.
+Directives are embedded in the template body as **Agent Callouts** and are copied as-is into instance files by `markbase note new`. The Agent reads and executes directives directly from the instance file — no template lookup is required during either collection or consolidation.
 
 ### 2.1 Directive Syntax
 
-MKS uses two dedicated [Obsidian Callout](https://help.obsidian.md/callouts) types to carry directives:
+MKS uses two dedicated [Obsidian Callout](https://help.obsidian.md/callouts) types:
 
 #### `[!agent-fill]` — Initial collection directive
 
@@ -140,134 +140,48 @@ The callout title of `[!agent-update]` specifies the update policy. See §2.3 fo
 
 ### 2.2 Directive Types
 
-| Callout type       | Phase                  | Description                                                                                                                 |
-| ------------------ | ---------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **`agent-fill`**   | **Initial collection** | Instructs the Agent how to generate this section when first creating the document. The callout is retained after execution. |
-| **`agent-update`** | **Consolidation**      | Defines how to update this section when new information arrives. This is the core mechanism of structured consolidation.   |
+| Callout type | Phase | Description |
+| ------------ | ----- | ----------- |
+| **`agent-fill`** | Initial collection | Instructs the Agent how to generate this section when first creating the document. The callout is retained after execution. |
+| **`agent-update`** | Consolidation | Defines how to update this section when new information arrives. The callout is retained after execution. |
 
 > **Default behavior:** Sections with no Agent Callout must not be written by the Agent. They are left blank for manual editing.
 
 ### 2.3 Update Policies (`[!agent-update]` title)
 
-| Policy           | Behavior                                                                                                                                                                                                                                                          | Typical use              |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| **`Overwrite`**  | Completely rewrites the section when updated information is found. The callout itself is not touched.                                                                                                                                                             | Summary, current status  |
-| **`Append`**     | Appends new entries at the end of the section, preserving full history. Each entry must include a timestamp.                                                                                                                                                      | Activity logs, timelines |
-| **`Accumulate`** | Appends a new timestamped entry every time new information is found, with no deduplication. Even when new and old information refer to the same entity in different states (e.g. `GitLab CE → GitLab Duo`), both are kept to preserve the full evolution trail. | Tech stack, key contacts |
-
-> **Idempotency:** For `Append` and `Accumulate`, the Agent must check whether an entry from the same source file already exists in the section before appending. If it does, the write is skipped to prevent duplicate records on repeated triggers.
+| Policy | Behavior | Typical use |
+| ------ | -------- | ----------- |
+| **`Overwrite`** | Completely rewrites the section when updated information is found. | Summary, current status |
+| **`Append`** | Appends new entries at the end of the section, preserving full history. Each entry must include a timestamp. | Activity logs, timelines |
+| **`Accumulate`** | Appends a new timestamped entry every time new information is found, with no deduplication. Even when new and old information refer to the same entity in different states (e.g. `GitLab CE → GitLab Duo`), both are kept. | Tech stack, key contacts |
 
 ### 2.4 Callout Lifecycle
 
-| Phase                           | Template file           | Instance file                                                        |
-| ------------------------------- | ----------------------- | -------------------------------------------------------------------- |
-| `markbase note new` creates instance | Callout is copied as-is | Callout is present, awaiting execution                               |
-| Collection (`agent-fill`)       | —                       | Agent reads callout, fills section content. **Callout is retained.** |
-| Consolidation (`agent-update`)  | —                       | Agent reads callout, updates section per policy. **Callout is retained.** |
+| Phase | Template file | Instance file |
+| ----- | ------------- | ------------- |
+| `markbase note new` creates instance | Callout is copied as-is | Callout is present, awaiting execution |
+| Collection (`agent-fill`) | — | Agent fills section content. **Callout is retained.** |
+| Consolidation (`agent-update`) | — | Agent updates section per policy. **Callout is retained.** |
 
-Callouts are never removed after execution. This allows the Agent to re-read directives at any point, and gives humans a clear record of the intended behavior for each section.
+Callouts are never removed after execution. This gives humans a permanent record of the intended behavior for each section.
 
 ### 2.5 Dangling References
 
-When the Agent identifies an entity that should be a `format: link` field value but **cannot immediately confirm the corresponding file**, it writes a dangling reference as a placeholder:
+When an entity should be a `format: link` value but cannot be confirmed, a dangling reference is written as a placeholder:
 
 ```
 [?[David Chen]]
 ```
 
-This is distinct from a confirmed internal link `[[David Chen]]` and means "identified but not yet aligned."
-
-**Resolving a dangling reference:**
-1. A human (or the Agent) performs entity alignment and confirms the target file.
-2. Replace `[?[David Chen]]` with `[[David Chen]]` in the file.
+This is distinct from a confirmed internal link `[[David Chen]]`. To resolve:
+1. Perform entity alignment and confirm the target file.
+2. Replace `[?[David Chen]]` with `[[David Chen]]`.
 3. If needed, add the original text as an `aliases` entry on the target entity.
-4. Run `markbase index -v` to apply all changes.
+4. Run `markbase index` to apply all changes.
 
 ---
 
-## Part III: Entity Alignment Algorithm
-
-This algorithm runs whenever the Agent processes a `format: link` field, or identifies an entity that needs to be linked during consolidation.
-
-### Step 1: Search
-
-Run two queries against the target type, preferring exact name match before falling back to aliases:
-
-```bash
-# 1a. Exact match by filename (indexed, preferred)
-markbase query "file.name == 'Acme' and type == 'company'" -o json
-
-# 1b. Match by aliases (frontmatter list field)
-markbase query "list_contains(aliases, 'Acme Corp') and type == 'company'" -o json
-```
-
-### Step 2: Handle Results
-
-| Outcome              | Agent action                                                                                                                                                                                                                                                        |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Single match**     | Use the entity directly and write an internal link `[[entity name]]`.                                                                                                                                                                                               |
-| **Multiple matches** | Read the content of each candidate file and infer the best match from context (e.g. a `person` file that references the same company as the current opportunity). If still ambiguous, present the candidates to the user. Once confirmed, add the original text as an `aliases` entry on the chosen entity (see Step 3). |
-| **No match**         | Write a dangling reference `[?[entity name]]` and continue. Resolve later in batch, manually or by the Agent.                                                                                                                                                      |
-
-> **Interaction with `required` fields:** If alignment fails on a field that is also `required`, the Agent must ask the user to ensure the field is not left as a dangling reference indefinitely.
-
-### Step 3: Write Alias (if applicable)
-
-After the user confirms which entity an alias maps to, the Agent updates the entity's frontmatter and runs `markbase index -v` to apply the change:
-
-```yaml
-# Before
-aliases: ["Acme"]
-
-# After (user referred to the same entity as "Acme Corp")
-aliases: ["Acme", "Acme Corp"]
-```
-
----
-
-## Part IV: File Creation Workflow
-
-Instance files **must be created via `markbase note new`**. Copying template files directly is not allowed, as it would pollute instance files with `_schema`.
-
-### Workflow
-
-```
-Step 0  Run markbase template list (once per session)
-        ↓ Load the returned name / description / path into context
-        ↓ Use as the routing index for all subsequent steps
-
-Step 1  Run markbase template describe <template-name> (before markbase note new)
-        ↓ Returns: _schema.required, _schema.strict, _schema.properties
-        ↓ Returns: _schema.filename.description (naming rule)
-        ↓ Note: body directives are carried in the instance file — no need to read them here
-
-Step 2  Determine the filename
-        ↓ Infer from context using _schema.filename.description
-        ↓ If _schema.filename is absent, use the Agent's own judgment
-        ↓ Ask the user if the filename cannot be inferred
-
-Step 3  markbase note new <instance-name> --template <template-name>
-        ↓ markbase resolves the storage path from _schema.location — no Agent intervention needed
-        ↓ markbase strips the _schema frontmatter key
-        ↓ All other frontmatter fields (type, templates, etc.) are copied as-is into the instance file
-        ↓ All [!agent-fill] / [!agent-update] callouts are copied as-is into the instance file
-        ↓ Returns the full path of the newly created file
-
-Step 4  Fill frontmatter
-        ↓ Infer each field value from context
-        ↓ Run entity alignment (Part III) for all format: link fields
-        ↓ Ask the user for any required fields that cannot be inferred
-        ↓ Apply default values for fields with no context information
-
-Step 5  Fill body
-        ↓ Read each [!agent-fill] callout in the instance file and fill the corresponding section
-        ↓ Leave sections with no [!agent-fill] callout blank — do not write to them
-        ↓ Retain all [!agent-fill] callouts after execution — do not remove them
-```
-
----
-
-## Part V: Reference Template
+## Part III: Reference Template
 
 The following is a complete example of the `company_customer` template, showing how `_schema`, outer frontmatter, and Agent Callouts work together.
 
@@ -341,74 +255,3 @@ aliases: []
 > 每次获得更新的商机进展时，完整重写本节内容，保留最新状态即可，无需保留历史。
 > 格式参考：阶段（如 Qualification / Proposal / Negotiation）、预计金额、预计签约时间、下一步行动。
 ```
-
----
-
-## Part VI: Agent Workflow Algorithm
-
-### Phase 0: Template Awareness
-
-**Run once at the start of each session** to establish the routing foundation for all subsequent phases:
-
-```bash
-markbase template list
-```
-
-Example output:
-```
-name: person_work
-_schema.description: 工作相关人员档案模板。适用于客户侧联系人、合作伙伴...
-path: /vault/templates/person_work.md
----
-name: company_customer
-_schema.description: 标准客户档案模版。用于建立新客户的基本信息库...
-path: /vault/templates/company_customer.md
----
-```
-
-Load the returned `name`, `description`, and `path` into context as the routing index for all subsequent decisions.
-
----
-
-### Phase 1: Stream Collection
-
-1. **User input:** "Let's log today's visit to Acme..."
-2. **Routing:** Match the input against the `_schema.description` of each template loaded in Phase 0. Select the best-matching template (in this example, `meeting_log`).
-3. **Related entity prefetch:**
-   - Identify any company entities mentioned in the conversation (here: Acme).
-   - Run entity alignment (Part III):
-     - **Hit** → Load the full content of the company file into context (existing opportunity status, key contacts, tech stack, etc.) to assist with entity recognition and field filling.
-     - **Miss** → Trigger the full creation workflow for `company_customer` (Phase 0 → Phase 1), then resume creating the current document.
-4. **Read template schema:** Run `markbase template describe <template-name>` to retrieve `_schema` (`filename`, `required`, `properties`). Body directives will be carried in the instance file — no need to read them from the template.
-5. **Determine filename:** Infer from context using `_schema.filename.description`. Ask the user if it cannot be inferred.
-6. **Validate required fields:** Attempt to infer each `required` field from context. Try entity alignment first; ask the user only if alignment also fails.
-7. **Create file:** Call `markbase note new` to generate the instance file from the template (including Agent Callouts).
-8. **Fill content:** Read each `[!agent-fill]` callout in the instance file and fill the corresponding frontmatter fields and body sections.
-
----
-
-### Phase 2: Entity Alignment
-
-1. Read the template `properties` and identify all `format: link` fields.
-2. For each field, run the Part III algorithm in order: exact filename match → aliases match → handle result.
-3. Write an internal link for a single match; infer or ask for multiple matches; write a dangling reference for no match.
-4. Example: after generating `logs/2026-02-26_acme-visit.md`, write `related_customer: ["[[Acme]]"]`.
-
----
-
-### Phase 3: Structured Consolidation
-
-*Triggered by a background task or the Agent's reflection step.*
-
-1. **Trigger:** A newly created meeting log references `[[Acme]]`.
-2. **Load instance:** Read `company/Acme.md` and scan directly for `[!agent-update]` callouts. No `templates` lookup or `markbase template describe` call is needed.
-3. **Process each callout:**
-
-   | Section            | Callout                      | Action                                                                                                                                              |
-   | ------------------ | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-   | `## 2. 组织架构`   | `[!agent-update] Accumulate` | Extract people mentioned in the meeting log, align entities, append with timestamp. Skip if source already present. Write dangling reference if entity cannot be confirmed. |
-   | `## 3. 技术栈画像` | `[!agent-update] Accumulate` | Extract new technology mentions, append with timestamp. Skip if source already present.                                                             |
-   | `## 4. 关键活动`   | `[!agent-update] Append`     | Append: `- [[2026-02-26]] [Visit] 讨论私有化部署 → [[logs/2026-02-26_acme-visit]]`. Skip if source already present.                                |
-   | `## 5. 商机状态`   | `[!agent-update] Overwrite`  | Rewrite the section with the latest opportunity status.                                                                                             |
-
-4. **Re-index:** Run `markbase index -v` after any file is created or modified.
