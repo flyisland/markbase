@@ -6,6 +6,14 @@ A high-performance CLI tool for indexing and querying Markdown notes, designed f
 
 ## Installation
 
+**From crates.io (recommended):**
+
+```bash
+cargo install markbase
+```
+
+**Build from source:**
+
 ```bash
 git clone <repository-url>
 cd markbase
