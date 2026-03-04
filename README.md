@@ -22,7 +22,7 @@ export MARKBASE_BASE_DIR=/path/to/your/notes
 
 markbase index
 markbase query "author == 'Tom'"
-markbase query "SELECT path, name FROM notes WHERE list_contains(tags, 'todo')"
+markbase query "SELECT file.path, file.name FROM notes WHERE list_contains(file.tags, 'todo')"
 ```
 
 ## Environment Variables
@@ -39,31 +39,34 @@ export MARKBASE_BASE_DIR=/path/to/notes
 export MARKBASE_OUTPUT_FORMAT=json
 
 markbase index
-markbase query "list_contains(tags, 'design')"
+markbase query "list_contains(file.tags, 'design')"
 ```
 
 ## Concepts
 
 ### Note Properties
 
-Each indexed note has two property types:
+Each indexed note has two namespaces for properties:
 
-**Reserved Fields** (native metadata):
+**File Properties** (`file.*` prefix):
+Access native database columns representing file metadata:
+
 | Field | Type | Description |
 |-------|------|-------------|
-| `path` | TEXT | File path relative to base-dir |
-| `folder` | TEXT | Directory path relative to base-dir |
-| `name` | TEXT | File name without extension |
-| `ext` | TEXT | File extension |
-| `size` | INTEGER | File size in bytes |
-| `ctime` | TIMESTAMPTZ | Created time |
-| `mtime` | TIMESTAMPTZ | Modified time |
-| `tags` | VARCHAR[] | Tags from content (`#tag`) and frontmatter |
-| `links` | VARCHAR[] | Wiki-links `[[link]]` + embeds `![[embed]]` from body and frontmatter |
-| `backlinks` | VARCHAR[] | Notes linking to this note (reverse of links) |
-| `embeds` | VARCHAR[] | Embeds `![[embed]]` from body only |
+| `file.path` | TEXT | File path relative to base-dir |
+| `file.folder` | TEXT | Directory path relative to base-dir |
+| `file.name` | TEXT | File name without extension |
+| `file.ext` | TEXT | File extension |
+| `file.size` | INTEGER | File size in bytes |
+| `file.ctime` | TIMESTAMPTZ | Created time |
+| `file.mtime` | TIMESTAMPTZ | Modified time |
+| `file.tags` | VARCHAR[] | Tags from content (`#tag`) and frontmatter |
+| `file.links` | VARCHAR[] | Wiki-links `[[link]]` + embeds `![[embed]]` from body and frontmatter |
+| `file.backlinks` | VARCHAR[] | Notes linking to this note (reverse of links) |
+| `file.embeds` | VARCHAR[] | Embeds `![[embed]]` from body only |
 
-**Frontmatter Properties**: Any YAML frontmatter field is queryable:
+**Note Properties** (`note.*` prefix or bare):
+Access YAML frontmatter fields:
 
 ```yaml
 ---
@@ -73,11 +76,21 @@ status: in-progress
 ---
 ```
 
-Query it directly: `markbase query "author == 'John'"`
+Query using explicit prefix or bare shorthand:
+```bash
+markbase query "note.author == 'John'"    # explicit
+markbase query "author == 'John'"         # shorthand (same result)
+```
 
 ### Field Resolution
 
-Reserved fields are checked first. If a frontmatter field conflicts with a reserved field (except `tags`), it's ignored with a warning during indexing.
+| Syntax | Resolves To | Example |
+|--------|-------------|---------|
+| `file.*` | Native database column | `file.name` → `name` column |
+| `note.*` | Frontmatter JSON extraction | `note.author` → `properties->"author"` |
+| bare (no prefix) | Frontmatter JSON extraction (shorthand for `note.*`) | `author` → `properties->"author"` |
+
+The `file.*` and `note.*` namespaces are completely separate — no naming conflicts.
 
 ### Name Uniqueness
 
@@ -138,12 +151,14 @@ Query indexed notes.
 
 ```bash
 # Expression mode (WHERE clause only)
-markbase query "author == 'Tom'"
-markbase query "list_contains(tags, 'project')"
-markbase query "author == 'Tom' ORDER BY mtime DESC LIMIT 10"
+markbase query "note.author == 'Tom'"          # frontmatter (explicit)
+markbase query "author == 'Tom'"               # frontmatter (shorthand)
+markbase query "file.mtime > '2024-01-01'"     # file metadata
+markbase query "list_contains(file.tags, 'project')"  # file array field
+markbase query "author == 'Tom' ORDER BY file.mtime DESC LIMIT 10"
 
 # SQL mode (full SELECT statement)
-markbase query "SELECT path, name, author FROM notes WHERE author = 'Tom'"
+markbase query "SELECT file.path, note.author FROM notes WHERE note.author = 'Tom'"
 ```
 
 **Output formats:**
@@ -162,8 +177,10 @@ markbase query --dry-run "author == 'Tom'"  # Show translated SQL
 **Type casts for non-string comparisons:**
 
 ```bash
+markbase query "note.year::INTEGER >= 2024"
+markbase query "note.created::TIMESTAMP > '2024-01-01'"
+# or using bare shorthand:
 markbase query "year::INTEGER >= 2024"
-markbase query "created::TIMESTAMP > '2024-01-01'"
 ```
 
 ### `note`
@@ -205,21 +222,40 @@ Templates are stored in `templates/` under base-dir.
 
 ## Query Syntax
 
-markbase translates field names (reserved fields and frontmatter properties) to DuckDB queries. All DuckDB SQL keywords and operators are supported natively.
+markbase translates field names using explicit namespaces (`file.*` for file metadata, `note.*` or bare for frontmatter) to DuckDB queries. All DuckDB SQL keywords and operators are supported natively.
 
 **Commonly Used Functions:**
 - `list_contains(field, value)` - Array containment
+  - `list_contains(file.tags, 'todo')` - file array field (native)
+  - `list_contains(note.categories, 'work')` - frontmatter array (cast to VARCHAR[])
+
+**Field Prefix Reference:**
+
+| Prefix | Namespace | Use For | Example |
+|--------|-----------|---------|---------|
+| `file.` | File properties | Metadata columns | `file.name`, `file.mtime`, `file.size` |
+| `note.` | Note properties | Frontmatter fields | `note.author`, `note.status` |
+| (bare) | Note properties | Shorthand for `note.*` | `author`, `status` |
 
 **Examples:**
 
 ```bash
-markbase query "folder == './notes'"
-markbase query "mtime > '2024-01-01'"
-markbase query "size > 10000"
-markbase query "list_contains(tags, 'todo')"
-markbase query "author == 'John' AND status == 'active'"
+# File metadata queries (require file.* prefix)
+markbase query "file.folder == './notes'"
+markbase query "file.mtime > '2024-01-01'"
+markbase query "file.size > 10000"
+markbase query "file.name LIKE '%meeting%'"
+markbase query "list_contains(file.tags, 'todo')"
+
+# Frontmatter queries (note.* prefix or bare)
+markbase query "note.author == 'John'"
+markbase query "author == 'John'"  # same as above
+markbase query "note.status == 'active'"
 markbase query "author IS NOT NULL"
-markbase query "name LIKE '%meeting%'"
+
+# Combined queries
+markbase query "author == 'John' AND file.mtime > '2024-01-01'"
+markbase query "list_contains(file.tags, 'todo') AND status == 'active'"
 ```
 
 ## License

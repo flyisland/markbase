@@ -1,6 +1,6 @@
 mod common;
 
-use common::{assert_cli_success, parse_index_stats, stdout_contains, TestVault};
+use common::{TestVault, assert_cli_success, parse_index_stats, stdout_contains};
 
 #[test]
 fn test_index_empty_vault() {

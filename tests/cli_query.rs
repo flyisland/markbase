@@ -1,6 +1,6 @@
 mod common;
 
-use common::{assert_cli_success, stdout_contains, TestVault};
+use common::{TestVault, assert_cli_success, stdout_contains};
 
 fn setup_vault_with_notes(vault: &TestVault) {
     vault.create_note(
@@ -81,7 +81,7 @@ fn test_query_expression_where() {
     let vault = TestVault::new();
     setup_vault_with_notes(&vault);
 
-    let output = vault.query("name == 'readme'");
+    let output = vault.query("file.name == 'readme'");
 
     assert_cli_success(&output);
     assert!(stdout_contains(&output, "readme"));
@@ -92,7 +92,7 @@ fn test_query_sql_mode() {
     let vault = TestVault::new();
     setup_vault_with_notes(&vault);
 
-    let output = vault.query("SELECT name, title FROM notes");
+    let output = vault.query("SELECT file.name, title FROM notes");
 
     assert_cli_success(&output);
     assert!(stdout_contains(&output, "readme"));
@@ -104,7 +104,7 @@ fn test_query_reserved_fields() {
     vault.create_note("test", "# Test");
     vault.index();
 
-    let output = vault.query("name == 'test'");
+    let output = vault.query("file.name == 'test'");
 
     assert_cli_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -127,7 +127,7 @@ fn test_query_tags_array() {
     let vault = TestVault::new();
     setup_vault_with_notes(&vault);
 
-    let output = vault.query("list_contains(tags, 'todo')");
+    let output = vault.query("list_contains(file.tags, 'todo')");
 
     assert_cli_success(&output);
     assert!(stdout_contains(&output, "todo"));
@@ -138,7 +138,7 @@ fn test_query_multiple_tags() {
     let vault = TestVault::new();
     setup_vault_with_notes(&vault);
 
-    let output = vault.query("list_contains(tags, 'technical')");
+    let output = vault.query("list_contains(file.tags, 'technical')");
 
     assert_cli_success(&output);
     assert!(stdout_contains(&output, "architecture"));
@@ -202,7 +202,7 @@ fn test_query_dry_run() {
     vault.create_note("test", "# Test");
     vault.index();
 
-    let output = vault.query_dry_run("name == 'test'");
+    let output = vault.query_dry_run("file.name == 'test'");
 
     assert_cli_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -238,7 +238,7 @@ fn test_query_order_by() {
     vault.create_note("zzz", "# ZZZ");
     vault.index();
 
-    let output = vault.query("ORDER BY name ASC");
+    let output = vault.query("ORDER BY file.name ASC");
 
     assert_cli_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -269,7 +269,7 @@ fn test_query_no_results() {
     vault.create_note("test", "# Test");
     vault.index();
 
-    let output = vault.query("name == 'nonexistent'");
+    let output = vault.query("file.name == 'nonexistent'");
 
     assert_cli_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -303,7 +303,7 @@ fn test_query_links_field() {
     vault.create_note("c", "# C");
     vault.index();
 
-    let output = vault.query("list_contains(links, 'b')");
+    let output = vault.query("list_contains(file.links, 'b')");
 
     assert_cli_success(&output);
     assert!(stdout_contains(&output, "a"));
@@ -316,7 +316,7 @@ fn test_query_backlinks() {
     vault.create_note("target", "# Target");
     vault.index();
 
-    let output = vault.query("list_contains(backlinks, 'source')");
+    let output = vault.query("list_contains(file.backlinks, 'source')");
 
     assert_cli_success(&output);
     assert!(stdout_contains(&output, "target"));
@@ -339,7 +339,7 @@ fn test_query_not_equal() {
     let vault = TestVault::new();
     setup_vault_with_notes(&vault);
 
-    let output = vault.query("name != 'readme'");
+    let output = vault.query("file.name != 'readme'");
 
     assert_cli_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);

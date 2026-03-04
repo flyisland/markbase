@@ -1,6 +1,6 @@
 mod common;
 
-use common::{assert_cli_success, stdout_contains, TestVault};
+use common::{TestVault, assert_cli_success, stdout_contains};
 
 #[test]
 fn test_full_workflow() {
@@ -48,10 +48,10 @@ See [[api-design]] for API details.
     assert!(stdout_contains(&query_all, "architecture"));
     assert!(stdout_contains(&query_all, "api-design"));
 
-    let query_documentation = vault.query("list_contains(tags, 'documentation')");
+    let query_documentation = vault.query("list_contains(file.tags, 'documentation')");
     assert!(stdout_contains(&query_documentation, "readme"));
 
-    let query_technical = vault.query("list_contains(tags, 'technical')");
+    let query_technical = vault.query("list_contains(file.tags, 'technical')");
     assert!(stdout_contains(&query_technical, "architecture"));
     assert!(stdout_contains(&query_technical, "api-design"));
 }
@@ -66,15 +66,15 @@ fn test_backlink_cycle() {
 
     vault.index();
 
-    let output = vault.query("name == 'a'");
+    let output = vault.query("file.name == 'a'");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("a"));
 
-    let output = vault.query("name == 'b'");
+    let output = vault.query("file.name == 'b'");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("b"));
 
-    let output = vault.query("name == 'c'");
+    let output = vault.query("file.name == 'c'");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("c"));
 }
@@ -223,13 +223,13 @@ Check ![[diagram.png]] for visual.
 
     vault.index();
 
-    let output = vault.query("name == 'complex'");
+    let output = vault.query("file.name == 'complex'");
     assert_cli_success(&output);
 
-    let output = vault.query("list_contains(tags, 'important')");
+    let output = vault.query("list_contains(file.tags, 'important')");
     assert!(stdout_contains(&output, "complex"));
 
-    let output = vault.query("list_contains(links, 'another-note')");
+    let output = vault.query("list_contains(file.links, 'another-note')");
     assert!(stdout_contains(&output, "complex"));
 }
 
@@ -293,7 +293,7 @@ fn test_nested_directory_structure() {
     let output = vault.query("");
     assert_cli_success(&output);
 
-    let query_docs = vault.query("name == 'endpoint' OR name == 'guide'");
+    let query_docs = vault.query("file.name == 'endpoint' OR file.name == 'guide'");
     assert!(stdout_contains(&query_docs, "endpoint") || stdout_contains(&query_docs, "guide"));
 }
 
@@ -307,14 +307,14 @@ fn test_query_chaining_operations() {
 
     vault.index();
 
-    let output = vault.query("list_contains(tags, 'tag-a')");
+    let output = vault.query("list_contains(file.tags, 'tag-a')");
     assert!(stdout_contains(&output, "note1"));
 
-    let output = vault.query("list_contains(tags, 'tag-b')");
+    let output = vault.query("list_contains(file.tags, 'tag-b')");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("note1") || stdout.contains("note2"));
 
-    let output = vault.query("ORDER BY name DESC LIMIT 2");
+    let output = vault.query("ORDER BY file.name DESC LIMIT 2");
     assert_cli_success(&output);
 }
 
@@ -326,7 +326,7 @@ fn test_error_recovery() {
 
     vault.index();
 
-    let output = vault.query("name == 'nonexistent'");
+    let output = vault.query("file.name == 'nonexistent'");
     assert_cli_success(&output);
 
     vault.create_note("valid2", "# Valid 2");

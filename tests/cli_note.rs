@@ -1,6 +1,6 @@
 mod common;
 
-use common::{assert_cli_error, assert_cli_success, TestVault};
+use common::{TestVault, assert_cli_error, assert_cli_success};
 
 #[test]
 fn test_note_create_simple() {
@@ -200,7 +200,7 @@ fn test_note_rename_updates_backlinks() {
 
     vault.note_rename("target", "renamed-target");
 
-    let query_output = vault.query("name == 'renamed-target'");
+    let query_output = vault.query("file.name == 'renamed-target'");
     let stdout = String::from_utf8_lossy(&query_output.stdout);
     assert!(stdout.contains("renamed-target"));
 }
@@ -244,7 +244,7 @@ fn test_note_new_updates_index() {
     vault.note_new("brand-new");
     vault.index();
 
-    let query_output = vault.query("name == 'brand-new'");
+    let query_output = vault.query("file.name == 'brand-new'");
     let stdout = String::from_utf8_lossy(&query_output.stdout);
     assert!(stdout.contains("brand-new") || stdout.contains("brand-new.md"));
 }

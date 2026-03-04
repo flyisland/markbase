@@ -314,7 +314,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         },
         Commands::Template { command } => match command {
             TemplateCommands::List { format } => {
-                let sql_expr = "folder=='templates'".to_string();
+                let sql_expr = "file.folder=='templates'".to_string();
                 check_db_exists(&db_path, &base_dir)?;
                 let db = Mutex::new(Database::open_existing(&db_path)?);
                 let db_ref = db.lock().unwrap();

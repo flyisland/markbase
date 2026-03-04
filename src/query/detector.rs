@@ -127,6 +127,9 @@ pub fn validate_safety(sql: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Kept for backward compatibility during transition.
+/// This function is deprecated; use `is_file_property()` instead.
+#[allow(dead_code)]
 pub fn is_reserved_field(field: &str) -> bool {
     matches!(
         field,
@@ -142,6 +145,30 @@ pub fn is_reserved_field(field: &str) -> bool {
             | "backlinks"
             | "embeds"
     )
+}
+
+/// Returns true for file property prefixes: file.path, file.folder, etc.
+pub fn is_file_property(field: &str) -> bool {
+    matches!(
+        field,
+        "file.path"
+            | "file.folder"
+            | "file.name"
+            | "file.ext"
+            | "file.size"
+            | "file.ctime"
+            | "file.mtime"
+            | "file.tags"
+            | "file.links"
+            | "file.backlinks"
+            | "file.embeds"
+    )
+}
+
+/// Strips "note." prefix if present; bare identifiers returned unchanged.
+/// Both "note.author" and "author" refer to the same frontmatter field.
+pub fn note_field_key(field: &str) -> &str {
+    field.strip_prefix("note.").unwrap_or(field)
 }
 
 #[cfg(test)]
@@ -330,5 +357,44 @@ mod tests {
                 suffix: Some(_)
             }
         ));
+    }
+
+    #[test]
+    fn test_is_file_property() {
+        // Valid file properties
+        assert!(is_file_property("file.path"));
+        assert!(is_file_property("file.folder"));
+        assert!(is_file_property("file.name"));
+        assert!(is_file_property("file.ext"));
+        assert!(is_file_property("file.size"));
+        assert!(is_file_property("file.ctime"));
+        assert!(is_file_property("file.mtime"));
+        assert!(is_file_property("file.tags"));
+        assert!(is_file_property("file.links"));
+        assert!(is_file_property("file.backlinks"));
+        assert!(is_file_property("file.embeds"));
+
+        // Not file properties
+        assert!(!is_file_property("file.author")); // Not a file property
+        assert!(!is_file_property("author")); // Bare field
+        assert!(!is_file_property("note.author")); // Note prefix
+        assert!(!is_file_property("name")); // Bare reserved field
+        assert!(!is_file_property("path")); // Bare reserved field
+    }
+
+    #[test]
+    fn test_note_field_key() {
+        // Strips note. prefix
+        assert_eq!(note_field_key("note.author"), "author");
+        assert_eq!(note_field_key("note._schema.strict"), "_schema.strict");
+        assert_eq!(note_field_key("note.tags"), "tags");
+
+        // Bare identifiers unchanged
+        assert_eq!(note_field_key("author"), "author");
+        assert_eq!(note_field_key("_schema.strict"), "_schema.strict");
+        assert_eq!(note_field_key("tags"), "tags");
+
+        // Other prefixes unchanged
+        assert_eq!(note_field_key("file.name"), "file.name");
     }
 }

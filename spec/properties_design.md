@@ -1,7 +1,7 @@
 # Properties Design Specification
 
-**Status:** Stable / Production Ready  
-**Date:** 2026-03-04  
+**Status:** Implemented
+**Date:** 2026-03-04
 **Target System:** markbase CLI
 
 ---

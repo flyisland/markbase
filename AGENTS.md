@@ -55,12 +55,21 @@ CREATE INDEX idx_folder ON notes(folder);
 CREATE INDEX idx_name ON notes(name);
 ```
 
-### 4.2 Field Resolution Priority
+### 4.2 Field Resolution
 
-When querying fields:
-1. Check reserved fields first (`path`, `name`, `mtime`, etc.)
-2. If not matched, extract from `properties` JSON: `json_extract_string(properties, '$."field"')`
-3. Support nested paths: `a.b.c` → `json_extract_string(properties, '$."a"."b"."c"')`
+When querying fields, the system uses explicit namespace prefixes:
+
+| Prefix | Namespace | Resolves to |
+|--------|-----------|-------------|
+| `file.` | File properties | Native database columns |
+| `note.` | Note (frontmatter) properties | `properties` JSON column |
+| *(none)* | Shorthand for `note.` | `properties` JSON column |
+
+**Resolution Rules:**
+1. If field starts with `file.` → direct column access (e.g., `file.name` → `name`)
+2. If field starts with `note.` → frontmatter JSON extraction
+3. Bare identifiers → frontmatter JSON extraction (shorthand for `note.*`)
+4. Nested paths: `a.b.c` → `json_extract_string(properties, '$."a"."b"."c"')`
 
 ## 5. Core Module Responsibilities
 
@@ -109,10 +118,14 @@ src/
 **`query/detector.rs`**:
 - Mode detection: starts with `SELECT` → SQL mode, otherwise → expression mode
 - Security validation: reject non-SELECT statements, multi-statement injection
+- [`is_file_property()`](src/query/detector.rs:148): returns true for `file.*` properties
+- [`note_field_key()`](src/query/detector.rs:160): strips `note.` prefix if present
 
 **`query/translator.rs`**:
-- Reserved fields pass through directly
-- Frontmatter fields translated to `json_extract_string(properties, ...)`
+- [`translate_identifier()`](src/query/translator.rs:240): handles three cases:
+  - `file.*` prefix → direct column access
+  - `note.*` prefix → frontmatter JSON extraction
+  - Bare identifiers → frontmatter JSON extraction (shorthand for `note.*`)
 - Preserve type cast syntax (`::INTEGER`, `::TIMESTAMP`)
 
 ## 6. Command Internal Logic
@@ -143,17 +156,22 @@ For detailed usage, see README.md; this section explains implementation details.
 
 **Field translation**:
 ```sql
--- Expression: author == 'John'
+-- Expression: author == 'John' (bare = frontmatter)
 -- Translates to:
 SELECT * FROM notes WHERE json_extract_string(properties, '$."author"') = 'John'
 
--- SQL: SELECT name, author FROM notes WHERE author = 'John'
+-- Expression: file.name == 'readme' (file.* = direct column)
+-- Translates to:
+SELECT * FROM notes WHERE name = 'readme'
+
+-- SQL: SELECT file.name, author FROM notes WHERE author = 'John'
 -- Translates to:
 SELECT name, json_extract_string(properties, '$."author"') FROM notes WHERE json_extract_string(properties, '$."author"') = 'John'
 ```
 
 **Special handling**:
-- `list_contains(field, value)` uses `(properties->'$."field"')::VARCHAR[]` for frontmatter array fields
+- `file.*` fields in `list_contains()` use native column access
+- `note.*` or bare fields in `list_contains()` use `(properties->'$."field"')::VARCHAR[]` for frontmatter arrays
 
 **Error mapping**: DuckDB errors converted to user-friendly messages (unknown field, type cast failure, etc.)
 

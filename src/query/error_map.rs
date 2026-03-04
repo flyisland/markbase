@@ -54,13 +54,14 @@ fn map_column_not_found(error: &str, _original_input: &str) -> String {
                 );
             }
             return format!(
-                "Error: unknown field '{}'. If this is a frontmatter property, ensure it exists in your notes. Reserved fields are: path, folder, name, ext, size, ctime, mtime, tags, links, backlinks, embeds",
+                "Error: unknown field '{}'. Use file.* prefix for file properties (file.name, file.mtime), or note.* prefix for frontmatter (note.author). Bare identifiers reference frontmatter by default.",
                 column
             );
         }
     }
 
-    "Error: unknown field. If this is a frontmatter property, check for typos".to_string()
+    "Error: unknown field. Use file.* prefix for file properties, note.* prefix for frontmatter"
+        .to_string()
 }
 
 fn map_json_path_error(error: &str, _original_input: &str) -> String {

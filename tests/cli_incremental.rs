@@ -1,6 +1,6 @@
 mod common;
 
-use common::{assert_cli_success, parse_index_stats, stdout_contains, TestVault};
+use common::{TestVault, assert_cli_success, parse_index_stats, stdout_contains};
 
 fn setup_basic_vault(vault: &TestVault) {
     vault.create_note("note1", "# Note 1");
@@ -97,7 +97,7 @@ fn test_incremental_backlinks_after_rename() {
 
     vault.index();
 
-    let output = vault.query("name == 'b-new'");
+    let output = vault.query("file.name == 'b-new'");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("b-new"));
 }
@@ -162,7 +162,7 @@ fn test_incremental_tags_update() {
 
     vault.index();
 
-    let output = vault.query("list_contains(tags, 'newtag')");
+    let output = vault.query("list_contains(file.tags, 'newtag')");
     assert_cli_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("note"));
@@ -180,7 +180,7 @@ fn test_incremental_links_update() {
 
     vault.index();
 
-    let output = vault.query("list_contains(links, 'b')");
+    let output = vault.query("list_contains(file.links, 'b')");
     assert_cli_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("a"));

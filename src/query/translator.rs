@@ -1,4 +1,4 @@
-use super::detector::{QueryMode, is_reserved_field};
+use super::detector::{QueryMode, is_file_property, note_field_key};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TranslationContext {
@@ -259,13 +259,45 @@ fn translate_identifier(
         return word.to_string();
     }
 
+    // NEW: Handle file. prefix - direct column access
+    if let Some(field) = word.strip_prefix("file.") {
+        // For list_contains first arg context, wrap appropriately
+        if state.context == TranslationContext::ListContainsFirstArg {
+            state.context = TranslationContext::Normal;
+            return field.to_string();
+        }
+        return field.to_string();
+    }
+
+    // NEW: Handle note. prefix - always frontmatter JSON extraction
+    if word.starts_with("note.") {
+        let key = note_field_key(word);
+        let json_path = if key.contains('.') {
+            key.split('.')
+                .map(|p| format!("\"{}\"", p))
+                .collect::<Vec<_>>()
+                .join(".")
+        } else {
+            format!("\"{}\"", key)
+        };
+
+        if state.context == TranslationContext::ListContainsFirstArg {
+            state.context = TranslationContext::Normal;
+            return format!("(properties->'$.{}')::VARCHAR[]", json_path);
+        }
+
+        return format!("json_extract_string(properties, '$.{}')", json_path);
+    }
+
+    // EXISTING: List contains first arg context
     if state.context == TranslationContext::ListContainsFirstArg {
         state.context = TranslationContext::Normal;
 
         if word.contains('.') {
             let parts: Vec<&str> = word.split('.').collect();
             let first = parts[0];
-            if is_reserved_field(first) {
+            // Bare reserved fields with dots are treated as file properties
+            if is_file_property(&format!("file.{}", first)) {
                 return word.to_string();
             }
             let json_path = parts
@@ -276,18 +308,19 @@ fn translate_identifier(
             return format!("(properties->'$.{}')::VARCHAR[]", json_path);
         }
 
-        if is_reserved_field(word) {
-            return word.to_string();
-        }
-
+        // Bare reserved fields in list_contains should now be treated as frontmatter
+        // (since file.* prefix is required for file properties)
         return format!("(properties->'$.\"{}\"')::VARCHAR[]", word);
     }
 
+    // EXISTING: Nested field path (bare, no prefix)
     if word.contains('.') {
         let parts: Vec<&str> = word.split('.').collect();
         let first = parts[0];
-        if is_reserved_field(first) || first.to_lowercase() == "notes" {
-            return word.to_string();
+        // Check if it looks like a file property without prefix
+        if is_file_property(&format!("file.{}", first)) {
+            // This is a reserved field used without prefix - treat as frontmatter
+            // User should use file.* prefix for file properties
         }
 
         let json_path = parts
@@ -299,10 +332,7 @@ fn translate_identifier(
         return format!("json_extract_string(properties, '$.{}')", json_path);
     }
 
-    if is_reserved_field(word) {
-        return word.to_string();
-    }
-
+    // Bare identifier - frontmatter (note.* shorthand)
     format!("json_extract_string(properties, '$.\"{}\"')", word)
 }
 
@@ -311,15 +341,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_translate_reserved_field() {
+    fn test_translate_file_property() {
+        // file.* prefix → direct column access
         assert_eq!(
-            translate("SELECT path FROM notes"),
+            translate("SELECT file.path FROM notes"),
             "SELECT path FROM notes"
         );
         assert_eq!(
-            translate("SELECT name, mtime FROM notes"),
+            translate("SELECT file.name, file.mtime FROM notes"),
             "SELECT name, mtime FROM notes"
         );
+        assert_eq!(
+            translate("SELECT file.folder, file.ext, file.size FROM notes"),
+            "SELECT folder, ext, size FROM notes"
+        );
+    }
+
+    #[test]
+    fn test_translate_note_prefix() {
+        // note.* prefix → json_extract_string
+        let result = translate("SELECT note.author FROM notes");
+        assert!(result.contains("json_extract_string"));
+        assert!(result.contains("author"));
+        assert!(!result.contains("note.author"));
+
+        // note.* with nested path
+        let result = translate("SELECT note._schema.strict FROM notes");
+        assert!(result.contains("json_extract_string"));
+        assert!(result.contains("_schema"));
+        assert!(result.contains("strict"));
+    }
+
+    #[test]
+    fn test_translate_bare_field_is_frontmatter() {
+        // Bare identifiers are frontmatter (shorthand for note.*)
+        let result = translate("SELECT author FROM notes");
+        assert!(result.contains("json_extract_string"));
+        assert!(result.contains("author"));
     }
 
     #[test]
@@ -346,7 +404,7 @@ mod tests {
 
     #[test]
     fn test_translate_order_by() {
-        let result = translate("ORDER BY mtime DESC");
+        let result = translate("ORDER BY file.mtime DESC");
         assert!(result.contains("ORDER BY"));
         assert!(result.contains("mtime"));
     }
@@ -360,6 +418,7 @@ mod tests {
 
     #[test]
     fn test_translate_list_contains_frontmatter_field() {
+        // Bare field in list_contains → frontmatter
         let result = translate("list_contains(categories, 'work')");
         assert_eq!(
             result,
@@ -368,14 +427,25 @@ mod tests {
     }
 
     #[test]
-    fn test_translate_list_contains_reserved_field() {
-        let result = translate("list_contains(tags, 'todo')");
+    fn test_translate_list_contains_note_prefix() {
+        // note.* prefix in list_contains → frontmatter
+        let result = translate("list_contains(note.categories, 'work')");
+        assert_eq!(
+            result,
+            "list_contains((properties->'$.\"categories\"')::VARCHAR[], 'work')"
+        );
+    }
+
+    #[test]
+    fn test_translate_list_contains_file_property() {
+        // file.* prefix in list_contains → direct column
+        let result = translate("list_contains(file.tags, 'todo')");
         assert_eq!(result, "list_contains(tags, 'todo')");
     }
 
     #[test]
     fn test_translate_list_contains_in_where() {
-        let result = translate("SELECT * FROM notes WHERE list_contains(categories, 'work')");
+        let result = translate("SELECT * FROM notes WHERE list_contains(note.categories, 'work')");
         assert!(
             result.contains("list_contains((properties->'$.\"categories\"')::VARCHAR[], 'work')")
         );
@@ -383,7 +453,18 @@ mod tests {
 
     #[test]
     fn test_translate_list_contains_nested_field() {
+        // Nested bare field → frontmatter
         let result = translate("list_contains(meta.categories, 'work')");
+        assert_eq!(
+            result,
+            "list_contains((properties->'$.\"meta\".\"categories\"')::VARCHAR[], 'work')"
+        );
+    }
+
+    #[test]
+    fn test_translate_list_contains_note_nested() {
+        // note.* prefix with nested path
+        let result = translate("list_contains(note.meta.categories, 'work')");
         assert_eq!(
             result,
             "list_contains((properties->'$.\"meta\".\"categories\"')::VARCHAR[], 'work')"
@@ -413,7 +494,7 @@ mod tests {
     fn test_ignore_sql_keywords() {
         assert_eq!(translate("SELECT * FROM notes"), "SELECT * FROM notes");
         assert_eq!(
-            translate("WHERE author = 'x' AND tags = 'y'"),
+            translate("WHERE author = 'x' AND file.tags = 'y'"),
             "WHERE json_extract_string(properties, '$.\"author\"') = 'x' AND tags = 'y'"
         );
     }
@@ -441,7 +522,7 @@ mod tests {
     fn test_build_select_sql_expression_with_suffix() {
         let mode = QueryMode::Expression {
             where_clause: Some("author == 'Tom'".to_string()),
-            suffix: Some("ORDER BY mtime DESC LIMIT 10".to_string()),
+            suffix: Some("ORDER BY file.mtime DESC LIMIT 10".to_string()),
         };
         let sql = build_select_sql(&mode);
         assert!(sql.contains("WHERE"));
@@ -453,7 +534,7 @@ mod tests {
     fn test_build_select_sql_suffix_only() {
         let mode = QueryMode::Expression {
             where_clause: None,
-            suffix: Some("ORDER BY mtime DESC".to_string()),
+            suffix: Some("ORDER BY file.mtime DESC".to_string()),
         };
         let sql = build_select_sql(&mode);
         assert!(sql.contains("ORDER BY mtime DESC"));
@@ -471,12 +552,17 @@ mod tests {
 
     #[test]
     fn test_translate_complex_query() {
-        let sql = "SELECT path, author, mtime FROM notes WHERE author == 'Tom' AND year::INTEGER >= 2024 ORDER BY mtime DESC LIMIT 10";
+        let sql = "SELECT file.path, author, file.mtime FROM notes WHERE author == 'Tom' AND year::INTEGER >= 2024 ORDER BY file.mtime DESC LIMIT 10";
         let result = translate(sql);
         assert!(result.contains("SELECT"));
         assert!(result.contains("FROM notes"));
         assert!(result.contains("ORDER BY"));
         assert!(result.contains("LIMIT"));
+        // Verify file.* fields are direct columns
+        assert!(result.contains(" path, ")); // file.path → path
+        assert!(result.contains(" mtime")); // file.mtime → mtime
+        // Verify bare field is frontmatter
+        assert!(result.contains("json_extract_string"));
     }
 
     #[test]
