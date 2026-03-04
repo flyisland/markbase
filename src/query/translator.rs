@@ -132,20 +132,9 @@ const SQL_KEYWORDS: &[&str] = &[
     "regexp_replace",
 ];
 
-const DEFAULT_FIELDS: &[(&str, &str)] = &[
-    ("path", "file.path"),
-    ("name", "file.name"),
-    ("mtime", "file.mtime"),
-    ("size", "file.size"),
-    ("tags", "file.tags"),
-];
-
 fn build_default_select() -> String {
-    let fields: Vec<String> = DEFAULT_FIELDS
-        .iter()
-        .map(|(col, alias)| format!(r#"{} AS "{}""#, col, alias))
-        .collect();
-    format!("SELECT {} FROM notes", fields.join(", "))
+    let sql = translate("SELECT file.path, file.name, file.mtime, file.size, file.tags FROM notes");
+    normalize_sql(&sql)
 }
 
 pub fn build_select_sql(mode: &QueryMode) -> String {

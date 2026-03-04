@@ -281,12 +281,12 @@ fn index_single_file(
 
         // Merge frontmatter tags with content tags
         let mut merged_tags = extracted.tags;
-        if let Some(fm_tags) = extracted.frontmatter.get("tags") {
-            if let Some(tag_array) = fm_tags.as_array() {
-                for tag in tag_array {
-                    if let Some(tag_str) = tag.as_str() {
-                        merged_tags.push(tag_str.to_string());
-                    }
+        if let Some(fm_tags) = extracted.frontmatter.get("tags")
+            && let Some(tag_array) = fm_tags.as_array()
+        {
+            for tag in tag_array {
+                if let Some(tag_str) = tag.as_str() {
+                    merged_tags.push(tag_str.to_string());
                 }
             }
         }
