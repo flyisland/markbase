@@ -147,7 +147,7 @@ status: planning
 
 ## Tasks
 
-- [ ] 
+- [ ]
 
 ## Notes
 
@@ -160,6 +160,9 @@ status: planning
 
     let list_output = vault.template_list();
     assert_cli_success(&list_output);
+    // Verify template list actually shows the templates
+    assert!(stdout_contains(&list_output, "daily"));
+    assert!(stdout_contains(&list_output, "project"));
 
     let describe_output = vault.template_describe("daily");
     assert_cli_success(&describe_output);
@@ -169,6 +172,43 @@ status: planning
     let new_output = vault.note_new_with_template("2024-01-15", "daily");
     assert_cli_success(&new_output);
     assert!(vault.path.join("2024-01-15.md").exists());
+}
+
+#[test]
+fn test_template_list_shows_templates_in_folder() {
+    let vault = TestVault::new();
+
+    // Create templates in the templates folder
+    vault.create_note_in_subdir(
+        "templates",
+        "meeting",
+        "# Meeting Template\n\n## Attendees\n\n## Agenda\n\n## Notes\n",
+    );
+    vault.create_note_in_subdir(
+        "templates",
+        "bug-report",
+        "# Bug Report\n\n## Description\n\n## Steps to Reproduce\n",
+    );
+
+    // Create a regular note outside templates folder (should not appear in list)
+    vault.create_note(
+        "regular-note",
+        "# Regular Note\n\nThis should not appear in template list.",
+    );
+
+    vault.index();
+
+    // Test template list command
+    let list_output = vault.template_list();
+    assert_cli_success(&list_output);
+
+    // Verify templates are displayed
+    assert!(stdout_contains(&list_output, "meeting"));
+    assert!(stdout_contains(&list_output, "bug-report"));
+
+    // Verify regular note is NOT in the template list
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    assert!(!stdout.contains("regular-note"));
 }
 
 #[test]
