@@ -82,6 +82,21 @@ markbase query "note.author == 'John'"    # explicit
 markbase query "author == 'John'"         # shorthand (same result)
 ```
 
+### Tags
+
+Tags are extracted from two sources:
+
+**Content tags** (`#tag` in note body):
+- Obsidian format: `#` followed by alphanumeric characters, underscores, hyphens, and forward slashes
+- Must contain at least one non-numerical character (e.g., `#1984` is invalid, `#y1984` is valid)
+- Case-insensitive (e.g., `#tag` and `#TAG` are identical)
+- Supports nested tags using `/` separator (e.g., `#project/2024/q1`)
+
+**Frontmatter tags**:
+- YAML list format: `tags: [tag1, tag2]` or `tags: [project/2024]`
+
+All tags are merged into `file.tags` and can be queried with `list_contains(file.tags, 'tag-name')`.
+
 ### Field Resolution
 
 | Syntax | Resolves To | Example |

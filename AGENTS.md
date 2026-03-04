@@ -237,6 +237,12 @@ markbase/
 ├── Cargo.lock           # Dependency lock file
 ├── README.md            # User documentation
 ├── AGENTS.md            # This file
+├── spec/                # Design specifications
+│   ├── index_incremental_design.md  # Index incremental update design
+│   ├── links_design.md              # Links, backlinks, and embeds design
+│   ├── properties_design.md         # Properties and query translation design
+│   ├── query_design.md              # Query command design
+│   └── schema.md                    # MKS (Markdown Knowledge Schema)
 ├── src/
 │   ├── main.rs          # CLI entry point
 │   ├── db.rs            # Database operations
@@ -254,6 +260,24 @@ markbase/
 │       └── executor.rs  # Query execution
 └── target/              # Build output
 ```
+
+### Design Documents (spec/)
+
+The `spec/` directory contains detailed design specifications that complement AGENTS.md:
+
+| Document | Purpose |
+|----------|---------|
+| `index_incremental_design.md` | Three-phase incremental indexing algorithm, backlinks recomputation, conflict handling |
+| `links_design.md` | Wiki-links, embeds, and backlinks extraction rules, regex patterns, rename rewrite logic |
+| `properties_design.md` | File vs Note property namespaces, query translation rules, SQL generation |
+| `query_design.md` | Query command user interface, expression vs SQL mode, security restrictions |
+| `schema.md` | MKS v1.10 specification for template-based knowledge management |
+
+**When to consult spec documents:**
+- Before modifying extraction logic → see `links_design.md`
+- Before changing query behavior → see `properties_design.md` and `query_design.md`
+- Before optimizing indexing → see `index_incremental_design.md`
+- When implementing MKS templates → see `schema.md`
 
 ## 11. Development Status
 

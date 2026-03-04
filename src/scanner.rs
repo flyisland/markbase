@@ -1,6 +1,6 @@
 use crate::constants::RESERVED_FIELDS;
 use crate::db::{Database, Note};
-use crate::extractor::Extractor;
+use crate::extractor::{Extractor, normalize_tag};
 use ignore::WalkBuilder;
 use ignore::gitignore::Gitignore;
 use ignore::gitignore::GitignoreBuilder;
@@ -280,13 +280,18 @@ fn index_single_file(
         }
 
         // Merge frontmatter tags with content tags
+        // Apply Obsidian Tag Format validation to frontmatter tags:
+        // - Must contain at least one non-numerical character (reject pure numeric like "1984")
+        // - Case-insensitive: normalize to lowercase
         let mut merged_tags = extracted.tags;
         if let Some(fm_tags) = extracted.frontmatter.get("tags")
             && let Some(tag_array) = fm_tags.as_array()
         {
             for tag in tag_array {
-                if let Some(tag_str) = tag.as_str() {
-                    merged_tags.push(tag_str.to_string());
+                if let Some(tag_str) = tag.as_str()
+                    && let Some(normalized) = normalize_tag(tag_str)
+                {
+                    merged_tags.push(normalized);
                 }
             }
         }
@@ -923,6 +928,71 @@ This has #content-tag1 and #content-tag2 in the body."#;
             note.tags.len(),
             4,
             "Expected exactly 4 tags, got: {:?}",
+            note.tags
+        );
+
+        cleanup(&test_dir, &db_path);
+    }
+
+    #[test]
+    fn test_index_frontmatter_tags_validation() {
+        // Test Obsidian Tag Format validation for frontmatter tags:
+        // - Pure numeric tags (e.g., "1984", "123") should be rejected
+        // - Tags should be normalized to lowercase (case-insensitive)
+        let (test_dir, db_path) = create_test_directory();
+
+        let content = r#"---
+title: Test Note
+tags: [valid-tag, 1984, TAG-Upper, y2024, 123abc, "007"]
+---
+# Test Note
+
+Content here."#;
+
+        create_test_file(&test_dir, "test.md", content);
+
+        let db = Database::new(&db_path).unwrap();
+        let result = index_directory(&test_dir, &db, false);
+        assert!(result.is_ok());
+
+        let notes = db.get_notes_by_name("test").unwrap();
+        assert_eq!(notes.len(), 1);
+
+        let note = &notes[0];
+
+        // Valid tags should be present (normalized to lowercase)
+        assert!(
+            note.tags.contains(&"valid-tag".to_string()),
+            "Missing valid tag 'valid-tag'"
+        );
+        assert!(
+            note.tags.contains(&"tag-upper".to_string()),
+            "Tag should be normalized to lowercase: 'tag-upper'"
+        );
+        assert!(
+            note.tags.contains(&"y2024".to_string()),
+            "Missing valid tag 'y2024'"
+        );
+        assert!(
+            note.tags.contains(&"123abc".to_string()),
+            "Missing valid tag '123abc'"
+        );
+
+        // Invalid tags should be rejected
+        assert!(
+            !note.tags.contains(&"1984".to_string()),
+            "Pure numeric tag '1984' should be rejected"
+        );
+        assert!(
+            !note.tags.contains(&"007".to_string()),
+            "Pure numeric tag '007' should be rejected"
+        );
+
+        // Total should be 4 valid tags only
+        assert_eq!(
+            note.tags.len(),
+            4,
+            "Expected exactly 4 valid tags, got: {:?}",
             note.tags
         );
 

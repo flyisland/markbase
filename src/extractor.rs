@@ -11,6 +11,28 @@ pub static EMBED_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"!\[\[([^\]]
 pub static WIKILINK_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\[\[([^\]]+)\]\]").unwrap());
 
+/// Validates and normalizes a tag according to Obsidian Tag Format specification.
+///
+/// # Arguments
+/// * `tag` - The tag string (without # prefix)
+///
+/// # Returns
+/// * `Some(String)` - The normalized (lowercase) tag if valid
+/// * `None` - If the tag is invalid (pure numeric like "1984")
+///
+/// Validation rules:
+/// - Must contain at least one non-numerical character
+/// - Case-insensitive: normalized to lowercase
+pub fn normalize_tag(tag: &str) -> Option<String> {
+    // Must contain at least one non-digit character
+    if tag.chars().any(|c| !c.is_ascii_digit()) {
+        // Normalize to lowercase for case-insensitivity
+        Some(tag.to_lowercase())
+    } else {
+        None
+    }
+}
+
 pub struct Extractor;
 
 impl Extractor {
@@ -60,7 +82,12 @@ impl Extractor {
     fn extract_tags(content: &str) -> Vec<String> {
         TAG_REGEX
             .find_iter(content)
-            .map(|m| m.as_str().trim_start_matches('#').to_string())
+            .filter_map(|m| {
+                let tag = m.as_str();
+                // Remove leading # and normalize
+                let content = &tag[1..]; // Skip the # prefix
+                normalize_tag(content)
+            })
             .collect()
     }
 
@@ -198,6 +225,37 @@ This is the body."#;
         assert!(extracted.tags.contains(&"tag1".to_string()));
         assert!(extracted.tags.contains(&"tag-2".to_string()));
         assert!(extracted.tags.contains(&"nested/tag".to_string()));
+    }
+
+    #[test]
+    fn test_invalid_pure_numeric_tags() {
+        // Pure numeric tags like #1984 are invalid per Obsidian spec
+        let content = "#1984 #123 #007";
+        let extracted = Extractor::extract(content);
+        assert!(extracted.tags.is_empty());
+    }
+
+    #[test]
+    fn test_tag_case_normalization() {
+        // Obsidian treats #tag and #TAG as identical - we normalize to lowercase
+        let content = "#MyTag #MYTAG #mytag";
+        let extracted = Extractor::extract(content);
+        assert_eq!(extracted.tags.len(), 3);
+        assert!(extracted.tags.iter().all(|t| t == "mytag"));
+        assert!(extracted.tags.contains(&"mytag".to_string()));
+    }
+
+    #[test]
+    fn test_valid_tags_with_numbers() {
+        // Tags with at least one non-digit character are valid
+        let content = "#tag123 #123tag #tag-123 #123-tag #y1984";
+        let extracted = Extractor::extract(content);
+        assert_eq!(extracted.tags.len(), 5);
+        assert!(extracted.tags.contains(&"tag123".to_string()));
+        assert!(extracted.tags.contains(&"123tag".to_string()));
+        assert!(extracted.tags.contains(&"tag-123".to_string()));
+        assert!(extracted.tags.contains(&"123-tag".to_string()));
+        assert!(extracted.tags.contains(&"y1984".to_string()));
     }
 
     #[test]

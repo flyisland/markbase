@@ -81,6 +81,23 @@ File properties are native database columns representing filesystem and vault me
 | `file.backlinks` | VARCHAR[] | No | Notes linking to this note (reverse of links) |
 | `file.embeds` | VARCHAR[] | No | Embeds `![[embed]]` from body only |
 
+#### Tag Format Specification
+
+The `file.tags` field merges tags from two sources:
+
+**Content Tags** (`#tag` in note body):
+- Regex pattern: `#[\w\-/]+`
+- Allowed characters: alphanumeric, underscore (`_`), hyphen (`-`), forward slash (`/`)
+- Must contain at least one non-numerical character (e.g., `#1984` is invalid, `#y1984` is valid)
+- Case-insensitive (e.g., `#tag` and `#TAG` are identical)
+- Nested tags use `/` separator (e.g., `#project/2024/q1`)
+
+**Frontmatter Tags**:
+- YAML list format stored in `properties.tags`
+- Merged into `file.tags` during indexing
+
+**Reference**: [Obsidian Help - Tags](https://help.obsidian.md/tags)
+
 ### 3.3 Note Properties
 
 Note properties are YAML frontmatter fields stored in the `properties` JSON column. They are accessed via the `note.` prefix, or with no prefix as shorthand.
