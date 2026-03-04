@@ -1,5 +1,5 @@
 ---
-name: markbase-knowledge-skill
+name: markbase-skill
 description: Capture information from conversations and organize it into a Markdown vault managed by markbase. Use this skill when the user wants to log a meeting, record a person or company, or consolidate knowledge into structured notes.
 ---
 
