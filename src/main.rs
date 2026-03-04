@@ -314,12 +314,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         },
         Commands::Template { command } => match command {
             TemplateCommands::List { format } => {
-                let sql_expr = "file.folder=='templates'".to_string();
+                // Use explicit SQL with template-specific fields instead of DEFAULT_FIELDS
+                let sql = "SELECT file.name, _schema.description, file.path FROM notes WHERE file.folder=='templates'";
                 check_db_exists(&db_path, &base_dir)?;
                 let db = Mutex::new(Database::open_existing(&db_path)?);
                 let db_ref = db.lock().unwrap();
                 let (field_names, results) =
-                    query::execute_query(&db_ref, Some(&sql_expr)).map_err(|e| e.to_string())?;
+                    query::execute_query(&db_ref, Some(sql)).map_err(|e| e.to_string())?;
 
                 let effective_format = format.or(cli.output_format).unwrap_or(OutputFormat::Json);
                 let format_str = match effective_format {
