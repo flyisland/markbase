@@ -308,16 +308,44 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             NoteCommands::Rename { old_name, new_name } => {
                 let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
-                check_db_exists(&db_path, &base_dir)?;
-                let db = Mutex::new(Database::open_existing(&db_path)?);
-                let db = db
-                    .lock()
-                    .map_err(|e| format!("failed to acquire db lock: {}", e))?;
-                let result = renamer::rename_note(&base, &db, &old_name, &new_name)?;
+
+                // Perform rename and link updates
+                let result = renamer::rename_note(&base, &old_name, &new_name)?;
                 println!("Renamed: {} → {}", result.old_path, result.new_path);
-                if result.updated_links > 0 {
-                    println!("Updated links in {} file(s)", result.updated_links);
+                if !result.updated_files.is_empty() {
+                    println!("Updated links in {} file(s):", result.updated_files.len());
+                    for file in &result.updated_files {
+                        println!("    ~ {}", file);
+                    }
                 }
+
+                // Run index to update database
+                eprintln!("\nIndexing {}...", base.display());
+                let db = Mutex::new(Database::new(&db_path)?);
+                let db = db.lock().unwrap();
+                let stats = scanner::index_directory(&base, &db, false)?;
+
+                let total = stats.new + stats.updated;
+                let details = format!(
+                    " ({} new, {} updated, {} deleted, {} errors)",
+                    stats.new, stats.updated, stats.deleted, stats.errors
+                );
+                let time_str = format!(
+                    "{}.{}s",
+                    stats.duration_ms / 1000,
+                    (stats.duration_ms % 1000) / 100
+                );
+                println!(
+                    "  ✓ {} files indexed{} — {} total notes{}",
+                    total,
+                    details,
+                    stats.total,
+                    if stats.duration_ms > 0 {
+                        format!("  [{}]", time_str)
+                    } else {
+                        String::new()
+                    }
+                );
             }
             NoteCommands::Verify { name } => {
                 let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;

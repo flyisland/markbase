@@ -1,4 +1,3 @@
-use crate::db::Database;
 use crate::extractor::{EMBED_RE, Extractor, WIKILINK_RE};
 use gray_matter::Matter;
 use gray_matter::engine::YAML;
@@ -8,45 +7,27 @@ use std::path::Path;
 pub struct RenameResult {
     pub old_path: String,
     pub new_path: String,
-    pub updated_links: usize,
+    pub updated_files: Vec<String>,
 }
 
 pub fn rename_note(
     base_dir: &Path,
-    db: &Database,
     old_name: &str,
     new_name: &str,
 ) -> Result<RenameResult, Box<dyn std::error::Error>> {
-    let notes = db.get_notes_by_name(old_name)?;
-    if notes.is_empty() {
+    // Find the old note file by name (search filesystem)
+    let old_file_path = find_note_by_name(base_dir, old_name)?;
+
+    if old_file_path.is_none() {
         return Err(format!("Note '{}' not found", old_name).into());
     }
-    if notes.len() > 1 {
-        let paths: Vec<&str> = notes.iter().map(|n| n.path.as_str()).collect();
-        return Err(format!(
-            "Multiple notes named '{}' found: {}",
-            old_name,
-            paths.join(", ")
-        )
-        .into());
-    }
-
-    if db.name_exists(new_name)? {
-        return Err(format!("Note '{}' already exists", new_name).into());
-    }
-
-    let note = &notes[0];
-    let old_file_path = base_dir.join(&note.path);
-
-    if !old_file_path.exists() {
-        return Err(format!("File '{}' not found on disk", old_file_path.display()).into());
-    }
+    let old_file_path = old_file_path.unwrap();
 
     // Handle extension: add .md if not present, preserve if already there
-    let (name_without_ext, new_file_name) = if new_name.ends_with(".md") {
-        (&new_name[..new_name.len() - 3], new_name.to_string())
+    let new_file_name = if new_name.ends_with(".md") {
+        new_name.to_string()
     } else {
-        (new_name, format!("{}.md", new_name))
+        format!("{}.md", new_name)
     };
 
     let parent = old_file_path.parent().unwrap_or(base_dir);
@@ -56,48 +37,54 @@ pub fn rename_note(
         return Err(format!("File '{}' already exists on disk", new_file_path.display()).into());
     }
 
-    let new_relative_path = if note.folder.is_empty() || note.folder == "." {
+    let new_relative_path = if parent == base_dir {
         new_file_name.clone()
     } else {
-        format!("{}/{}", note.folder, new_file_name)
+        format!(
+            "{}/{}",
+            parent.strip_prefix(base_dir).unwrap().to_string_lossy(),
+            new_file_name
+        )
     };
 
+    // Update all links in vault before renaming
     let updated_files = update_links_in_vault(base_dir, old_name, new_name)?;
 
+    // Perform the rename
     fs::rename(&old_file_path, &new_file_path)?;
 
-    db.delete_note(&note.path)?;
-
-    let new_content = fs::read_to_string(&new_file_path)?;
-    let extracted = Extractor::extract(&new_content);
-    let new_note = crate::db::Note {
-        path: new_relative_path.clone(),
-        folder: note.folder.clone(),
-        name: name_without_ext.to_string(),
-        ext: "md".to_string(),
-        size: new_content.len() as u64,
-        ctime: note.ctime,
-        mtime: std::fs::metadata(&new_file_path)?
-            .modified()?
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_secs() as i64,
-        tags: extracted.tags,
-        links: extracted.links,
-        backlinks: vec![],
-        embeds: extracted.embeds,
-        properties: extracted.frontmatter,
-    };
-    db.upsert_note(&new_note)?;
-
-    for file_path in &updated_files {
-        reindex_file(base_dir, db, file_path)?;
-    }
-
     Ok(RenameResult {
-        old_path: note.path.clone(),
+        old_path: old_file_path
+            .strip_prefix(base_dir)
+            .unwrap()
+            .to_string_lossy()
+            .to_string(),
         new_path: new_relative_path,
-        updated_links: updated_files.len(),
+        updated_files,
     })
+}
+
+fn find_note_by_name(
+    base_dir: &Path,
+    name: &str,
+) -> Result<Option<std::path::PathBuf>, Box<dyn std::error::Error>> {
+    for entry in walkdir::WalkDir::new(base_dir)
+        .follow_links(true)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        let file_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+
+        if file_name == name {
+            return Ok(Some(path.to_path_buf()));
+        }
+    }
+    Ok(None)
 }
 
 fn update_links_in_vault(
@@ -270,58 +257,6 @@ fn rewrite_value_links(value: &mut serde_json::Value, old_name: &str, new_name: 
         }
         _ => {}
     }
-}
-
-fn reindex_file(
-    base_dir: &Path,
-    db: &Database,
-    relative_path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let full_path = base_dir.join(relative_path);
-    if !full_path.exists() {
-        return Ok(());
-    }
-
-    let content = fs::read_to_string(&full_path)?;
-    let metadata = fs::metadata(&full_path)?;
-    let extracted = Extractor::extract(&content);
-
-    let parent = full_path.parent().unwrap_or(base_dir);
-    let folder = if parent == base_dir {
-        String::new()
-    } else {
-        parent.strip_prefix(base_dir)?.to_string_lossy().to_string()
-    };
-
-    let name = full_path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("")
-        .to_string();
-
-    let note = crate::db::Note {
-        path: relative_path.to_string(),
-        folder,
-        name,
-        ext: "md".to_string(),
-        size: content.len() as u64,
-        ctime: metadata
-            .created()?
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_secs() as i64,
-        mtime: metadata
-            .modified()?
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_secs() as i64,
-        tags: extracted.tags,
-        links: extracted.links,
-        backlinks: vec![],
-        embeds: extracted.embeds,
-        properties: extracted.frontmatter,
-    };
-
-    db.upsert_note(&note)?;
-    Ok(())
 }
 
 #[cfg(test)]
