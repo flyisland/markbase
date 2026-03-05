@@ -1,4 +1,4 @@
-# MKS (Markdown Knowledge Schema) v1.11
+# MTS (Markdown Template Schema) v1.11
 
 **Status:** Stable / Production Ready  
 **Date:** 2026-03-04  
@@ -8,7 +8,7 @@
 
 ## Overview
 
-MKS v1.11 defines a schema format for Markdown-based knowledge vaults. It specifies how templates encode field constraints, how body directives instruct agents to fill and update content, and how instance files are structured after creation.
+MTS v1.11 defines a schema format for Markdown-based knowledge vaults. It specifies how templates encode field constraints, how body directives instruct agents to fill and update content, and how instance files are structured after creation.
 
 The schema serves three roles:
 
@@ -82,7 +82,7 @@ The type system aligns with [Obsidian Properties](https://help.obsidian.md/prope
 
 #### Field Types (`type`)
 
-| MKS `type` | Obsidian UI | Description |
+| MTS `type` | Obsidian UI | Description |
 | ---------- | ----------- | ----------- |
 | `text`     | Text        | Plain text |
 | `number`   | Number      | Numeric value |
@@ -116,7 +116,7 @@ Directives are embedded in the template body as **Agent Callouts** and are copie
 
 ### 2.1 Directive Syntax
 
-MKS uses two dedicated [Obsidian Callout](https://help.obsidian.md/callouts) types:
+MTS uses two dedicated [Obsidian Callout](https://help.obsidian.md/callouts) types:
 
 #### `[!agent-fill]` — Initial collection directive
 
@@ -254,4 +254,3 @@ aliases: []
 > [!agent-update]- Overwrite
 > 每次获得更新的商机进展时，完整重写本节内容，保留最新状态即可，无需保留历史。
 > 格式参考：阶段（如 Qualification / Proposal / Negotiation）、预计金额、预计签约时间、下一步行动。
-```

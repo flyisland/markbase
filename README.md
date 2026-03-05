@@ -232,7 +232,7 @@ Behavior:
 
 ### `template`
 
-Manage MKS templates.
+Manage MTS templates.
 
 ```bash
 markbase template list                  # List templates (table format)
