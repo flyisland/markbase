@@ -54,8 +54,10 @@ Load each template's `name`, `path`, and `_schema.description` into context. Thi
 6. **Create the skeleton.**
 
    ```bash
-   markbase note new <filename> --template <template-name>
+   markbase note new <entity-name> --template <template-name>
    ```
+
+   **Important:** Only provide the entity name (e.g., `华为` or `张三`), not the full path. The `--template` flag automatically determines the correct directory location based on the template's `_schema.location` setting.
 
    `markbase note new` strips `_schema` from frontmatter and copies all `[!agent-fill]` / `[!agent-update]` callouts as-is into the instance file. Returns the full path of the created file.
 
@@ -223,7 +225,9 @@ Wiki-links in **frontmatter** must be quoted:
 
 **File creation**
 
-- Always use `markbase note new --template`. Never copy template files directly.
+- **ALWAYS** use `markbase note new <name> --template <template-name>` to create new notes.
+- **NEVER** use `write_to_file` or direct file creation for new notes — this bypasses template processing and will result in incorrect file structure.
+- The only exception is when explicitly directed by the user to edit an existing file.
 
 **Directives**
 
