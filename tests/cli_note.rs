@@ -1,6 +1,329 @@
 mod common;
 
-use common::{TestVault, assert_cli_error, assert_cli_success};
+use common::{TestVault, assert_cli_error, assert_cli_success, stderr_contains};
+
+#[test]
+fn test_note_verify_note_not_found() {
+    let vault = TestVault::new();
+    vault.index();
+
+    let output = vault.note_verify("nonexistent");
+
+    assert_cli_error(&output);
+    assert!(stderr_contains(&output, "not found"));
+}
+
+#[test]
+fn test_note_verify_no_templates_field() {
+    let vault = TestVault::new();
+    vault.create_note("test-note", "# Test Note");
+    vault.index();
+
+    let output = vault.note_verify("test-note");
+
+    assert_cli_error(&output);
+    assert!(stderr_contains(&output, "no 'templates'"));
+}
+
+#[test]
+fn test_note_verify_invalid_template_link_format() {
+    let vault = TestVault::new();
+    vault.create_note(
+        "test-note",
+        r#"---
+templates: ["company_customer"]
+---
+
+# Test
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("test-note");
+
+    assert_cli_error(&output);
+    assert!(stderr_contains(&output, "invalid link"));
+}
+
+#[test]
+fn test_note_verify_template_file_not_found() {
+    let vault = TestVault::new();
+    vault.create_note(
+        "test-note",
+        r#"---
+templates: ["[[ghost_template]]"]
+---
+
+# Test
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("test-note");
+
+    assert_cli_error(&output);
+    assert!(stderr_contains(&output, "not found"));
+}
+
+#[test]
+fn test_note_verify_location_mismatch() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company_customer.md"),
+        r#"---
+type: company
+_schema:
+  location: company/
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "acme",
+        r#"---
+templates: ["[[company_customer]]"]
+type: company
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("acme");
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(&output, "requires location"));
+}
+
+#[test]
+fn test_note_verify_required_field_missing() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company_customer.md"),
+        r#"---
+type: company
+_schema:
+  required:
+    - industry
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "acme",
+        r#"---
+templates: ["[[company_customer]]"]
+type: company
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("acme");
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(&output, "required field 'industry'"));
+}
+
+#[test]
+fn test_note_verify_type_mismatch() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company_customer.md"),
+        r#"---
+type: company
+_schema:
+  properties:
+    count:
+      type: number
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "acme",
+        r#"---
+templates: ["[[company_customer]]"]
+type: company
+count: "not-a-number"
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("acme");
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(&output, "type mismatch"));
+}
+
+#[test]
+fn test_note_verify_enum_failure() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company_customer.md"),
+        r#"---
+type: company
+_schema:
+  properties:
+    size:
+      type: text
+      enum: [startup, smb, enterprise]
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "acme",
+        r#"---
+templates: ["[[company_customer]]"]
+type: company
+size: invalid
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("acme");
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(&output, "invalid value"));
+    assert!(stderr_contains(&output, "startup"));
+}
+
+#[test]
+fn test_note_verify_link_target_type_mismatch() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company_customer.md"),
+        r#"---
+type: company
+_schema:
+  properties:
+    related:
+      type: text
+      format: link
+      target: person
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "david-chen",
+        r#"---
+type: meeting
+---
+
+# David Chen
+"#,
+    );
+    vault.create_note(
+        "acme",
+        r#"---
+templates: ["[[company_customer]]"]
+type: company
+related: "[[david-chen]]"
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("acme");
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(&output, "requires target type 'person'"));
+}
+
+#[test]
+fn test_note_verify_pass_all_checks() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company_customer.md"),
+        r#"---
+type: company
+industry: technology
+_schema:
+  location: company/
+  required:
+    - industry
+  properties:
+    industry:
+      type: text
+    related_contacts:
+      type: list
+      format: link
+      target: person
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    std::fs::create_dir_all(vault.path.join("company")).unwrap();
+    vault.create_note_in_subdir(
+        "company",
+        "acme",
+        r#"---
+templates: ["[[company_customer]]"]
+type: company
+industry: technology
+related_contacts: []
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("acme");
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("passed all checks"));
+}
 
 #[test]
 fn test_note_create_simple() {

@@ -6,6 +6,7 @@ mod extractor;
 mod query;
 mod renamer;
 mod scanner;
+mod verifier;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use std::env;
@@ -120,6 +121,11 @@ enum NoteCommands {
     },
     #[command(about = "Rename a note and update all links to it")]
     Rename { old_name: String, new_name: String },
+    #[command(about = "Verify a note against its template schema")]
+    Verify {
+        #[arg(help = "Note name (without .md extension)")]
+        name: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -304,12 +310,67 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
                 check_db_exists(&db_path, &base_dir)?;
                 let db = Mutex::new(Database::open_existing(&db_path)?);
-                let db = db.lock().unwrap();
+                let db = db
+                    .lock()
+                    .map_err(|e| format!("failed to acquire db lock: {}", e))?;
                 let result = renamer::rename_note(&base, &db, &old_name, &new_name)?;
                 println!("Renamed: {} → {}", result.old_path, result.new_path);
                 if result.updated_links > 0 {
                     println!("Updated links in {} file(s)", result.updated_links);
                 }
+            }
+            NoteCommands::Verify { name } => {
+                let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
+                check_db_exists(&db_path, &base_dir)?;
+                let db = Mutex::new(Database::open_existing(&db_path)?);
+                let db = db
+                    .lock()
+                    .map_err(|e| format!("failed to acquire db lock: {}", e))?;
+
+                let result = verifier::verify_note(&base, &db, &name)?;
+
+                let template_list = result.template_names.join(", ");
+
+                if result.issues.is_empty() {
+                    println!(
+                        "✓ note '{}' passed all checks against: {}.",
+                        name, template_list
+                    );
+                    return Ok(());
+                }
+
+                eprintln!(
+                    "Verifying note '{}' against template(s): {}\n",
+                    name, template_list
+                );
+                for issue in &result.issues {
+                    let prefix = match issue.level {
+                        verifier::IssueLevel::Error => "[ERROR]",
+                        verifier::IssueLevel::Warn => "[WARN]",
+                        verifier::IssueLevel::Info => "[INFO]",
+                    };
+                    eprintln!("  {} {}", prefix, issue.message);
+                }
+                eprintln!();
+
+                if result.has_errors() {
+                    eprintln!(
+                        "Verification failed: {} error(s), {} warning(s).",
+                        result.error_count(),
+                        result.warn_count()
+                    );
+                    return Err(format!(
+                        "note '{}' failed verification with {} error(s)",
+                        name,
+                        result.error_count()
+                    )
+                    .into());
+                }
+
+                eprintln!(
+                    "Verification completed with issues: 0 error(s), {} warning(s).",
+                    result.warn_count()
+                );
             }
         },
         Commands::Template { command } => match command {

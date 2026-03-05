@@ -83,6 +83,7 @@ src/
 ├── extractor.rs     # Single file parsing: frontmatter, wiki-links, tags
 ├── creator.rs       # note new command, template rendering
 ├── renamer.rs       # note rename command, link updates
+├── verifier.rs      # note verify command, MTS schema validation
 ├── describe.rs      # template describe command
 ├── lib.rs           # Library exports
 └── query/
@@ -127,6 +128,12 @@ src/
   - `note.*` prefix → frontmatter JSON extraction
   - Bare identifiers → frontmatter JSON extraction (shorthand for `note.*`)
 - Preserve type cast syntax (`::INTEGER`, `::TIMESTAMP`)
+
+**`verifier.rs`**:
+- Stateless validator, reads from DB and filesystem but never writes
+- Business-level errors (note not found, template missing) are returned as VerifyIssue, not Err
+- Reuses WIKILINK_RE from extractor.rs for link parsing
+- All output routing (stdout vs stderr) is handled by main.rs, not verifier.rs
 
 ## 6. Command Internal Logic
 
@@ -293,6 +300,7 @@ The `spec/` directory contains detailed design specifications that complement AG
 - Note creation (template support)
 - Note renaming (link updates)
 - Template management
+- Note schema verification (note verify)
 
 ### Technical Debt
 

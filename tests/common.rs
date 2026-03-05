@@ -153,6 +153,10 @@ impl TestVault {
     pub fn template_describe(&self, name: &str) -> Output {
         self.run_cli(&["template", "describe", name])
     }
+
+    pub fn note_verify(&self, name: &str) -> Output {
+        self.run_cli(&["note", "verify", name])
+    }
 }
 
 impl Default for TestVault {

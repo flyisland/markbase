@@ -230,6 +230,20 @@ Behavior:
 - Updates all `[[old-name]]` links and `![[old-name]]` embeds across the vault (body and frontmatter)
 - Preserves aliases, section anchors, and block IDs
 
+**Verify a note against its template schema:**
+
+```bash
+markbase note verify <name>
+```
+
+Checks that the note conforms to all constraints defined in its referenced MTS template(s):
+- Directory location matches `_schema.location`
+- Required frontmatter fields are present
+- Field types and enum values are correct
+- Link fields point to notes of the expected `type`
+
+Warnings are reported to stderr. Exit code is non-zero only on errors (e.g. missing note or template file).
+
 ### `template`
 
 Manage MTS templates.

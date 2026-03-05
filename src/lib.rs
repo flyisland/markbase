@@ -5,3 +5,4 @@ pub mod describe;
 pub mod extractor;
 pub mod query;
 pub mod scanner;
+pub mod verifier;
