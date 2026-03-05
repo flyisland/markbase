@@ -1,6 +1,6 @@
 mod common;
 
-use common::{TestVault, assert_cli_error, assert_cli_success, stderr_contains};
+use common::{assert_cli_error, assert_cli_success, stderr_contains, TestVault};
 
 #[test]
 fn test_note_verify_note_not_found() {
@@ -274,7 +274,116 @@ related: "[[david-chen]]"
 }
 
 #[test]
-fn test_note_verify_pass_all_checks() {
+fn test_note_verify_template_without_schema() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("simple_template.md"),
+        r#"---
+type: simple
+---
+
+# Simple Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "test-note",
+        r#"---
+templates: ["[[simple_template]]"]
+type: simple
+---
+
+# Test
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("test-note");
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("passed all checks"));
+}
+
+#[test]
+fn test_note_verify_templates_field_not_array() {
+    let vault = TestVault::new();
+    vault.create_note(
+        "test-note",
+        r#"---
+templates: not-an-array
+---
+
+# Test
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("test-note");
+
+    assert_cli_error(&output);
+    assert!(stderr_contains(&output, "no 'templates'"));
+}
+
+#[test]
+fn test_note_verify_multi_template_type_conflict() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("template_a.md"),
+        r#"---
+type: template_a
+_schema:
+  properties:
+    industry:
+      type: text
+---
+
+# Template A
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        templates_dir.join("template_b.md"),
+        r#"---
+type: template_b
+_schema:
+  properties:
+    industry:
+      type: list
+---
+
+# Template B
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "test-note",
+        r#"---
+templates: ["[[template_a]]", "[[template_b]]"]
+type: test
+---
+
+# Test
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("test-note");
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(&output, "conflicting type definitions"));
+}
+
+#[test]
+fn test_note_verify_required_field_empty_string() {
     let vault = TestVault::new();
 
     let templates_dir = vault.path.join("templates");
@@ -283,15 +392,413 @@ fn test_note_verify_pass_all_checks() {
         templates_dir.join("company_customer.md"),
         r#"---
 type: company
-industry: technology
 _schema:
-  location: company/
   required:
     - industry
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "acme",
+        r#"---
+templates: ["[[company_customer]]"]
+type: company
+industry: ""
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("acme");
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(&output, "required field 'industry'"));
+}
+
+#[test]
+fn test_note_verify_boolean_type_validation() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("task.md"),
+        r#"---
+type: task
+_schema:
   properties:
-    industry:
+    completed:
+      type: boolean
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "my-task",
+        r#"---
+templates: ["[[task]]"]
+type: task
+completed: "not-a-boolean"
+---
+
+# My Task
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("my-task");
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(&output, "type mismatch"));
+}
+
+#[test]
+fn test_note_verify_date_format_validation() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("event.md"),
+        r#"---
+type: event
+_schema:
+  properties:
+    date:
+      type: date
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "my-event",
+        r#"---
+templates: ["[[event]]"]
+type: event
+date: "not-a-date"
+---
+
+# My Event
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("my-event");
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(&output, "type mismatch"));
+}
+
+#[test]
+fn test_note_verify_valid_date_format() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("event.md"),
+        r#"---
+type: event
+_schema:
+  properties:
+    date:
+      type: date
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "my-event",
+        r#"---
+templates: ["[[event]]"]
+type: event
+date: "2024-12-25"
+---
+
+# My Event
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("my-event");
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("passed all checks"));
+}
+
+#[test]
+fn test_note_verify_datetime_format_validation() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("meeting.md"),
+        r#"---
+type: meeting
+_schema:
+  properties:
+    scheduled_at:
+      type: datetime
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "my-meeting",
+        r#"---
+templates: ["[[meeting]]"]
+type: meeting
+scheduled_at: "not-a-datetime"
+---
+
+# My Meeting
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("my-meeting");
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(&output, "type mismatch"));
+}
+
+#[test]
+fn test_note_verify_list_type_validation() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("project.md"),
+        r#"---
+type: project
+_schema:
+  properties:
+    tags:
+      type: list
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "my-project",
+        r#"---
+templates: ["[[project]]"]
+type: project
+tags: "not-a-list"
+---
+
+# My Project
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("my-project");
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(&output, "type mismatch"));
+}
+
+#[test]
+fn test_note_verify_enum_for_list_type() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("project.md"),
+        r#"---
+type: project
+_schema:
+  properties:
+    priorities:
+      type: list
+      enum: [high, medium, low]
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "my-project",
+        r#"---
+templates: ["[[project]]"]
+type: project
+priorities: [high, invalid-priority, low]
+---
+
+# My Project
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("my-project");
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(&output, "invalid value"));
+}
+
+#[test]
+fn test_note_verify_invalid_wiki_link_format() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company.md"),
+        r#"---
+type: company
+_schema:
+  properties:
+    related:
       type: text
-    related_contacts:
+      format: link
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "acme",
+        r#"---
+templates: ["[[company]]"]
+type: company
+related: "not-a-wikilink"
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("acme");
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(&output, "invalid link format"));
+}
+
+#[test]
+fn test_note_verify_link_to_nonexistent_note() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company.md"),
+        r#"---
+type: company
+_schema:
+  properties:
+    related:
+      type: text
+      format: link
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "acme",
+        r#"---
+templates: ["[[company]]"]
+type: company
+related: "[[nonexistent-note]]"
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("acme");
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(&output, "not found in the vault"));
+}
+
+#[test]
+fn test_note_verify_dangling_reference() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company.md"),
+        r#"---
+type: company
+_schema:
+  properties:
+    related:
+      type: text
+      format: link
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "acme",
+        r#"---
+templates: ["[[company]]"]
+type: company
+related: "[?[[some-note]]]"
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("acme");
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(&output, "dangling reference"));
+}
+
+#[test]
+fn test_note_verify_list_field_with_link_format() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company.md"),
+        r#"---
+type: company
+_schema:
+  properties:
+    contacts:
       type: list
       format: link
       target: person
@@ -302,15 +809,30 @@ _schema:
     )
     .unwrap();
 
-    std::fs::create_dir_all(vault.path.join("company")).unwrap();
-    vault.create_note_in_subdir(
-        "company",
+    vault.create_note(
+        "person-a",
+        r#"---
+type: person
+---
+
+# Person A
+"#,
+    );
+    vault.create_note(
+        "person-b",
+        r#"---
+type: company
+---
+
+# Person B (wrong type)
+"#,
+    );
+    vault.create_note(
         "acme",
         r#"---
-templates: ["[[company_customer]]"]
+templates: ["[[company]]"]
 type: company
-industry: technology
-related_contacts: []
+contacts: ["[[person-a]]", "[[person-b]]"]
 ---
 
 # ACME
@@ -319,6 +841,47 @@ related_contacts: []
     vault.index();
 
     let output = vault.note_verify("acme");
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(&output, "requires target type 'person'"));
+}
+
+#[test]
+fn test_note_verify_list_field_value_containment() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("task.md"),
+        r#"---
+type: task
+tags: [todo, important]
+_schema:
+  properties:
+    tags:
+      type: list
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "my-task",
+        r#"---
+templates: ["[[task]]"]
+type: task
+tags: [todo, important, extra-tag]
+---
+
+# My Task
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("my-task");
 
     assert_cli_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
