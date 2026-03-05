@@ -23,10 +23,12 @@ pub fn rename_note(
     }
     let old_file_path = old_file_path.unwrap();
 
-    // Handle extension: add .md if not present, preserve if already there
-    let new_file_name = if new_name.ends_with(".md") {
+    // Handle extension: add .md if no extension present, preserve existing extension
+    let new_file_name = if new_name.contains('.') {
+        // Already has an extension, use as-is
         new_name.to_string()
     } else {
+        // No extension, add .md
         format!("{}.md", new_name)
     };
 
@@ -78,9 +80,12 @@ fn find_note_by_name(
             continue;
         }
 
-        let file_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        // Match by file stem (name without extension) - for standard .md files
+        let file_stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        // Match by full file name (with extension) - for files with custom extensions like .base
+        let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
 
-        if file_name == name {
+        if file_stem == name || file_name == name {
             return Ok(Some(path.to_path_buf()));
         }
     }

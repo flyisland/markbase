@@ -194,6 +194,50 @@ fn main() {
     }
 }
 
+fn run_index(
+    base_dir: &std::path::Path,
+    db_path: &std::path::Path,
+    force: bool,
+    verbose: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if force && db_path.exists() {
+        std::fs::remove_file(db_path)?;
+    }
+
+    let db = Mutex::new(Database::new(db_path)?);
+    let db = db.lock().unwrap();
+    eprintln!("Indexing {}...", base_dir.display());
+    let stats = scanner::index_directory(base_dir, &db, force)?;
+
+    if verbose {
+        print_index_details(&stats);
+    }
+
+    let total = stats.new + stats.updated + stats.deleted;
+    let details = format!(
+        " ({} new, {} updated, {} deleted, {} errors)",
+        stats.new, stats.updated, stats.deleted, stats.errors
+    );
+    let time_str = format!(
+        "{}.{}s",
+        stats.duration_ms / 1000,
+        (stats.duration_ms % 1000) / 100
+    );
+    println!(
+        "  ✓ {} files indexed{} — {} total notes{}",
+        total,
+        details,
+        stats.total,
+        if stats.duration_ms > 0 {
+            format!("  [{}]", time_str)
+        } else {
+            String::new()
+        }
+    );
+
+    Ok(())
+}
+
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
@@ -203,58 +247,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Commands::Index { force, verbose } => {
             let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
-
-            if force && db_path.exists() {
-                std::fs::remove_file(&db_path)?;
-            }
-
-            let db = Mutex::new(Database::new(&db_path)?);
-            let db = db.lock().unwrap();
-            eprintln!("Indexing {}...", base.display());
-            let stats = scanner::index_directory(&base, &db, force)?;
-
-            if verbose {
-                if !stats.new_files.is_empty() {
-                    for path in &stats.new_files {
-                        let rel = stats.relative_path(path);
-                        println!("    + {}", rel);
-                    }
-                }
-                if !stats.updated_files.is_empty() {
-                    for path in &stats.updated_files {
-                        let rel = stats.relative_path(path);
-                        println!("    ~ {}", rel);
-                    }
-                }
-
-                for (path, reason) in &stats.skipped {
-                    if reason != "unchanged" {
-                        eprintln!("  ⚠ Skipped: {} — {}", path, reason);
-                    }
-                }
-            }
-
-            let total = stats.new + stats.updated;
-            let details = format!(
-                " ({} new, {} updated, {} deleted, {} errors)",
-                stats.new, stats.updated, stats.deleted, stats.errors
-            );
-            let time_str = format!(
-                "{}.{}s",
-                stats.duration_ms / 1000,
-                (stats.duration_ms % 1000) / 100
-            );
-            println!(
-                "  ✓ {} files indexed{} — {} total notes{}",
-                total,
-                details,
-                stats.total,
-                if stats.duration_ms > 0 {
-                    format!("  [{}]", time_str)
-                } else {
-                    String::new()
-                }
-            );
+            run_index(&base, &db_path, force, verbose)?;
         }
         Commands::Query {
             sql,
@@ -319,33 +312,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
 
-                // Run index to update database
-                eprintln!("\nIndexing {}...", base.display());
-                let db = Mutex::new(Database::new(&db_path)?);
-                let db = db.lock().unwrap();
-                let stats = scanner::index_directory(&base, &db, false)?;
-
-                let total = stats.new + stats.updated;
-                let details = format!(
-                    " ({} new, {} updated, {} deleted, {} errors)",
-                    stats.new, stats.updated, stats.deleted, stats.errors
-                );
-                let time_str = format!(
-                    "{}.{}s",
-                    stats.duration_ms / 1000,
-                    (stats.duration_ms % 1000) / 100
-                );
-                println!(
-                    "  ✓ {} files indexed{} — {} total notes{}",
-                    total,
-                    details,
-                    stats.total,
-                    if stats.duration_ms > 0 {
-                        format!("  [{}]", time_str)
-                    } else {
-                        String::new()
-                    }
-                );
+                // Run index to update database (verbose mode)
+                eprintln!();
+                run_index(&base, &db_path, false, true)?;
             }
             NoteCommands::Verify { name } => {
                 let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
@@ -430,6 +399,33 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+fn print_index_details(stats: &scanner::IndexStats) {
+    if !stats.new_files.is_empty() {
+        for path in &stats.new_files {
+            let rel = stats.relative_path(path);
+            println!("    + {}", rel);
+        }
+    }
+    if !stats.updated_files.is_empty() {
+        for path in &stats.updated_files {
+            let rel = stats.relative_path(path);
+            println!("    ~ {}", rel);
+        }
+    }
+    if !stats.deleted_files.is_empty() {
+        for path in &stats.deleted_files {
+            let rel = stats.relative_path(path);
+            println!("    - {}", rel);
+        }
+    }
+
+    for (path, reason) in &stats.skipped {
+        if reason != "unchanged" {
+            eprintln!("  ⚠ Skipped: {} — {}", path, reason);
+        }
+    }
 }
 
 #[cfg(test)]

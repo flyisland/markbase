@@ -131,20 +131,6 @@ impl Database {
         Ok(notes)
     }
 
-    pub fn name_exists(&self, name: &str) -> Result<bool, Box<dyn std::error::Error>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT COUNT(*) FROM notes WHERE name = ?")?;
-        let mut rows = stmt.query(params![name])?;
-
-        if let Some(row) = rows.next()? {
-            let count: i64 = row.get(0)?;
-            Ok(count > 0)
-        } else {
-            Ok(false)
-        }
-    }
-
     pub fn delete_note(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
         self.conn
             .execute("DELETE FROM notes WHERE path = ?", params![path])?;
