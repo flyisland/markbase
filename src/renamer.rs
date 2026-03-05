@@ -42,7 +42,13 @@ pub fn rename_note(
         return Err(format!("File '{}' not found on disk", old_file_path.display()).into());
     }
 
-    let new_file_name = format!("{}.md", new_name);
+    // Handle extension: add .md if not present, preserve if already there
+    let (name_without_ext, new_file_name) = if new_name.ends_with(".md") {
+        (&new_name[..new_name.len() - 3], new_name.to_string())
+    } else {
+        (new_name, format!("{}.md", new_name))
+    };
+
     let parent = old_file_path.parent().unwrap_or(base_dir);
     let new_file_path = parent.join(&new_file_name);
 
@@ -67,7 +73,7 @@ pub fn rename_note(
     let new_note = crate::db::Note {
         path: new_relative_path.clone(),
         folder: note.folder.clone(),
-        name: new_name.to_string(),
+        name: name_without_ext.to_string(),
         ext: "md".to_string(),
         size: new_content.len() as u64,
         ctime: note.ctime,
