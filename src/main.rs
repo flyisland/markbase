@@ -5,6 +5,7 @@ mod describe;
 mod extractor;
 mod query;
 mod renamer;
+mod renderer;
 mod scanner;
 mod verifier;
 
@@ -125,6 +126,17 @@ enum NoteCommands {
     Verify {
         #[arg(help = "Note name (without .md extension)")]
         name: String,
+    },
+    #[command(about = "Render a note to stdout, expanding .base embeds")]
+    Render {
+        #[arg(help = "Note name (without .md extension)")]
+        name: String,
+
+        #[arg(short = 'o', help = "Output format: list (default) or table")]
+        format: Option<OutputFormat>,
+
+        #[arg(long = "dry-run", help = "Show SQL instead of executing queries")]
+        dry_run: bool,
     },
 }
 
@@ -370,6 +382,32 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 );
                 // Note: Per AGENTS.md §15.3, warn-only cases return exit code 0.
                 // This aligns with the philosophy that warnings don't affect expected outcome.
+            }
+            NoteCommands::Render {
+                name,
+                format,
+                dry_run,
+            } => {
+                let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
+                check_db_exists(&db_path, &base_dir)?;
+                let db = Mutex::new(Database::open_existing(&db_path)?);
+                let db = db
+                    .lock()
+                    .map_err(|e| format!("failed to acquire db lock: {}", e))?;
+
+                let render_format = match format.or(cli.output_format) {
+                    Some(OutputFormat::Table) => renderer::RenderFormat::Table,
+                    _ => renderer::RenderFormat::List,
+                };
+                let opts = renderer::RenderOptions {
+                    format: render_format,
+                    dry_run,
+                };
+
+                if let Err(e) = renderer::render_note(&base, &db, &name, &opts) {
+                    eprintln!("{}", e);
+                    std::process::exit(1);
+                }
             }
         },
         Commands::Template { command } => match command {

@@ -84,6 +84,10 @@ src/
 ├── creator.rs       # note new command, template rendering
 ├── renamer.rs       # note rename command, link updates
 ├── verifier.rs      # note verify command, MTS schema validation
+├── renderer/
+│   ├── mod.rs    # note render command, .base embed expansion, Step 0-5 pipeline
+│   ├── filter.rs # Base filter → DuckDB SQL translation; column/sort translation; ThisContext
+│   └── output.rs # list / table output formatting; ColumnMeta definition
 ├── describe.rs      # template describe command
 ├── lib.rs           # Library exports
 └── query/
@@ -134,6 +138,15 @@ src/
 - Business-level errors (note not found, template missing) are returned as VerifyIssue, not Err
 - Reuses WIKILINK_RE from extractor.rs for link parsing
 - All output routing (stdout vs stderr) is handled by main.rs, not verifier.rs
+
+**`renderer/`**:
+- Stateless pipeline: reads DB and filesystem, never writes
+- filter.rs: `link(this)` → `'[[name]]'` string literal; bare column names always resolve
+  to note.* (json_extract_string), never direct DB columns
+- .base files indexed as non-md: name column contains full filename including extension
+  (e.g. "opps.base"), query must NOT strip the extension
+- db.query() called with usize::MAX limit, bypassing executor.rs default 1000
+- order field = SELECT columns; sort field = ORDER BY (independent, not related to order)
 
 ## 6. Command Internal Logic
 

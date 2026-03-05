@@ -1,6 +1,6 @@
 mod common;
 
-use common::{assert_cli_error, assert_cli_success, stderr_contains, TestVault};
+use common::{TestVault, assert_cli_error, assert_cli_success, stderr_contains};
 
 #[test]
 fn test_note_verify_note_not_found() {
@@ -1133,4 +1133,163 @@ fn test_note_new_updates_index() {
     let query_output = vault.query("file.name == 'brand-new'");
     let stdout = String::from_utf8_lossy(&query_output.stdout);
     assert!(stdout.contains("brand-new") || stdout.contains("brand-new.md"));
+}
+
+#[test]
+fn test_note_render_note_not_found() {
+    let vault = TestVault::new();
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "nonexistent"]);
+
+    assert_cli_error(&output);
+    assert!(stderr_contains(&output, "not found"));
+}
+
+#[test]
+fn test_note_render_no_base_embeds() {
+    let vault = TestVault::new();
+    vault.create_note("test-note", "# Test Note\n\nSome content here.");
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "test-note"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stdout.contains("Some content here"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn test_note_render_base_not_found() {
+    let vault = TestVault::new();
+    vault.create_note("test-note", "![[missing.base]]");
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "test-note"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr_contains(&output, "not found"));
+    assert!(stdout.contains("not found"));
+}
+
+#[test]
+fn test_note_render_link_this_filter() {
+    let vault = TestVault::new();
+    vault.create_note("acme", "---\ntype: company\n---\n![[opps.base]]\n");
+    vault.create_note(
+        "deal1",
+        "---\ntype: opportunity\nrelated_customer: \"[[acme]]\"\n---\n",
+    );
+    vault.create_file(
+        "opps.base",
+        "views:\n  - type: table\n    name: Opportunities\n    filters:\n      and:\n        - related_customer == link(this)\n    order:\n      - file.name\n",
+    );
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "acme"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("rendered from opps.base"));
+    assert!(stdout.contains("[[deal1]]"));
+}
+
+#[test]
+fn test_note_render_dry_run() {
+    let vault = TestVault::new();
+    vault.create_note("acme", "---\ntype: company\n---\n![[opps.base]]\n");
+    vault.create_note(
+        "deal1",
+        "---\ntype: opportunity\nrelated_customer: \"[[acme]]\"\n---\n",
+    );
+    vault.create_file(
+        "opps.base",
+        "views:\n  - type: table\n    name: Opportunities\n    filters:\n      and:\n        - related_customer == link(this)\n    order:\n      - file.name\n",
+    );
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "acme", "--dry-run"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("dry-run from opps.base"));
+    assert!(stdout.contains("FROM notes"));
+    assert!(stdout.contains("[[acme]]"));
+}
+
+#[test]
+fn test_note_render_table_format() {
+    let vault = TestVault::new();
+    vault.create_note("test-note", "---\nname: test\n---\n![[test.base]]");
+    vault.create_note("linked-note", "---\nname: linked\n---\n");
+    vault.create_file(
+        "test.base",
+        "views:\n  - type: table\n    name: Test View\n    order:\n      - file.name\n",
+    );
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "test-note", "-o", "table"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("| name |"));
+}
+
+#[test]
+fn test_note_render_empty_results() {
+    let vault = TestVault::new();
+    vault.create_note("test-note", "![[empty.base]]");
+    vault.create_file(
+        "empty.base",
+        "views:\n  - type: table\n    name: Empty\n    filters:\n      and:\n        - file.name == \"nonexistent\"\n    order:\n      - file.name\n",
+    );
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "test-note"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("no results"));
+}
+
+#[test]
+fn test_note_render_list_field() {
+    let vault = TestVault::new();
+    vault.create_note("test-note", "---\ntags: [tag1, tag2]\n---\n![[tags.base]]");
+    vault.create_file(
+        "tags.base",
+        "views:\n  - type: table\n    name: Tags View\n    order:\n      - file.tags\n",
+    );
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "test-note"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("tags:"));
+    assert!(stdout.contains("tag1"));
+}
+
+#[test]
+fn test_note_render_sort() {
+    let vault = TestVault::new();
+    vault.create_note("test-note", "![[sorted.base]]");
+    vault.create_note("a-note", "---\npriority: 1\n---\n");
+    vault.create_note("b-note", "---\npriority: 2\n---\n");
+    vault.create_file(
+        "sorted.base",
+        "views:\n  - type: table\n    name: Sorted\n    order:\n      - file.name\n    sort:\n      - property: file.name\n        direction: DESC\n",
+    );
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "test-note", "--dry-run"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("ORDER BY"));
+    assert!(stdout.contains("DESC"));
 }

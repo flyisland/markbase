@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Note Rendering
+- **New `note render` command** — renders a note to stdout with Obsidian Base embed expansion:
+  - `link(this)` and `link("name")` translated to wikilink string literals for property matching
+  - `file.hasLink(this.file)`, `file.hasTag()` (with nested tag support), `file.inFolder()`,
+    date arithmetic (`"30d"`, `"1 year"` formats), `isEmpty()`, `contains()` filters supported
+  - `order` field maps to SELECT columns; `sort` field maps to ORDER BY (independent fields)
+  - bare column names in `order`/`sort` resolve to note properties, not DB columns
+  - list and table output formats; `--dry-run` for SQL inspection
+  - warnings (unsupported filters, missing base files) to stderr; exit 0 on warnings only
+
 #### Note Verification
 - **New `note verify` command** - Validates notes against MTS template schemas with comprehensive checks:
   - **Template Resolution** - Reads `templates` field from note frontmatter and loads corresponding template files from `templates/` directory

@@ -4,5 +4,6 @@ pub mod db;
 pub mod describe;
 pub mod extractor;
 pub mod query;
+pub mod renderer;
 pub mod scanner;
 pub mod verifier;

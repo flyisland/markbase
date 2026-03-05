@@ -244,6 +244,24 @@ Checks that the note conforms to all constraints defined in its referenced MTS t
 
 Warnings are reported to stderr. Exit code is non-zero only on errors (e.g. missing note or template file).
 
+**Render a note (expand .base embeds):**
+
+```bash
+markbase note render <n>            # list format (default)
+markbase note render <n> -o table   # Markdown table
+markbase note render <n> --dry-run  # show SQL without executing
+```
+
+Renders the note body to stdout. Each `![[*.base]]` embed is replaced with
+query results from the corresponding Obsidian Base file. Non-`.base` embeds
+are passed through unchanged.
+
+Supported filters: `link(this)`, `link("name")`, `file.hasLink(this.file)`,
+`file.hasTag()`, `file.inFolder()`, date comparisons, `isEmpty()`, `contains()`.
+
+Warnings (unsupported filters, missing base files) go to stderr.
+Exit code is non-zero only on hard errors (e.g. note not found).
+
 ### `template`
 
 Manage MTS templates.
