@@ -212,7 +212,7 @@ fn reconstruct_file(frontmatter_json: &str, body: &str) -> String {
     }
 
     let yaml = serde_yaml::to_string(&fm).unwrap_or_default();
-    format!("---\n{}---\n\n{}", yaml.trim(), body)
+    format!("---\n{}\n---\n\n{}", yaml.trim(), body)
 }
 
 fn rewrite_frontmatter_links(
