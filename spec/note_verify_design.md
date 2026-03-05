@@ -32,11 +32,10 @@ markbase note verify <n>
 
 | 退出码 | 含义 |
 | --- | --- |
-| `0` | 校验通过，无任何问题 |
+| `0` | 校验通过，无任何问题，或仅有 WARN（无 ERROR） |
 | `1` | 存在至少一个 ERROR |
-| `2` | 无 ERROR，但存在至少一个 WARN |
 
-> **说明：** ERROR 表示流程无法继续（如找不到 note 或 template 文件）；WARN 表示校验发现的字段级问题，不中止流程。两者均会被计入最终 summary。
+> **说明：** ERROR 表示流程无法继续（如找不到 note 或 template 文件）或存在严重校验失败；WARN 表示校验发现的字段级问题，不中止流程。两者均会被计入最终 summary。仅有 WARN 时命令返回退出码 0，遵循 AGENTS.md §15.3 规范。
 
 ---
 

@@ -1,5 +1,5 @@
-use gray_matter::engine::YAML;
 use gray_matter::Matter;
+use gray_matter::engine::YAML;
 use regex::Regex;
 use serde_json::Value;
 use std::path::Path;
@@ -9,12 +9,14 @@ use crate::db::Database;
 use crate::extractor::WIKILINK_RE;
 
 static WIKILINK_BRACKET_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^\[\[(.+)\]\]$").unwrap());
+    LazyLock::new(|| Regex::new(r"^\[\[(.+)\]\]$").expect("invalid regex: WIKILINK_BRACKET_RE"));
 
-static DATE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2}$").unwrap());
+static DATE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2}$").expect("invalid regex: DATE_RE"));
 
-static DATETIME_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$").unwrap());
+static DATETIME_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$").expect("invalid regex: DATETIME_RE")
+});
 
 #[derive(Debug)]
 pub struct VerifyIssue {
@@ -29,9 +31,7 @@ pub enum IssueLevel {
     Info,
 }
 
-#[allow(dead_code)]
 pub struct VerifyResult {
-    pub note_name: String,
     pub template_names: Vec<String>,
     pub issues: Vec<VerifyIssue>,
 }
@@ -39,11 +39,6 @@ pub struct VerifyResult {
 impl VerifyResult {
     pub fn has_errors(&self) -> bool {
         self.issues.iter().any(|i| i.level == IssueLevel::Error)
-    }
-
-    #[allow(dead_code)]
-    pub fn has_warnings(&self) -> bool {
-        self.issues.iter().any(|i| i.level == IssueLevel::Warn)
     }
 
     pub fn error_count(&self) -> usize {
@@ -67,7 +62,6 @@ pub fn verify_note(
     name: &str,
 ) -> Result<VerifyResult, Box<dyn std::error::Error>> {
     let mut issues = Vec::new();
-    let _template_names: Vec<String> = Vec::new();
 
     let notes = db.get_notes_by_name(name)?;
     if notes.is_empty() {
@@ -79,7 +73,6 @@ pub fn verify_note(
             ),
         });
         return Ok(VerifyResult {
-            note_name: name.to_string(),
             template_names: vec![],
             issues,
         });
@@ -91,7 +84,6 @@ pub fn verify_note(
             message: format!("multiple notes found with name '{}'", name),
         });
         return Ok(VerifyResult {
-            note_name: name.to_string(),
             template_names: vec![],
             issues,
         });
@@ -113,7 +105,6 @@ pub fn verify_note(
                 ),
             });
             return Ok(VerifyResult {
-                note_name: name.to_string(),
                 template_names: vec![],
                 issues,
             });
@@ -133,7 +124,6 @@ pub fn verify_note(
                     ),
                 });
                 return Ok(VerifyResult {
-                    note_name: name.to_string(),
                     template_names: vec![],
                     issues,
                 });
@@ -152,7 +142,6 @@ pub fn verify_note(
                     ),
                 });
                 return Ok(VerifyResult {
-                    note_name: name.to_string(),
                     template_names: vec![],
                     issues,
                 });
@@ -170,7 +159,6 @@ pub fn verify_note(
                 ),
             });
             return Ok(VerifyResult {
-                note_name: name.to_string(),
                 template_names: vec![],
                 issues,
             });
@@ -186,7 +174,6 @@ pub fn verify_note(
             ),
         });
         return Ok(VerifyResult {
-            note_name: name.to_string(),
             template_names: vec![],
             issues,
         });
@@ -206,7 +193,6 @@ pub fn verify_note(
                 message: format!("template file 'templates/{}.md' not found.", template_name),
             });
             return Ok(VerifyResult {
-                note_name: name.to_string(),
                 template_names: templates_with_schema,
                 issues,
             });
@@ -224,7 +210,6 @@ pub fn verify_note(
                     ),
                 });
                 return Ok(VerifyResult {
-                    note_name: name.to_string(),
                     template_names: templates_with_schema,
                     issues,
                 });
@@ -251,13 +236,6 @@ pub fn verify_note(
                         .get("type")
                         .and_then(|v| v.as_str())
                         .unwrap_or("text");
-                    let field_enum = field_def.get("enum").and_then(|v| v.as_array()).map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect::<Vec<_>>()
-                    });
-                    let field_format = field_def.get("format").and_then(|v| v.as_str());
-                    let field_target = field_def.get("target").and_then(|v| v.as_str());
 
                     if let Some(existing) = all_schema_fields.get(field_name) {
                         if existing.field_type != field_type {
@@ -266,11 +244,11 @@ pub fn verify_note(
                                 message: format!(
                                     "field '{}' has conflicting type definitions across templates ('{}': '{}', '{}': '{}'). Using '{}' definition.",
                                     field_name,
-                                    templates_with_schema.first().unwrap_or(&existing.template_name),
+                                    existing.template_name,
                                     existing.field_type,
                                     template_name,
                                     field_type,
-                                    templates_with_schema.first().unwrap_or(&existing.template_name)
+                                    existing.template_name
                                 ),
                             });
                         }
@@ -279,9 +257,6 @@ pub fn verify_note(
                             field_name.to_string(),
                             SchemaFieldInfo {
                                 field_type: field_type.to_string(),
-                                field_enum,
-                                field_format: field_format.map(String::from),
-                                field_target: field_target.map(String::from),
                                 template_name: template_name.clone(),
                             },
                         );
@@ -489,19 +464,14 @@ pub fn verify_note(
     }
 
     Ok(VerifyResult {
-        note_name: name.to_string(),
         template_names: templates_with_schema,
         issues,
     })
 }
 
 #[derive(Clone)]
-#[allow(dead_code)]
 struct SchemaFieldInfo {
     field_type: String,
-    field_enum: Option<Vec<String>>,
-    field_format: Option<String>,
-    field_target: Option<String>,
     template_name: String,
 }
 

@@ -371,6 +371,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     "Verification completed with issues: 0 error(s), {} warning(s).",
                     result.warn_count()
                 );
+                // Note: Per AGENTS.md §15.3, warn-only cases return exit code 0.
+                // This aligns with the philosophy that warnings don't affect expected outcome.
             }
         },
         Commands::Template { command } => match command {
