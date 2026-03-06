@@ -19,14 +19,8 @@ use crate::db::Database;
 const ENV_BASE_DIR: &str = "MARKBASE_BASE_DIR";
 const ENV_OUTPUT_FORMAT: &str = "MARKBASE_OUTPUT_FORMAT";
 
-const VERSION: &str = concat!(
-    env!("CARGO_PKG_VERSION"),
-    " (",
-    env!("VERGEN_GIT_SHA"),
-    " ",
-    env!("VERGEN_GIT_COMMIT_TIMESTAMP"),
-    ")"
-);
+// Build script generates the complete version string
+const VERSION: &str = env!("MARKBASE_VERSION");
 
 #[derive(Clone, ValueEnum, Debug, PartialEq)]
 enum OutputFormat {
