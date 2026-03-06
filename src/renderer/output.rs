@@ -15,7 +15,7 @@ pub fn render_list(rows: &[Row], columns: &[ColumnMeta]) -> String {
 
     let mut output = String::new();
     for row in rows {
-        output.push_str("---\n");
+        output.push_str("- ");
         for (i, (display_name, value)) in row.iter().enumerate() {
             if let Some(val) = value {
                 if columns[i].is_name_col {
@@ -31,6 +31,9 @@ pub fn render_list(rows: &[Row], columns: &[ColumnMeta]) -> String {
                 }
             } else {
                 output.push_str(&format!("{}:\n", display_name));
+            }
+            if i < row.len() - 1 {
+                output.push_str("  ");
             }
         }
     }

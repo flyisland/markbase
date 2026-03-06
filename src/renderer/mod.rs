@@ -5,14 +5,14 @@ use std::fs;
 use std::path::Path;
 use std::sync::LazyLock;
 
-use gray_matter::Matter;
 use gray_matter::engine::YAML;
+use gray_matter::Matter;
 use regex::Regex;
 use serde_json::Value;
 
 use crate::db::Database;
-use crate::renderer::filter::{ThisContext, merge_filters, translate_columns, translate_sort};
-use crate::renderer::output::{Row, render_list, render_table};
+use crate::renderer::filter::{merge_filters, translate_columns, translate_sort, ThisContext};
+use crate::renderer::output::{render_list, render_table, Row};
 
 static BASE_EMBED_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^!\[\[([^\]]+\.base)\]\]\s*$").unwrap());
@@ -195,12 +195,13 @@ fn render_base_embed(
         }
 
         if opts.dry_run {
-            println!("<!-- [markbase] dry-run from {} -->\n", embed_name);
-            println!("## {}\n", view_name);
+            println!("<!-- start: [markbase] dry-run from {} -->\n", embed_name);
+            println!("> **{}**\n", view_name);
             println!("```sql\n{}\n```", sql);
+            println!("<!-- end: [markbase] dry-run from {} -->\n", embed_name);
         } else {
-            println!("<!-- [markbase] rendered from {} -->\n", embed_name);
-            println!("## {}\n", view_name);
+            println!("<!-- start: [markbase] rendered from {} -->\n", embed_name);
+            println!("> **{}**\n", view_name);
 
             match db.query(&sql, "", usize::MAX) {
                 Ok((_, raw_rows)) => {
@@ -220,18 +221,26 @@ fn render_base_embed(
 
                     let output = match opts.format {
                         RenderFormat::Table => render_table(&rows, &columns),
-                        RenderFormat::List => render_list(&rows, &columns),
+                        RenderFormat::List => {
+                            let list_output = render_list(&rows, &columns);
+                            format!("```yaml\n{}```", list_output)
+                        }
                     };
-                    print!("{}", output);
+                    println!("{}", output);
                 }
                 Err(e) => {
                     eprintln!(
                         "WARN: query failed for view '{}' in '{}': {}",
                         view_name, embed_name, e
                     );
-                    println!("<!-- [markbase] query failed for view '{}' -->", view_name);
+                    println!(
+                        "<!-- end: [markbase] query failed for view '{}' -->",
+                        view_name
+                    );
+                    return;
                 }
             }
+            println!("<!-- end: [markbase] rendered from {} -->\n", embed_name);
         }
     }
 }
