@@ -1,4 +1,4 @@
-export MARKBASE_BASE_DIR := "../sample-notes"
+export MARKBASE_BASE_DIR := "../md-notes"
 
 set positional-arguments := true
 set shell := ["bash", "-c"]

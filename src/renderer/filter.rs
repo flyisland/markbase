@@ -169,7 +169,14 @@ fn translate_string_filter(
                 format!("'{}'", expr.replace('\'', "''"))
             }
         });
-        return Some(format!("{} {} {}", col, op, translated_expr));
+
+        let col_with_cast = if matches!(prop, "ctime" | "mtime") {
+            format!("CAST({} AS TIMESTAMP)", col)
+        } else {
+            col.to_string()
+        };
+
+        return Some(format!("{} {} {}", col_with_cast, op, translated_expr));
     }
 
     if let Some(caps) = COMPARE_RE.captures(&s) {
@@ -211,7 +218,14 @@ fn translate_string_filter(
     if let Some(caps) = CONTAINS_RE.captures(&s) {
         let attr = &caps[1];
         let arg = &caps[2];
-        let (_sql_expr, _) = parse_attribute(attr)?;
+
+        let field_name = if attr.starts_with("file.") {
+            return None;
+        } else if attr.starts_with("note.") {
+            attr[5..].to_string()
+        } else {
+            attr.to_string()
+        };
 
         let val = if arg.starts_with('"') || arg.starts_with('\'') {
             let inner = arg.trim_matches('"').trim_matches('\'');
@@ -225,8 +239,8 @@ fn translate_string_filter(
         };
 
         return Some(format!(
-            "list_contains((properties->'$')VARCHAR[], '{}::')",
-            val
+            "list_contains((properties->'$.\"{}\"')::VARCHAR[], '{}')",
+            field_name, val
         ));
     }
 
@@ -235,11 +249,7 @@ fn translate_string_filter(
         let op = &caps[2];
         let raw_value = &caps[3];
 
-        eprintln!("DEBUG: raw_value = '{}'", raw_value);
-
         let value = raw_value.trim_matches('"').trim_matches('\'').to_string();
-
-        eprintln!("DEBUG: trimmed_value = '{}'", value);
 
         let (sql_expr, _) = parse_attribute(attr)?;
 
@@ -321,7 +331,8 @@ fn translate_date_expr(expr: &str) -> Option<String> {
         return Some("CURRENT_DATE".to_string());
     }
 
-    let re = Regex::new(r"^(now\(\)|today\(\))\s*([+-])\s*(\d+)\s*([a-zA-Z]+)$").unwrap();
+    let re = Regex::new(r#"^(now\(\)|today\(\))\s*([+-])\s*(?:"|')?(\d+)\s*([a-zA-Z]+)(?:"|')?$"#)
+        .unwrap();
     if let Some(caps) = re.captures(expr) {
         let base = &caps[1];
         let _sign = &caps[2];
@@ -329,13 +340,15 @@ fn translate_date_expr(expr: &str) -> Option<String> {
         let unit = &caps[4];
 
         let interval = translate_interval(num, unit)?;
-        let base_fn = if base == "now()" {
-            "NOW()"
-        } else {
-            "CURRENT_DATE"
-        };
 
-        return Some(format!("{} - INTERVAL '{} {}'", base_fn, num, interval));
+        if base == "now()" {
+            return Some(format!(
+                "CAST(NOW() AS TIMESTAMP) - INTERVAL '{} {}'",
+                num, interval
+            ));
+        } else {
+            return Some(format!("CURRENT_DATE - INTERVAL '{} {}'", num, interval));
+        }
     }
 
     None
