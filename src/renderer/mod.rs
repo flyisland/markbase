@@ -5,14 +5,14 @@ use std::fs;
 use std::path::Path;
 use std::sync::LazyLock;
 
-use gray_matter::engine::YAML;
 use gray_matter::Matter;
+use gray_matter::engine::YAML;
 use regex::Regex;
 use serde_json::Value;
 
 use crate::db::Database;
-use crate::renderer::filter::{merge_filters, translate_columns, translate_sort, ThisContext};
-use crate::renderer::output::{render_list, render_table, Row};
+use crate::renderer::filter::{ThisContext, merge_filters, translate_columns, translate_sort};
+use crate::renderer::output::{Row, render_list, render_table};
 
 static BASE_EMBED_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^!\[\[([^\]]+\.base)\]\]\s*$").unwrap());
@@ -60,32 +60,62 @@ pub fn render_note(
     }
 
     let row = &rows[0];
+    let ext = &row[3];
+
+    // Check if the file type is supported
+    if ext != "md" && ext != "base" {
+        return Err(format!(
+            "ERROR: note '{}' has unsupported extension '{}'. Only .md and .base files are supported.",
+            name, ext
+        )
+        .into());
+    }
+
+    let is_base_file = ext == "base";
     let this = ThisContext {
         path: row[0].clone(),
         folder: row[1].clone(),
         name: row[2].clone(),
-        ext: row[3].clone(),
+        ext: ext.clone(),
         size: row[4].parse().unwrap_or(0),
         ctime: row[5].clone(),
         mtime: row[6].clone(),
-        tags: serde_json::from_str(&row[7]).unwrap_or_default(),
-        links: serde_json::from_str(&row[8]).unwrap_or_default(),
+        // For .base files, only use basic file properties (no tags, links, frontmatter)
+        tags: if is_base_file {
+            vec![]
+        } else {
+            serde_json::from_str(&row[7]).unwrap_or_default()
+        },
+        links: if is_base_file {
+            vec![]
+        } else {
+            serde_json::from_str(&row[8]).unwrap_or_default()
+        },
     };
 
     let note_path = base_dir.join(&this.path);
     let content = fs::read_to_string(&note_path)?;
-    let matter = Matter::<YAML>::new();
-    let parsed = matter
-        .parse::<Value>(&content)
-        .map_err(|e| format!("failed to parse frontmatter: {}", e))?;
-    let body = parsed.content;
 
-    for line in body.lines() {
-        if let Some(caps) = BASE_EMBED_RE.captures(line) {
-            let embed_name = caps.get(1).unwrap().as_str();
-            render_base_embed(embed_name, base_dir, db, &this, opts);
-        } else {
-            println!("{}", line);
+    if is_base_file {
+        // For .base files, execute its views directly (as if it's embedded)
+        // The base name includes the extension
+        let base_name = &this.name;
+        render_base_embed(base_name, base_dir, db, &this, opts);
+    } else {
+        // For .md files, parse frontmatter and render body with base embed expansion
+        let matter = Matter::<YAML>::new();
+        let parsed = matter
+            .parse::<Value>(&content)
+            .map_err(|e| format!("failed to parse frontmatter: {}", e))?;
+        let body = parsed.content;
+
+        for line in body.lines() {
+            if let Some(caps) = BASE_EMBED_RE.captures(line) {
+                let embed_name = caps.get(1).unwrap().as_str();
+                render_base_embed(embed_name, base_dir, db, &this, opts);
+            } else {
+                println!("{}", line);
+            }
         }
     }
 
