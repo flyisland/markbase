@@ -222,8 +222,12 @@ fn render_base_embed(
                     let output = match opts.format {
                         RenderFormat::Table => render_table(&rows, &columns),
                         RenderFormat::List => {
-                            let list_output = render_list(&rows, &columns);
-                            format!("```yaml\n{}```", list_output)
+                            if rows.is_empty() {
+                                "(no results)".to_string()
+                            } else {
+                                let list_output = render_list(&rows, &columns);
+                                format!("```yaml\n{}```", list_output)
+                            }
                         }
                     };
                     println!("{}", output);
@@ -233,11 +237,6 @@ fn render_base_embed(
                         "WARN: query failed for view '{}' in '{}': {}",
                         view_name, embed_name, e
                     );
-                    println!(
-                        "<!-- end: [markbase] query failed for view '{}' -->",
-                        view_name
-                    );
-                    return;
                 }
             }
             println!("<!-- end: [markbase] rendered from {} -->\n", embed_name);
