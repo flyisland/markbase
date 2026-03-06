@@ -1,6 +1,6 @@
 mod common;
 
-use common::{TestVault, assert_cli_error, assert_cli_success, stderr_contains};
+use common::{assert_cli_error, assert_cli_success, stderr_contains, TestVault};
 
 #[test]
 fn test_note_verify_note_not_found() {
@@ -1292,4 +1292,187 @@ fn test_note_render_sort() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("ORDER BY"));
     assert!(stdout.contains("DESC"));
+}
+
+#[test]
+fn test_note_verify_required_field_with_definition() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("activity_log.md"),
+        r#"---
+type: activity
+_schema:
+  required:
+    - description
+  properties:
+    description:
+      type: text
+      description: "一句话总结活动内容"
+---
+
+# Activity Log
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "meeting-2026-01-01",
+        r#"---
+templates: ["[[activity_log]]"]
+type: activity
+---
+
+# Meeting
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("meeting-2026-01-01");
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(&output, "required field 'description'"));
+    assert!(stderr_contains(&output, "→ Definition:"));
+    assert!(stderr_contains(&output, "type=text"));
+    assert!(stderr_contains(
+        &output,
+        "description=\"一句话总结活动内容\""
+    ));
+}
+
+#[test]
+fn test_note_verify_type_mismatch_with_definition() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company_customer.md"),
+        r#"---
+type: company
+_schema:
+  properties:
+    employee_count:
+      type: number
+      description: "员工数量"
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "acme",
+        r#"---
+templates: ["[[company_customer]]"]
+type: company
+employee_count: "not-a-number"
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("acme");
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(&output, "type mismatch"));
+    assert!(stderr_contains(&output, "→ Definition:"));
+    assert!(stderr_contains(&output, "type=number"));
+    assert!(stderr_contains(&output, "description=\"员工数量\""));
+}
+
+#[test]
+fn test_note_verify_enum_failure_with_definition() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company_customer.md"),
+        r#"---
+type: company
+_schema:
+  properties:
+    size:
+      type: text
+      enum: [startup, smb, enterprise]
+      description: "公司规模"
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "acme",
+        r#"---
+templates: ["[[company_customer]]"]
+type: company
+size: giant
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("acme");
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(&output, "invalid value"));
+    assert!(stderr_contains(&output, "→ Definition:"));
+    assert!(stderr_contains(&output, "enum=[startup, smb, enterprise]"));
+    assert!(stderr_contains(&output, "description=\"公司规模\""));
+}
+
+#[test]
+fn test_note_verify_link_field_with_definition() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company_customer.md"),
+        r#"---
+type: company
+_schema:
+  properties:
+    related_person:
+      type: text
+      format: link
+      target: person
+      description: "主要联系人"
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "acme",
+        r#"---
+templates: ["[[company_customer]]"]
+type: company
+related_person: "[[nonexistent-person]]"
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("acme");
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(&output, "not found in the vault"));
+    assert!(stderr_contains(&output, "→ Definition:"));
+    assert!(stderr_contains(&output, "format=link"));
+    assert!(stderr_contains(&output, "target=person"));
 }

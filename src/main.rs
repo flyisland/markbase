@@ -353,6 +353,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         verifier::IssueLevel::Info => "[INFO]",
                     };
                     eprintln!("  {} {}", prefix, issue.message);
+                    if let Some(ref def) = issue.field_definition {
+                        eprintln!("  → Definition: {}", def);
+                    }
                 }
                 eprintln!();
 

@@ -22,6 +22,7 @@ static DATETIME_RE: LazyLock<Regex> = LazyLock::new(|| {
 pub struct VerifyIssue {
     pub level: IssueLevel,
     pub message: String,
+    pub field_definition: Option<String>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -71,6 +72,7 @@ pub fn verify_note(
                 "note '{}' not found in index. Run `markbase index` first.",
                 name
             ),
+            field_definition: None,
         });
         return Ok(VerifyResult {
             template_names: vec![],
@@ -82,6 +84,7 @@ pub fn verify_note(
         issues.push(VerifyIssue {
             level: IssueLevel::Error,
             message: format!("multiple notes found with name '{}'", name),
+            field_definition: None,
         });
         return Ok(VerifyResult {
             template_names: vec![],
@@ -103,6 +106,7 @@ pub fn verify_note(
                     "note '{}' has no 'templates' field. Cannot determine schema.",
                     name
                 ),
+                field_definition: None,
             });
             return Ok(VerifyResult {
                 template_names: vec![],
@@ -122,6 +126,7 @@ pub fn verify_note(
                         "'templates' contains invalid link: '{}'. Each element must be an Obsidian wiki-link, e.g. \"[[template-name]]\".",
                         item
                     ),
+                    field_definition: None,
                 });
                 return Ok(VerifyResult {
                     template_names: vec![],
@@ -140,6 +145,7 @@ pub fn verify_note(
                         "'templates' contains invalid link: '{}'. Each element must be an Obsidian wiki-link, e.g. \"[[template-name]]\".",
                         link_str
                     ),
+                    field_definition: None,
                 });
                 return Ok(VerifyResult {
                     template_names: vec![],
@@ -157,6 +163,7 @@ pub fn verify_note(
                     "'templates' contains invalid link: '{}'. Each element must be an Obsidian wiki-link, e.g. \"[[template-name]]\".",
                     link_str
                 ),
+                field_definition: None,
             });
             return Ok(VerifyResult {
                 template_names: vec![],
@@ -172,6 +179,7 @@ pub fn verify_note(
                 "note '{}' has no 'templates' field. Cannot determine schema.",
                 name
             ),
+            field_definition: None,
         });
         return Ok(VerifyResult {
             template_names: vec![],
@@ -191,6 +199,7 @@ pub fn verify_note(
             issues.push(VerifyIssue {
                 level: IssueLevel::Error,
                 message: format!("template file 'templates/{}.md' not found.", template_name),
+                field_definition: None,
             });
             return Ok(VerifyResult {
                 template_names: templates_with_schema,
@@ -208,6 +217,7 @@ pub fn verify_note(
                         tmpl_path.display(),
                         e
                     ),
+                    field_definition: None,
                 });
                 return Ok(VerifyResult {
                     template_names: templates_with_schema,
@@ -250,14 +260,32 @@ pub fn verify_note(
                                     field_type,
                                     existing.template_name
                                 ),
+                                field_definition: None,
                             });
                         }
                     } else {
+                        let format = field_def.get("format").and_then(|v| v.as_str()).map(String::from);
+                        let enum_values = field_def
+                            .get("enum")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|v| v.as_str())
+                                    .map(String::from)
+                                    .collect()
+                            });
+                        let description = field_def.get("description").and_then(|v| v.as_str()).map(String::from);
+                        let target = field_def.get("target").and_then(|v| v.as_str()).map(String::from);
+
                         all_schema_fields.insert(
                             field_name.to_string(),
                             SchemaFieldInfo {
                                 field_type: field_type.to_string(),
                                 template_name: template_name.clone(),
+                                format,
+                                enum_values,
+                                description,
+                                target,
                             },
                         );
                     }
@@ -280,6 +308,7 @@ pub fn verify_note(
                             template_name,
                             loc
                         ),
+                        field_definition: None,
                     });
                 }
             }
@@ -300,6 +329,7 @@ pub fn verify_note(
                             "missing field '{}' (defined in template '{}').",
                             key, template_name
                         ),
+                        field_definition: None,
                     });
                     continue;
                 }
@@ -323,6 +353,7 @@ pub fn verify_note(
                                     template_name,
                                     missing.join(", ")
                                 ),
+                                field_definition: None,
                             });
                         }
                     }
@@ -337,6 +368,7 @@ pub fn verify_note(
                             "field '{}' value mismatch. Expected: '{}' (from template '{}'), got: '{}'.",
                             key, tmpl_str, template_name, note_str
                         ),
+                        field_definition: None,
                     });
                 }
             }
@@ -359,12 +391,15 @@ pub fn verify_note(
                     _ => false,
                 };
                 if is_empty {
+                    let field_def = all_schema_fields.get(field_name);
+                    let field_definition = field_def.map(format_field_definition);
                     issues.push(VerifyIssue {
                         level: IssueLevel::Warn,
                         message: format!(
                             "required field '{}' is missing or empty (defined in _schema.required of '{}').",
                             field_name, template_name
                         ),
+                        field_definition,
                     });
                 }
             }
@@ -387,12 +422,15 @@ pub fn verify_note(
 
                     if !check_type(note_val, field_type) {
                         let actual_type = get_actual_type(note_val);
+                        let field_def = all_schema_fields.get(field_name);
+                        let field_definition = field_def.map(format_field_definition);
                         issues.push(VerifyIssue {
                             level: IssueLevel::Warn,
                             message: format!(
                                 "field '{}' type mismatch. Expected '{}' (from template '{}'), got '{}'.",
                                 field_name, field_type, template_name, actual_type
                             ),
+                            field_definition,
                         });
                     }
 
@@ -407,12 +445,15 @@ pub fn verify_note(
                                     if let Some(s) = item.as_str()
                                         && !allowed.contains(&s.to_string())
                                     {
+                                        let field_def = all_schema_fields.get(field_name);
+                                        let field_definition = field_def.map(format_field_definition);
                                         issues.push(VerifyIssue {
                                             level: IssueLevel::Warn,
                                             message: format!(
                                                 "field '{}' has invalid value '{}'. Allowed values (from template '{}'): [{}]",
                                                 field_name, s, template_name, allowed.join(", ")
                                             ),
+                                            field_definition,
                                         });
                                     }
                                 }
@@ -420,12 +461,15 @@ pub fn verify_note(
                         } else if let Some(s) = note_val.as_str()
                             && !allowed.contains(&s.to_string())
                         {
+                            let field_def = all_schema_fields.get(field_name);
+                            let field_definition = field_def.map(format_field_definition);
                             issues.push(VerifyIssue {
                                 level: IssueLevel::Warn,
                                 message: format!(
                                     "field '{}' has invalid value '{}'. Allowed values (from template '{}'): [{}]",
                                     field_name, s, template_name, allowed.join(", ")
                                 ),
+                                field_definition,
                             });
                         }
                     }
@@ -443,6 +487,7 @@ pub fn verify_note(
                                         field_target,
                                         template_name,
                                         db,
+                                        &all_schema_fields,
                                         &mut issues,
                                     );
                                 }
@@ -454,6 +499,7 @@ pub fn verify_note(
                                 field_target,
                                 template_name,
                                 db,
+                                &all_schema_fields,
                                 &mut issues,
                             );
                         }
@@ -473,6 +519,32 @@ pub fn verify_note(
 struct SchemaFieldInfo {
     field_type: String,
     template_name: String,
+    format: Option<String>,
+    enum_values: Option<Vec<String>>,
+    description: Option<String>,
+    target: Option<String>,
+}
+
+fn format_field_definition(field: &SchemaFieldInfo) -> String {
+    let mut parts = vec![format!("type={}", field.field_type)];
+
+    if let Some(ref fmt) = field.format {
+        parts.push(format!("format={}", fmt));
+    }
+
+    if let Some(ref target) = field.target {
+        parts.push(format!("target={}", target));
+    }
+
+    if let Some(ref enum_vals) = field.enum_values {
+        parts.push(format!("enum=[{}]", enum_vals.join(", ")));
+    }
+
+    if let Some(ref desc) = field.description {
+        parts.push(format!("description=\"{}\"", desc));
+    }
+
+    parts.join(", ")
 }
 
 fn check_type(val: &Value, expected_type: &str) -> bool {
@@ -526,6 +598,7 @@ fn verify_link_field(
     target_type: Option<&str>,
     template_name: &str,
     db: &Database,
+    all_schema_fields: &std::collections::HashMap<String, SchemaFieldInfo>,
     issues: &mut Vec<VerifyIssue>,
 ) {
     if link_val.is_empty() {
@@ -539,6 +612,7 @@ fn verify_link_field(
                 "field '{}' has dangling reference: '{}'.",
                 field_name, link_val
             ),
+            field_definition: None,
         });
         return;
     }
@@ -551,6 +625,7 @@ fn verify_link_field(
                 "field '{}' has invalid link format: '{}'. Expected Obsidian wiki-link, e.g. [[note-name]].",
                 field_name, link_val
             ),
+            field_definition: None,
         });
         return;
     }
@@ -577,6 +652,7 @@ fn verify_link_field(
                     "field '{}' has invalid link format: '{}'. Expected Obsidian wiki-link, e.g. [[note-name]].",
                     field_name, link_val
                 ),
+                field_definition: None,
             });
             return;
         }
@@ -587,24 +663,30 @@ fn verify_link_field(
     let notes = match db.get_notes_by_name(target_name) {
         Ok(n) => n,
         Err(_) => {
+            let field_def = all_schema_fields.get(field_name);
+            let field_definition = field_def.map(format_field_definition);
             issues.push(VerifyIssue {
                 level: IssueLevel::Warn,
                 message: format!(
                     "field '{}' links to '{}' which is not found in the vault.",
                     field_name, target_name
                 ),
+                field_definition,
             });
             return;
         }
     };
 
     if notes.is_empty() {
+        let field_def = all_schema_fields.get(field_name);
+        let field_definition = field_def.map(format_field_definition);
         issues.push(VerifyIssue {
             level: IssueLevel::Warn,
             message: format!(
                 "field '{}' links to '{}' which is not found in the vault.",
                 field_name, target_name
             ),
+            field_definition,
         });
         return;
     }
@@ -614,12 +696,15 @@ fn verify_link_field(
         let actual_type = target_type_val.and_then(|v| v.as_str()).unwrap_or("");
 
         if actual_type != expected_type {
+            let field_def = all_schema_fields.get(field_name);
+            let field_definition = field_def.map(format_field_definition);
             issues.push(VerifyIssue {
                 level: IssueLevel::Warn,
                 message: format!(
                     "field '{}' links to '{}' (type: '{}'), but template '{}' requires target type '{}'.",
                     field_name, target_name, actual_type, template_name, expected_type
                 ),
+                field_definition,
             });
         }
     }
