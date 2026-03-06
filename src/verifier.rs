@@ -5,7 +5,7 @@ use serde_json::Value;
 use std::path::Path;
 use std::sync::LazyLock;
 
-use crate::db::Database;
+use crate::db::{Database, Note};
 use crate::extractor::WIKILINK_RE;
 
 static WIKILINK_BRACKET_RE: LazyLock<Regex> =
@@ -264,18 +264,25 @@ pub fn verify_note(
                             });
                         }
                     } else {
-                        let format = field_def.get("format").and_then(|v| v.as_str()).map(String::from);
-                        let enum_values = field_def
-                            .get("enum")
-                            .and_then(|v| v.as_array())
-                            .map(|arr| {
+                        let format = field_def
+                            .get("format")
+                            .and_then(|v| v.as_str())
+                            .map(String::from);
+                        let enum_values =
+                            field_def.get("enum").and_then(|v| v.as_array()).map(|arr| {
                                 arr.iter()
                                     .filter_map(|v| v.as_str())
                                     .map(String::from)
                                     .collect()
                             });
-                        let description = field_def.get("description").and_then(|v| v.as_str()).map(String::from);
-                        let target = field_def.get("target").and_then(|v| v.as_str()).map(String::from);
+                        let description = field_def
+                            .get("description")
+                            .and_then(|v| v.as_str())
+                            .map(String::from);
+                        let target = field_def
+                            .get("target")
+                            .and_then(|v| v.as_str())
+                            .map(String::from);
 
                         all_schema_fields.insert(
                             field_name.to_string(),
@@ -446,7 +453,8 @@ pub fn verify_note(
                                         && !allowed.contains(&s.to_string())
                                     {
                                         let field_def = all_schema_fields.get(field_name);
-                                        let field_definition = field_def.map(format_field_definition);
+                                        let field_definition =
+                                            field_def.map(format_field_definition);
                                         issues.push(VerifyIssue {
                                             level: IssueLevel::Warn,
                                             message: format!(
@@ -508,6 +516,8 @@ pub fn verify_note(
             }
         }
     }
+
+    verify_embedded_bases(db, note, &mut issues);
 
     Ok(VerifyResult {
         template_names: templates_with_schema,
@@ -706,6 +716,32 @@ fn verify_link_field(
                 ),
                 field_definition,
             });
+        }
+    }
+}
+
+fn verify_embedded_bases(db: &Database, note: &Note, issues: &mut Vec<VerifyIssue>) {
+    for embed in &note.embeds {
+        if !embed.ends_with(".base") {
+            continue;
+        }
+
+        match db.get_notes_by_name(embed) {
+            Ok(notes) if notes.is_empty() => {
+                issues.push(VerifyIssue {
+                    level: IssueLevel::Warn,
+                    message: format!("embedded base file '{}' is not found in the vault", embed),
+                    field_definition: None,
+                });
+            }
+            Err(e) => {
+                issues.push(VerifyIssue {
+                    level: IssueLevel::Warn,
+                    message: format!("failed to check embedded base file '{}': {}", embed, e),
+                    field_definition: None,
+                });
+            }
+            _ => {}
         }
     }
 }
