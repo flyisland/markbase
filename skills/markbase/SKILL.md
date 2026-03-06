@@ -54,7 +54,7 @@ Load each template's `name`, `path`, `_schema.description` into context. If `tem
 1. **Route to template.** Match input against `_schema.description`. If ambiguous, show top two and ask. If entity fits multiple templates, ask user to confirm the full list — don't pick silently. Conflicts across templates resolved by first template's definition.
 
 2. **Prefetch entities.** For every person/company/entity mentioned, run Phase 2 alignment.
-   - Found → load into context.
+   - Found → load into context using `markbase note render <entity-name>` to get the full expanded view including all `.base` embeds.
    - Not found → complete the full Phase 1 flow first (including fill and verify), then continue. **Max one level of recursion.** Deeper unknowns → `[?[name]]`, report at end.
 
 3. **Read template:** `markbase template describe <template-name>`. Load `_schema.required`, `_schema.filename.description`, `_schema.properties`.
@@ -114,7 +114,7 @@ markbase query "SELECT file.name, file.path, type FROM notes WHERE file.name == 
 
 ## Phase 3 — Knowledge Consolidation (知识沉淀)
 
-Triggered after Phase 1 completes. For every `[[link]]` in the new file, read the target and check for `[!agent-update]` callouts. Skip files with none.
+Triggered after Phase 1 completes. For every `[[link]]` in the new file, use `markbase note render <target-name>` to read the target with all `.base` embeds expanded, and check for `[!agent-update]` callouts. Skip files with none.
 
 | Policy       | Behavior                                                       |
 | ------------ | -------------------------------------------------------------- |
@@ -171,3 +171,11 @@ markbase query --dry-run "<expr>"
 `file.*` = native DB columns. `note.*` or bare = frontmatter. Example: `list_contains(file.tags, 'todo')`, `note.year::INTEGER >= 2024`.
 
 **Links:** filename only, no path or extension. In frontmatter, always quote: `related: "[[名称]]"`, `list: ["[[张三]]", "[[李四]]"]`.
+
+**Reading Files:**
+
+There are two ways to view file contents, depending on the purpose:
+
+1. **To view rendered content** — Use `markbase note render <name>`. This command expands `.base` file embeds (e.g., `![[related.base]]`) to show the full consolidated view. Use this when you need to see the complete picture, such as viewing a customer profile with all related opportunities, activities, and contacts automatically expanded.
+
+2. **To read file content for modification** — Use your native file reading tool (e.g., `read_file`). This reads the raw file content without expanding embeds. Use this when you need to edit the file, as you must work with the actual source content, not the rendered view.
