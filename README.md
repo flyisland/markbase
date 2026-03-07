@@ -247,8 +247,8 @@ Warnings are reported to stderr. Exit code is non-zero only on errors (e.g. miss
 **Render a note (expand .base embeds):**
 
 ```bash
-markbase note render <n>            # list format (default)
-markbase note render <n> -o table   # Markdown table
+markbase note render <n>            # Markdown table (default)
+markbase note render <n> -o list    # list format
 markbase note render <n> --dry-run  # show SQL without executing
 ```
 

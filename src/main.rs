@@ -38,6 +38,12 @@ enum OutputFormat {
     List,
 }
 
+#[derive(Clone, ValueEnum, Debug, PartialEq)]
+enum RenderOutputFormat {
+    Table,
+    List,
+}
+
 impl std::str::FromStr for OutputFormat {
     type Err = String;
 
@@ -135,8 +141,8 @@ enum NoteCommands {
         #[arg(help = "Note name (without .md extension)")]
         name: String,
 
-        #[arg(short = 'o', help = "Output format: list (default) or table")]
-        format: Option<OutputFormat>,
+        #[arg(short = 'o', help = "Output format: table (default) or list")]
+        format: Option<RenderOutputFormat>,
 
         #[arg(long = "dry-run", help = "Show SQL instead of executing queries")]
         dry_run: bool,
@@ -184,6 +190,23 @@ fn get_output_format(cli_format: Option<OutputFormat>) -> OutputFormat {
             .and_then(|v| v.parse().ok())
             .unwrap_or(OutputFormat::Table)
     })
+}
+
+fn get_render_format(
+    command_format: Option<RenderOutputFormat>,
+    global_format: Option<OutputFormat>,
+) -> Result<renderer::RenderFormat, String> {
+    match command_format {
+        Some(RenderOutputFormat::List) => Ok(renderer::RenderFormat::List),
+        Some(RenderOutputFormat::Table) => Ok(renderer::RenderFormat::Table),
+        None => match global_format {
+            Some(OutputFormat::List) => Ok(renderer::RenderFormat::List),
+            Some(OutputFormat::Json) => Err(
+                "note render only supports 'table' or 'list'; 'json' is not available".to_string(),
+            ),
+            _ => Ok(renderer::RenderFormat::Table),
+        },
+    }
 }
 
 fn check_db_exists(
@@ -393,10 +416,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 check_db_exists(&db_path, &base_dir)?;
                 let db = open_db(&db_path)?;
 
-                let render_format = match format.or(cli.output_format) {
-                    Some(OutputFormat::Table) => renderer::RenderFormat::Table,
-                    _ => renderer::RenderFormat::List,
-                };
+                let render_format = get_render_format(format, cli.output_format)?;
                 let opts = renderer::RenderOptions {
                     format: render_format,
                     dry_run,
@@ -677,5 +697,40 @@ mod tests {
         } else {
             panic!("Expected Template command");
         }
+    }
+
+    #[test]
+    fn test_render_format_defaults_to_table() {
+        assert_eq!(
+            get_render_format(None, None).unwrap(),
+            renderer::RenderFormat::Table
+        );
+        assert_eq!(
+            get_render_format(None, Some(OutputFormat::List)).unwrap(),
+            renderer::RenderFormat::List
+        );
+    }
+
+    #[test]
+    fn test_render_format_command_overrides_global() {
+        assert_eq!(
+            get_render_format(Some(RenderOutputFormat::List), Some(OutputFormat::Table),).unwrap(),
+            renderer::RenderFormat::List
+        );
+        assert_eq!(
+            get_render_format(Some(RenderOutputFormat::Table), Some(OutputFormat::List),).unwrap(),
+            renderer::RenderFormat::Table
+        );
+    }
+
+    #[test]
+    fn test_render_format_rejects_global_json() {
+        assert!(get_render_format(None, Some(OutputFormat::Json)).is_err());
+    }
+
+    #[test]
+    fn test_note_render_rejects_json_option() {
+        let result = Cli::try_parse_from(["markbase", "note", "render", "demo", "-o", "json"]);
+        assert!(result.is_err());
     }
 }
