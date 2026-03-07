@@ -10,28 +10,27 @@ mod renderer;
 mod scanner;
 mod verifier;
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{ArgAction, Parser, Subcommand, ValueEnum};
 use std::env;
 use std::path::PathBuf;
 
 use crate::db::Database;
 
-/// Open existing database (single-threaded CLI context)
 fn open_db(db_path: &std::path::Path) -> Result<Database, Box<dyn std::error::Error>> {
     Database::open_existing(db_path)
 }
 
-/// Create new database (single-threaded CLI context)
 fn create_db(db_path: &std::path::Path) -> Result<Database, Box<dyn std::error::Error>> {
     Database::new(db_path)
 }
 
 const ENV_BASE_DIR: &str = "MARKBASE_BASE_DIR";
+const ENV_INDEX_LOG_LEVEL: &str = "MARKBASE_INDEX_LOG_LEVEL";
+const ENV_COMPUTE_BACKLINKS: &str = "MARKBASE_COMPUTE_BACKLINKS";
 
-// Build script generates the complete version string
 const VERSION: &str = env!("MARKBASE_VERSION");
 
-#[derive(Clone, Copy, ValueEnum, Debug, PartialEq)]
+#[derive(Clone, Copy, ValueEnum, Debug, PartialEq, Eq)]
 enum OutputFormat {
     Table,
     List,
@@ -49,10 +48,17 @@ impl std::str::FromStr for OutputFormat {
     }
 }
 
+#[derive(Clone, Copy, ValueEnum, Debug, PartialEq, Eq)]
+enum IndexLogLevel {
+    Off,
+    Summary,
+    Verbose,
+}
+
 #[derive(Parser)]
 #[command(name = "markbase")]
 #[command(version = VERSION)]
-#[command(about = "Markdown database CLI - index and query markdown files", long_about = None)]
+#[command(about = "Markdown database CLI with automatic indexing", long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -65,18 +71,29 @@ struct Cli {
         help = "Directory to index (default: .)"
     )]
     base_dir: Option<PathBuf>,
+
+    #[arg(
+        long = "index-log-level",
+        env = ENV_INDEX_LOG_LEVEL,
+        global = true,
+        value_enum,
+        default_value_t = IndexLogLevel::Off,
+        help = "Automatic indexing output: off, summary, or verbose"
+    )]
+    index_log_level: IndexLogLevel,
+
+    #[arg(
+        long = "compute-backlinks",
+        env = ENV_COMPUTE_BACKLINKS,
+        global = true,
+        action = ArgAction::SetTrue,
+        help = "Compute backlinks during automatic indexing"
+    )]
+    compute_backlinks: bool,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    #[command(about = "Scan and index markdown files into database")]
-    Index {
-        #[arg(short, long, help = "Delete database and rebuild from scratch")]
-        force: bool,
-
-        #[arg(short, long)]
-        verbose: bool,
-    },
     #[command(about = "Query indexed notes")]
     Query {
         #[arg(value_name = "SQL")]
@@ -190,7 +207,7 @@ fn check_db_exists(
     Err(std::io::Error::new(
         std::io::ErrorKind::NotFound,
         format!(
-            "Database '.markbase/markbase.duckdb' not found at {}. Please confirm the base-dir is correct or run 'markbase index' first.",
+            "Database '.markbase/markbase.duckdb' not found at {}. Run a DB-backed command without '--dry-run' first.",
             base_dir.display()
         ),
     ))
@@ -203,38 +220,42 @@ fn main() {
     }
 }
 
-fn run_index(
+fn ensure_index_ready(
     base_dir: &std::path::Path,
     db_path: &std::path::Path,
-    force: bool,
-    verbose: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if force && db_path.exists() {
-        std::fs::remove_file(db_path)?;
-    }
-
+    compute_backlinks: bool,
+) -> Result<(Database, scanner::IndexStats), Box<dyn std::error::Error>> {
     let db = create_db(db_path)?;
-    eprintln!("Indexing {}...", base_dir.display());
-    let stats = scanner::index_directory(base_dir, &db, force)?;
+    let stats = scanner::index_directory_with_options(
+        base_dir,
+        &db,
+        false,
+        scanner::IndexOptions { compute_backlinks },
+    )?;
+    Ok((db, stats))
+}
 
-    if verbose {
-        print_index_details(&stats);
+fn emit_index_output(stats: &scanner::IndexStats, log_level: IndexLogLevel) {
+    if log_level == IndexLogLevel::Off {
+        return;
     }
 
-    let total = stats.new + stats.updated + stats.deleted;
-    let details = format!(
-        " ({} new, {} updated, {} deleted, {} errors)",
-        stats.new, stats.updated, stats.deleted, stats.errors
-    );
+    if log_level == IndexLogLevel::Verbose {
+        print_index_details(stats);
+    }
+
     let time_str = format!(
         "{}.{}s",
         stats.duration_ms / 1000,
         (stats.duration_ms % 1000) / 100
     );
-    println!(
-        "  ✓ {} files indexed{} — {} total notes{}",
-        total,
-        details,
+    eprintln!(
+        "Indexed: {} new, {} updated, {} deleted, {} errors, {} warnings — {} total notes{}",
+        stats.new,
+        stats.updated,
+        stats.deleted,
+        stats.errors,
+        stats.warning_count(),
         stats.total,
         if stats.duration_ms > 0 {
             format!("  [{}]", time_str)
@@ -242,21 +263,18 @@ fn run_index(
             String::new()
         }
     );
-
-    Ok(())
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
+    let cli_base_dir = cli.base_dir.clone();
+    let index_log_level = cli.index_log_level;
+    let compute_backlinks = cli.compute_backlinks;
 
-    let db_path = get_database_path(cli.base_dir.clone())?;
-    let base_dir = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
+    let db_path = get_database_path(cli_base_dir.clone())?;
+    let base_dir = get_base_dir_absolute_with_cli(cli_base_dir.clone())?;
 
     match cli.command {
-        Commands::Index { force, verbose } => {
-            let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
-            run_index(&base, &db_path, force, verbose)?;
-        }
         Commands::Query {
             sql,
             format,
@@ -273,28 +291,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 return Ok(());
             }
 
-            check_db_exists(&db_path, &base_dir)?;
-            let db = open_db(&db_path)?;
+            let (db, stats) = ensure_index_ready(&base_dir, &db_path, compute_backlinks)?;
+            emit_index_output(&stats, index_log_level);
             let (field_names, results) =
                 query::execute_query(&db, sql.as_deref()).map_err(|e| e.to_string())?;
 
-            let base_dir = if abs_path {
-                Some(get_base_dir_absolute_with_cli(cli.base_dir.clone())?)
+            let abs_base_dir = if abs_path {
+                Some(base_dir.as_path())
             } else {
                 None
             };
-            query::output_results(
-                &results,
-                format_str,
-                &field_names,
-                base_dir.as_deref(),
-                abs_path,
-            )?;
+            query::output_results(&results, format_str, &field_names, abs_base_dir, abs_path)?;
         }
         Commands::Note { command } => match command {
             NoteCommands::New { name, template } => {
-                let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
-                let created = creator::create_note(&base, &name, template.as_deref())?;
+                let created = creator::create_note(&base_dir, &name, template.as_deref())?;
                 if template.is_some() {
                     println!("path: {}", created.path.display());
                     println!("content: {}", created.content);
@@ -303,10 +314,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             NoteCommands::Rename { old_name, new_name } => {
-                let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
-
-                // Perform rename and link updates
-                let result = renamer::rename_note(&base, &old_name, &new_name)?;
+                let result = renamer::rename_note(&base_dir, &old_name, &new_name)?;
                 println!("Renamed: {} → {}", result.old_path, result.new_path);
                 if !result.updated_files.is_empty() {
                     println!("Updated links in {} file(s):", result.updated_files.len());
@@ -315,16 +323,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
 
-                // Run index to update database (verbose mode)
-                eprintln!();
-                run_index(&base, &db_path, false, true)?;
+                let (_db, stats) = ensure_index_ready(&base_dir, &db_path, compute_backlinks)?;
+                emit_index_output(&stats, index_log_level);
             }
             NoteCommands::Verify { name } => {
-                let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
-                check_db_exists(&db_path, &base_dir)?;
-                let db = open_db(&db_path)?;
-
-                let result = verifier::verify_note(&base, &db, &name)?;
+                let (db, stats) = ensure_index_ready(&base_dir, &db_path, compute_backlinks)?;
+                emit_index_output(&stats, index_log_level);
+                let result = verifier::verify_note(&base_dir, &db, &name)?;
 
                 let template_list = result.template_names.join(", ");
 
@@ -371,17 +376,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     "Verification completed with issues: 0 error(s), {} warning(s).",
                     result.warn_count()
                 );
-                // Note: Per AGENTS.md §15.3, warn-only cases return exit code 0.
-                // This aligns with the philosophy that warnings don't affect expected outcome.
             }
             NoteCommands::Render {
                 name,
                 format,
                 dry_run,
             } => {
-                let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
-                check_db_exists(&db_path, &base_dir)?;
-                let db = open_db(&db_path)?;
+                let db = if dry_run {
+                    check_db_exists(&db_path, &base_dir)?;
+                    open_db(&db_path)?
+                } else {
+                    let (db, stats) = ensure_index_ready(&base_dir, &db_path, compute_backlinks)?;
+                    emit_index_output(&stats, index_log_level);
+                    db
+                };
 
                 let render_format = to_render_format(format.unwrap_or(OutputFormat::Table));
                 let opts = renderer::RenderOptions {
@@ -389,7 +397,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     dry_run,
                 };
 
-                if let Err(e) = renderer::render_note(&base, &db, &name, &opts) {
+                if let Err(e) = renderer::render_note(&base_dir, &db, &name, &opts) {
                     eprintln!("{}", e);
                     std::process::exit(1);
                 }
@@ -397,10 +405,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         },
         Commands::Template { command } => match command {
             TemplateCommands::List { format } => {
-                // Use explicit SQL with template-specific fields instead of DEFAULT_FIELDS
                 let sql = "SELECT file.name, _schema.description, file.path FROM notes WHERE file.folder=='templates'";
-                check_db_exists(&db_path, &base_dir)?;
-                let db = open_db(&db_path)?;
+                let (db, stats) = ensure_index_ready(&base_dir, &db_path, compute_backlinks)?;
+                emit_index_output(&stats, index_log_level);
                 let (field_names, results) =
                     query::execute_query(&db, Some(sql)).map_err(|e| e.to_string())?;
 
@@ -409,8 +416,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 query::output_results(&results, format_str, &field_names, None, false)?;
             }
             TemplateCommands::Describe { name } => {
-                let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
-                let content = describe::describe_template(&base, &name)?;
+                let content = describe::describe_template(&base_dir, &name)?;
                 println!("{}", content);
             }
         },
@@ -423,32 +429,61 @@ fn print_index_details(stats: &scanner::IndexStats) {
     if !stats.new_files.is_empty() {
         for path in &stats.new_files {
             let rel = stats.relative_path(path);
-            println!("    + {}", rel);
+            eprintln!("    + {}", rel);
         }
     }
     if !stats.updated_files.is_empty() {
         for path in &stats.updated_files {
             let rel = stats.relative_path(path);
-            println!("    ~ {}", rel);
+            eprintln!("    ~ {}", rel);
         }
     }
     if !stats.deleted_files.is_empty() {
         for path in &stats.deleted_files {
             let rel = stats.relative_path(path);
-            println!("    - {}", rel);
+            eprintln!("    - {}", rel);
         }
     }
 
-    for (path, reason) in &stats.skipped {
-        if reason != "unchanged" {
-            eprintln!("  ⚠ Skipped: {} — {}", path, reason);
+    for diagnostic in &stats.diagnostics {
+        let prefix = match diagnostic.level {
+            scanner::IndexDiagnosticLevel::Warn => "⚠",
+            scanner::IndexDiagnosticLevel::Error => "✗",
+        };
+        if let Some(path) = &diagnostic.path {
+            eprintln!("  {} {} — {}", prefix, path, diagnostic.message);
+        } else {
+            eprintln!("  {} {}", prefix, diagnostic.message);
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_index_command_removed() {
+        let result = Cli::try_parse_from(["markbase", "index"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_global_index_log_level_option() {
+        let cli = Cli::parse_from([
+            "markbase",
+            "--index-log-level",
+            "verbose",
+            "query",
+            "name == 'test'",
+        ]);
+        assert_eq!(cli.index_log_level, IndexLogLevel::Verbose);
+    }
+
+    #[test]
+    fn test_global_compute_backlinks_option() {
+        let cli = Cli::parse_from(["markbase", "--compute-backlinks", "query", "name == 'test'"]);
+        assert!(cli.compute_backlinks);
+    }
 
     #[test]
     fn test_query_with_sql() {

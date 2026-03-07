@@ -106,7 +106,7 @@ src/
 - Incremental update logic: compare `mtime + size`, skip unchanged files
 - Deletion detection: after traversal, compare DB with filesystem, remove deleted entries
 - Conflict handling: skip duplicate files with warning
-- Backlinks: after all notes are inserted, perform a second traversal to compute backlinks
+- Backlinks: optional second traversal; disabled by default unless explicitly enabled
 
 **`extractor.rs`**:
 - Stateless parser, no database awareness
@@ -153,7 +153,7 @@ src/
 
 For detailed usage, see README.md; this section explains implementation details.
 
-### `index`
+### Automatic indexing
 
 **Flow**:
 1. Traverse directory tree (WalkDir)
@@ -164,10 +164,10 @@ For detailed usage, see README.md; this section explains implementation details.
    - Insert/update DB
 3. Deletion detection: entries in DB but not in filesystem → delete
 4. Conflict detection: files with same name → warn and skip
-5. Backlink computation: traverse all notes' `links`, populate target note's `backlinks`
+5. Optional backlink computation: when enabled, traverse all notes' `links` and populate target note's `backlinks`
 6. Commit transaction
 
-**`--force` flag**: Delete `.markbase/markbase.duckdb` and reindex
+This flow runs automatically before DB-backed commands such as `query`, `note verify`, `note render`, and `template list`.
 
 ### `query`
 
@@ -221,7 +221,7 @@ SELECT name, json_extract_string(properties, '$."author"') FROM notes WHERE json
 
 ## 8. Constraints and Security
 
-- **Single writer**: DuckDB constraint, only one `index` process can run at a time
+- **Single writer**: DuckDB constraint, only one indexing pass can write at a time
 - **Query security**: Only SELECT statements allowed, reject multi-statement injection
 - **Error handling**: Comprehensive use of `Result` and `?` operator
 - **Thread safety**: Use `Mutex<Database>` for multi-threaded scenarios

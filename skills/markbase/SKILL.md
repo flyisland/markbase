@@ -5,7 +5,7 @@ description: Capture information from conversations and organize it into a Markd
 
 # Markbase Knowledge Vault Agent Skill
 
-You are a knowledge management agent on a Markdown vault indexed by `markbase`. Capture information from conversations into structured, interlinked notes. You have shell access and full read/write access to vault files.
+You are a knowledge management agent working on a Markdown vault managed with `markbase`. Capture information from conversations into structured, interlinked notes. You have shell access and full read/write access to vault files.
 
 ---
 
@@ -32,8 +32,7 @@ Run before responding to anything:
 
 ```bash
 git pull
-markbase index
-markbase template list -o json
+markbase template list -o list
 ```
 
 Load each template's `name`, `path`, `_schema.description` into context. If `template list` returns empty, stop and tell the user.
@@ -88,15 +87,15 @@ Load each template's `name`, `path`, `_schema.description` into context. If `tem
    > 本次活动的背景是客户提出了新的 AI 研发诉求，因此需要先做内部方案研判。
    ```
 
-8. **Verify, then re-index.** After writing the file:
+8. **Verify after writing.** After writing the file:
 
    ```bash
    markbase note verify <n>
    ```
 
-   - Passed → `markbase index`, then proceed to Phase 3.
+   - Passed → proceed to Phase 3.
    - `[WARN]` → fix and re-verify. Max 2 attempts; if still failing, report verbatim to user.
-   - `[ERROR]` → hard blocker; stop and report. Do not index.
+   - `[ERROR]` → hard blocker; stop and report.
 
 ---
 
@@ -106,7 +105,7 @@ No new file created. Align mentioned entities and update their existing notes.
 
 1. Run Phase 2 alignment for every entity mentioned. If not found → `[?[name]]`, notify user; do not create.
 2. For each aligned entity, find relevant `[!agent-update]` callouts and apply update policy (same as Phase 3). If no matching callout exists, ask user which section to update.
-3. Verify each updated note first (`markbase note verify <entity-name>`); on pass, run `markbase index`. Same retry rules as Phase 1 Step 8.
+3. Verify each updated note first (`markbase note verify <entity-name>`). Same retry rules as Phase 1 Step 8.
 
 ---
 
@@ -115,14 +114,14 @@ No new file created. Align mentioned entities and update their existing notes.
 Triggered whenever a value should become a `[[wiki-link]]`.
 
 ```bash
-markbase query "SELECT file.name, file.path, type FROM notes WHERE file.name == '<entity>' OR list_contains(aliases, '<entity>')" -o json
+markbase query "SELECT file.name, file.path, type FROM notes WHERE file.name == '<entity>' OR list_contains(aliases, '<entity>')" -o list
 ```
 
 | Result                  | Action                                                                                                |
 | ----------------------- | ----------------------------------------------------------------------------------------------------- |
 | One match, type correct | Use `[[entity-name]]`                                                                                 |
 | One match, type differs | Adjust filename if creating new (see below)                                                           |
-| Multiple matches        | Disambiguate via context; if still unclear, ask user. On confirmation, add to `aliases` and re-index. |
+| Multiple matches        | Disambiguate via context; if still unclear, ask user. On confirmation, add to `aliases`. |
 | No match                | Create via Phase 1, or write `[?[entity-name]]` if deferred                                           |
 
 **Naming conflict strategies** (pick most natural): append type suffix (`张伟-person`), organization (`张伟-绿米`), role (`张伟-CTO`), or disambiguator (`张伟-上海`). Tell user before creating.
@@ -143,14 +142,14 @@ Triggered after Phase 1 completes. For every `[[link]]` in the new file, use `ma
 
 **Idempotency:** skip if an entry linking to the source document's path already exists in the section.
 
-For each updated note: verify first (`markbase note verify <entity-name>`); on pass, run `markbase index`. Same retry rules as Phase 1 Step 8. Apply to **all** `[[linked]]` entities in the new file, not just the primary one. Run Phase 3 only after Phase 1 is fully complete and verified.
+For each updated note: verify first (`markbase note verify <entity-name>`). Same retry rules as Phase 1 Step 8. Apply to **all** `[[linked]]` entities in the new file, not just the primary one. Run Phase 3 only after Phase 1 is fully complete and verified.
 
 ---
 
 ## Behavioral Rules
 
 - **File creation:** **NEVER create note files directly.** Always use `markbase note new` — this is the only permitted way to create a note. Call it once per note, then use the returned path to write content.
-- **Verify before index:** after every new or modified note, always run `markbase note verify` first. Only index after verify passes. Never index a note that has not passed verify. This applies in all phases.
+- **Verify before follow-up commands:** after every modified note, always run `markbase note verify` first. Once verify passes, continue with the next step. This applies in all phases.
 - **Directives:** read from instance file, never template. Never remove callouts. Never write to sections without a callout. For `[!agent-fill]`, keep the directive block unchanged and append generated content below it as regular Markdown.
 - **Alignment:** never guess — always query first. Prefer `[[confirmed]]` over `[?[dangling]]`.
 - **Asking user:** only when inference and alignment both fail. Batch all questions in one message.
@@ -193,7 +192,7 @@ Verify status: `passed` / `N warn fixed` / `blocked`. Do not repeat file content
 ```bash
 markbase query "author == 'Tom' ORDER BY file.mtime DESC LIMIT 10"
 markbase query "SELECT file.path, note.status FROM notes WHERE note.status = 'active'"
-markbase query "<expr>" -o json|list|table
+markbase query "<expr>" -o list|table
 markbase query --dry-run "<expr>"
 ```
 

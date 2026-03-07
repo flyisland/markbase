@@ -28,7 +28,6 @@ cargo build --release
 ```bash
 export MARKBASE_BASE_DIR=/path/to/your/notes
 
-markbase index
 markbase query "author == 'Tom'"
 markbase query "SELECT file.path, file.name FROM notes WHERE list_contains(file.tags, 'todo')"
 ```
@@ -38,12 +37,13 @@ markbase query "SELECT file.path, file.name FROM notes WHERE list_contains(file.
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `MARKBASE_BASE_DIR` | Vault directory | `.` (current directory) |
+| `MARKBASE_INDEX_LOG_LEVEL` | Automatic indexing output (`off`, `summary`, `verbose`) | `off` |
+| `MARKBASE_COMPUTE_BACKLINKS` | Compute `file.backlinks` during automatic indexing | disabled |
 
 **Priority:** CLI args > Environment variables > Defaults
 
 ```bash
 export MARKBASE_BASE_DIR=/path/to/notes
-markbase index
 markbase query "list_contains(file.tags, 'design')"
 ```
 
@@ -67,7 +67,7 @@ Access native database columns representing file metadata:
 | `file.mtime` | TIMESTAMPTZ | Modified time |
 | `file.tags` | VARCHAR[] | Tags from content (`#tag`) and frontmatter |
 | `file.links` | VARCHAR[] | Wiki-links `[[link]]` + embeds `![[embed]]` from body and frontmatter |
-| `file.backlinks` | VARCHAR[] | Notes linking to this note (reverse of links) |
+| `file.backlinks` | VARCHAR[] | Notes linking to this note (reverse of links); empty unless backlinks computation is enabled |
 | `file.embeds` | VARCHAR[] | Embeds `![[embed]]` from body only |
 
 **Note Properties** (`note.*` prefix or bare):
@@ -148,24 +148,9 @@ attendees_internal: [[[张三]], [[李四]]]
 
 ## Commands
 
-### `index`
-
-Index Markdown notes to DuckDB.
-
-```bash
-markbase index              # Index base directory
-markbase index --force      # Rebuild from scratch
-markbase index -v           # Verbose output
-```
-
-Features:
-- Incremental updates (skips unchanged files)
-- Detects and removes deleted files
-- Obsidian-compatible (wiki-links, embeds, frontmatter, tags)
-
 ### `query`
 
-Query indexed notes.
+Query notes in your vault.
 
 **Two input modes:**
 
@@ -177,9 +162,16 @@ markbase query "file.mtime > '2024-01-01'"     # file metadata
 markbase query "list_contains(file.tags, 'project')"  # file array field
 markbase query "author == 'Tom' ORDER BY file.mtime DESC LIMIT 10"
 
+# Backlinks are disabled by default to keep indexing fast
+markbase query "list_contains(file.backlinks, 'source')"
+markbase --compute-backlinks query "list_contains(file.backlinks, 'source')"
+
 # SQL mode (full SELECT statement)
 markbase query "SELECT file.path, note.author FROM notes WHERE note.author = 'Tom'"
 ```
+
+`file.backlinks` is empty unless backlinks computation is enabled with
+`--compute-backlinks` or `MARKBASE_COMPUTE_BACKLINKS`.
 
 **Output formats:**
 - `-o table` renders compact Markdown tables
@@ -255,6 +247,7 @@ Behavior:
 - Fails if name is ambiguous or new name exists
 - Updates all `[[old-name]]` links and `![[old-name]]` embeds across the vault (body and frontmatter)
 - Preserves aliases, section anchors, and block IDs
+- Reindexes the vault immediately after the rename completes
 
 **Verify a note against its template schema:**
 
@@ -324,10 +317,9 @@ Exit code is non-zero only on hard errors (e.g. note not found).
 Manage MTS templates.
 
 ```bash
-markbase template list                  # Compact Markdown table (default)
-markbase template list -o list          # YAML list format
-markbase template list -F "tags,type"   # Additional fields
-markbase template describe daily        # Show template content
+markbase template list            # Compact Markdown table (default)
+markbase template list -o list    # YAML list format
+markbase template describe daily  # Show template content
 ```
 
 Templates are stored in `templates/` under base-dir.

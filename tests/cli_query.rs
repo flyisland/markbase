@@ -320,7 +320,7 @@ fn test_query_backlinks() {
     vault.create_note("target", "# Target");
     vault.index();
 
-    let output = vault.query("list_contains(file.backlinks, 'source')");
+    let output = vault.query_with_backlinks("list_contains(file.backlinks, 'source')");
 
     assert_cli_success(&output);
     assert!(stdout_contains(&output, "target"));

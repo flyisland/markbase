@@ -48,11 +48,7 @@ pub fn render_note(
         .map_err(|e| format!("database query failed: {}", e))?;
 
     if rows.is_empty() {
-        return Err(format!(
-            "ERROR: note '{}' not found in index. Run `markbase index` first.",
-            name
-        )
-        .into());
+        return Err(format!("ERROR: note '{}' not found in the vault.", name).into());
     }
 
     if rows.len() > 1 {

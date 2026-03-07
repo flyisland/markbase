@@ -9,6 +9,32 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Instant, UNIX_EPOCH};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IndexDiagnosticLevel {
+    Warn,
+    Error,
+}
+
+#[derive(Debug, Clone)]
+pub struct IndexDiagnostic {
+    pub level: IndexDiagnosticLevel,
+    pub path: Option<String>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct IndexOptions {
+    pub compute_backlinks: bool,
+}
+
+impl Default for IndexOptions {
+    fn default() -> Self {
+        Self {
+            compute_backlinks: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct IndexStats {
     pub new: usize,
@@ -20,6 +46,7 @@ pub struct IndexStats {
     pub updated_files: Vec<String>,
     pub deleted_files: Vec<String>,
     pub name_conflicts: Vec<(String, String)>,
+    pub diagnostics: Vec<IndexDiagnostic>,
     pub duration_ms: u64,
     pub base_dir: PathBuf,
     pub total: usize,
@@ -37,6 +64,7 @@ impl IndexStats {
             updated_files: Vec::new(),
             deleted_files: Vec::new(),
             name_conflicts: Vec::new(),
+            diagnostics: Vec::new(),
             duration_ms: 0,
             base_dir: base_dir.to_path_buf(),
             total: 0,
@@ -50,6 +78,30 @@ impl IndexStats {
         } else {
             full_path.to_string()
         }
+    }
+
+    pub fn warning_count(&self) -> usize {
+        self.diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.level == IndexDiagnosticLevel::Warn)
+            .count()
+    }
+
+    pub fn push_warning(&mut self, path: Option<String>, message: impl Into<String>) {
+        self.diagnostics.push(IndexDiagnostic {
+            level: IndexDiagnosticLevel::Warn,
+            path,
+            message: message.into(),
+        });
+    }
+
+    pub fn push_error(&mut self, path: Option<String>, message: impl Into<String>) {
+        self.errors += 1;
+        self.diagnostics.push(IndexDiagnostic {
+            level: IndexDiagnosticLevel::Error,
+            path,
+            message: message.into(),
+        });
     }
 }
 
@@ -65,6 +117,7 @@ impl Default for IndexStats {
             updated_files: Vec::new(),
             deleted_files: Vec::new(),
             name_conflicts: Vec::new(),
+            diagnostics: Vec::new(),
             duration_ms: 0,
             base_dir: PathBuf::new(),
             total: 0,
@@ -72,14 +125,23 @@ impl Default for IndexStats {
     }
 }
 
+#[allow(dead_code)]
 pub fn index_directory(
     abs_base_dir: &Path,
     db: &Database,
     force: bool,
 ) -> Result<IndexStats, Box<dyn std::error::Error>> {
+    index_directory_with_options(abs_base_dir, db, force, IndexOptions::default())
+}
+
+pub fn index_directory_with_options(
+    abs_base_dir: &Path,
+    db: &Database,
+    force: bool,
+    options: IndexOptions,
+) -> Result<IndexStats, Box<dyn std::error::Error>> {
     let start = Instant::now();
     let mut stats = IndexStats::new(abs_base_dir);
-    let mut all_notes: Vec<Note> = Vec::new();
     let mut seen_paths: HashSet<String> = HashSet::new();
     let mut name_to_path: HashMap<String, String> = HashMap::new();
 
@@ -121,9 +183,9 @@ pub fn index_directory(
 
     for entry in WalkBuilder::new(abs_base_dir).follow_links(true).build() {
         let entry = match entry {
-            Ok(e) => e,
-            Err(e) => {
-                eprintln!("Warning: error walking directory: {}", e);
+            Ok(entry) => entry,
+            Err(err) => {
+                stats.push_error(None, format!("error walking directory: {}", err));
                 continue;
             }
         };
@@ -177,9 +239,9 @@ pub fn index_directory(
                 stats
                     .name_conflicts
                     .push((path_str.clone(), existing_path.clone()));
-                eprintln!(
-                    "⚠ Skipped: {} — name conflict with {}",
-                    path_str, existing_path
+                stats.push_warning(
+                    Some(path_str.clone()),
+                    format!("name conflict with {}", existing_path),
                 );
                 continue;
             }
@@ -187,9 +249,8 @@ pub fn index_directory(
 
             let existing_record = existing_records.get(&path_str).copied();
 
-            match index_single_file(path, abs_base_dir, db, existing_record) {
+            match index_single_file(path, abs_base_dir, db, existing_record, &mut stats) {
                 Ok(Some(note)) => {
-                    all_notes.push(note.clone());
                     if existing_records.contains_key(&note.path) {
                         stats.updated += 1;
                         stats.updated_files.push(note.path.clone());
@@ -203,9 +264,8 @@ pub fn index_directory(
                         .skipped
                         .push((path_str.clone(), "unchanged".to_string()));
                 }
-                Err(e) => {
-                    stats.errors += 1;
-                    eprintln!("Error indexing {}: {}", path.display(), e);
+                Err(err) => {
+                    stats.push_error(Some(path_str), format!("failed to index: {}", err));
                 }
             }
         }
@@ -219,10 +279,13 @@ pub fn index_directory(
         }
     }
 
-    update_backlinks(db, &all_notes)?;
+    if options.compute_backlinks {
+        update_backlinks(db)?;
+    } else {
+        clear_backlinks(db)?;
+    }
 
     stats.total = db.count_notes()?;
-
     stats.duration_ms = start.elapsed().as_millis() as u64;
 
     Ok(stats)
@@ -233,6 +296,7 @@ fn index_single_file(
     base_dir: &Path,
     db: &Database,
     existing_record: Option<(i64, u64)>,
+    stats: &mut IndexStats,
 ) -> Result<Option<Note>, Box<dyn std::error::Error>> {
     let rel_path = path.strip_prefix(base_dir).map_err(|_| {
         format!(
@@ -270,19 +334,17 @@ fn index_single_file(
         if let Some(obj) = extracted.frontmatter.as_object() {
             for key in obj.keys() {
                 if RESERVED_FIELDS.contains(&key.as_str()) && *key != "tags" {
-                    eprintln!(
-                        "⚠ {}: frontmatter field '{}' conflicts with a reserved field and will be ignored.",
-                        path.display(),
-                        key
+                    stats.push_warning(
+                        Some(path_str.clone()),
+                        format!(
+                            "frontmatter field '{}' conflicts with a reserved field and will be ignored.",
+                            key
+                        ),
                     );
                 }
             }
         }
 
-        // Merge frontmatter tags with content tags
-        // Apply Obsidian Tag Format validation to frontmatter tags:
-        // - Must contain at least one non-numerical character (reject pure numeric like "1984")
-        // - Case-insensitive: normalize to lowercase
         let mut merged_tags = extracted.tags;
         if let Some(fm_tags) = extracted.frontmatter.get("tags")
             && let Some(tag_array) = fm_tags.as_array()
@@ -338,19 +400,16 @@ fn index_single_file(
     Ok(Some(note))
 }
 
-fn update_backlinks(
-    db: &Database,
-    indexed_notes: &[Note],
-) -> Result<(), Box<dyn std::error::Error>> {
+fn update_backlinks(db: &Database) -> Result<(), Box<dyn std::error::Error>> {
+    let all_notes = db.get_all_notes()?;
     let link_map = db.get_all_links()?;
 
-    let path_to_name: std::collections::HashMap<String, String> = indexed_notes
+    let path_to_name: HashMap<String, String> = all_notes
         .iter()
         .map(|note| (note.path.clone(), note.name.clone()))
         .collect();
 
-    let mut backlinks: std::collections::HashMap<String, Vec<String>> =
-        std::collections::HashMap::new();
+    let mut backlinks: HashMap<String, Vec<String>> = HashMap::new();
 
     for (path, links) in &link_map {
         let source_name = path_to_name.get(path);
@@ -364,17 +423,29 @@ fn update_backlinks(
         }
     }
 
-    for note in indexed_notes {
-        if let Some(back_links) = backlinks.get(&note.name) {
-            let mut updated_note = note.clone();
-            updated_note.backlinks = back_links.clone();
-            db.upsert_note(&updated_note)?;
-        }
+    for note in all_notes {
+        let mut updated_note = note.clone();
+        let mut back_links = backlinks.remove(&note.name).unwrap_or_default();
+        back_links.sort();
+        back_links.dedup();
+        updated_note.backlinks = back_links;
+        db.upsert_note(&updated_note)?;
     }
 
     Ok(())
 }
 
+fn clear_backlinks(db: &Database) -> Result<(), Box<dyn std::error::Error>> {
+    for note in db.get_all_notes()? {
+        if note.backlinks.is_empty() {
+            continue;
+        }
+        let mut updated_note = note.clone();
+        updated_note.backlinks.clear();
+        db.upsert_note(&updated_note)?;
+    }
+    Ok(())
+}
 #[cfg(test)]
 mod tests {
     use super::*;

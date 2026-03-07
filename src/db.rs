@@ -131,6 +131,17 @@ impl Database {
         Ok(notes)
     }
 
+    pub fn get_all_notes(&self) -> Result<Vec<Note>, Box<dyn std::error::Error>> {
+        let mut stmt = self.conn.prepare("SELECT * FROM notes")?;
+        let mut rows = stmt.query([])?;
+
+        let mut notes = Vec::new();
+        while let Some(row) = rows.next()? {
+            notes.push(self.row_to_note(row)?);
+        }
+        Ok(notes)
+    }
+
     pub fn delete_note(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
         self.conn
             .execute("DELETE FROM notes WHERE path = ?", params![path])?;

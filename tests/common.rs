@@ -103,19 +103,29 @@ impl TestVault {
     }
 
     pub fn index(&self) -> Output {
-        self.run_cli(&["index"])
+        self.run_cli(&[
+            "--index-log-level",
+            "summary",
+            "query",
+            "file.name == '__markbase_missing__'",
+        ])
     }
 
     pub fn index_verbose(&self) -> (Output, String, String) {
-        self.run_cli_verbose(&["index", "--verbose"])
+        self.run_cli_verbose(&["--index-log-level", "verbose", "query", ""])
     }
 
     pub fn index_force(&self) -> Output {
-        self.run_cli(&["index", "--force"])
+        self.run_cli(&[
+            "--index-log-level",
+            "summary",
+            "query",
+            "file.name == '__markbase_missing__'",
+        ])
     }
 
     pub fn index_force_verbose(&self) -> (Output, String, String) {
-        self.run_cli_verbose(&["index", "--force"])
+        self.run_cli_verbose(&["--index-log-level", "verbose", "query", ""])
     }
 
     pub fn query(&self, sql: &str) -> Output {
@@ -132,6 +142,10 @@ impl TestVault {
 
     pub fn query_dry_run(&self, sql: &str) -> Output {
         self.run_cli(&["query", sql, "--dry-run"])
+    }
+
+    pub fn query_with_backlinks(&self, sql: &str) -> Output {
+        self.run_cli(&["--compute-backlinks", "query", sql])
     }
 
     pub fn note_new(&self, name: &str) -> Output {
@@ -199,7 +213,14 @@ pub fn parse_index_stats(output: &Output) -> IndexStats {
 
     let mut stats = IndexStats::default();
 
-    if let Some(caps) = regex::Regex::new(r"— (\d+) total notes")
+    if let Some(caps) = regex::Regex::new(
+        r"Indexed: \d+ new, \d+ updated, \d+ deleted, \d+ errors, \d+ warnings — (\d+) total notes",
+    )
+    .unwrap()
+    .captures(&stderr)
+    {
+        stats.total = caps.get(1).unwrap().as_str().parse().unwrap_or(0);
+    } else if let Some(caps) = regex::Regex::new(r"— (\d+) total notes")
         .unwrap()
         .captures(&stdout)
     {
@@ -211,25 +232,45 @@ pub fn parse_index_stats(output: &Output) -> IndexStats {
         stats.total = caps.get(1).unwrap().as_str().parse().unwrap_or(0);
     }
 
-    if let Some(caps) = regex::Regex::new(r"\((\d+) new").unwrap().captures(&stdout) {
+    if let Some(caps) = regex::Regex::new(r"Indexed: (\d+) new")
+        .unwrap()
+        .captures(&stderr)
+    {
+        stats.new = caps.get(1).unwrap().as_str().parse().unwrap_or(0);
+    } else if let Some(caps) = regex::Regex::new(r"\((\d+) new").unwrap().captures(&stdout) {
         stats.new = caps.get(1).unwrap().as_str().parse().unwrap_or(0);
     }
 
-    if let Some(caps) = regex::Regex::new(r", (\d+) updated")
+    if let Some(caps) = regex::Regex::new(r"new, (\d+) updated")
+        .unwrap()
+        .captures(&stderr)
+    {
+        stats.updated = caps.get(1).unwrap().as_str().parse().unwrap_or(0);
+    } else if let Some(caps) = regex::Regex::new(r", (\d+) updated")
         .unwrap()
         .captures(&stdout)
     {
         stats.updated = caps.get(1).unwrap().as_str().parse().unwrap_or(0);
     }
 
-    if let Some(caps) = regex::Regex::new(r", (\d+) deleted")
+    if let Some(caps) = regex::Regex::new(r"updated, (\d+) deleted")
+        .unwrap()
+        .captures(&stderr)
+    {
+        stats.deleted = caps.get(1).unwrap().as_str().parse().unwrap_or(0);
+    } else if let Some(caps) = regex::Regex::new(r", (\d+) deleted")
         .unwrap()
         .captures(&stdout)
     {
         stats.deleted = caps.get(1).unwrap().as_str().parse().unwrap_or(0);
     }
 
-    if let Some(caps) = regex::Regex::new(r", (\d+) errors\)")
+    if let Some(caps) = regex::Regex::new(r"deleted, (\d+) errors")
+        .unwrap()
+        .captures(&stderr)
+    {
+        stats.errors = caps.get(1).unwrap().as_str().parse().unwrap_or(0);
+    } else if let Some(caps) = regex::Regex::new(r", (\d+) errors\)")
         .unwrap()
         .captures(&stdout)
     {

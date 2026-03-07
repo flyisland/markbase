@@ -5,8 +5,8 @@ use serde_json::Value;
 use std::path::Path;
 use std::sync::LazyLock;
 
-use crate::db::{Database, Note};
-use crate::extractor::WIKILINK_RE;
+use crate::db::Database;
+use crate::extractor::{Extractor, WIKILINK_RE};
 
 static WIKILINK_BRACKET_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\[\[(.+)\]\]$").expect("invalid regex: WIKILINK_BRACKET_RE"));
@@ -68,10 +68,7 @@ pub fn verify_note(
     if notes.is_empty() {
         issues.push(VerifyIssue {
             level: IssueLevel::Error,
-            message: format!(
-                "note '{}' not found in index. Run `markbase index` first.",
-                name
-            ),
+            message: format!("note '{}' not found in the vault.", name),
             field_definition: None,
         });
         return Ok(VerifyResult {
@@ -95,6 +92,10 @@ pub fn verify_note(
     let note = &notes[0];
     let folder = note.folder.clone();
     let properties = note.properties.clone();
+    let note_path = base_dir.join(&note.path);
+    let note_content = std::fs::read_to_string(&note_path)
+        .map_err(|e| format!("failed to read note file '{}': {}", note_path.display(), e))?;
+    let extracted = Extractor::extract(&note_content);
 
     let templates_val = properties.get("templates");
     let templates_arr = match templates_val {
@@ -517,7 +518,7 @@ pub fn verify_note(
         }
     }
 
-    verify_embedded_bases(db, note, &mut issues);
+    verify_embedded_bases(db, &extracted.embeds, &mut issues);
 
     Ok(VerifyResult {
         template_names: templates_with_schema,
@@ -720,8 +721,8 @@ fn verify_link_field(
     }
 }
 
-fn verify_embedded_bases(db: &Database, note: &Note, issues: &mut Vec<VerifyIssue>) {
-    for embed in &note.embeds {
+fn verify_embedded_bases(db: &Database, embeds: &[String], issues: &mut Vec<VerifyIssue>) {
+    for embed in embeds {
         if !embed.ends_with(".base") {
             continue;
         }
