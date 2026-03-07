@@ -54,7 +54,7 @@ Load each template's `name`, `path`, `_schema.description` into context. If `tem
 1. **Route to template.** Match input against `_schema.description`. If ambiguous, show top two and ask. If entity fits multiple templates, ask user to confirm the full list — don't pick silently. Conflicts across templates resolved by first template's definition.
 
 2. **Prefetch entities.** For every person/company/entity mentioned, run Phase 2 alignment.
-   - Found → load into context using `markbase note render <entity-name>` to get the full expanded view including all `.base` embeds.
+   - Found → **Must use `markbase note render <entity-name>`** to get the full expanded view including all `.base` embeds. Do not use `read_file` for this purpose.
    - Not found → complete the full Phase 1 flow first (including fill and verify), then continue. **Max one level of recursion.** Deeper unknowns → `[?[name]]`, report at end.
 
 3. **Read template:** `markbase template describe <template-name>`. Load `_schema.required`, `_schema.filename.description`, `_schema.properties`.
@@ -67,7 +67,26 @@ Load each template's `name`, `path`, `_schema.description` into context. If `tem
 
 7. **Fill the file** using the saved path and your native file-writing tool. Do not call `markbase note new` again.
    - Frontmatter: fill from context; align `format: link` fields via Phase 2; use `default` if nothing available.
-   - Body: fill only sections with `[!agent-fill]` callouts, generating content per each callout's instructions. Leave sections without callouts empty. Never remove callouts.
+   - Body: fill only sections with `[!agent-fill]` callouts, generating content per each callout's instructions. Leave sections without callouts empty.
+   - **`[!agent-fill]` handling is append-below, not replace-inside.** Keep the entire callout block exactly as-is (including its original instruction text). Insert the generated content **after the callout block ends**, as normal Markdown paragraphs/lists that do **not** start with `>`.
+   - **Never replace the instruction text inside an `[!agent-fill]` callout with generated content. Never remove the callout.**
+   - **CRITICAL: Preserve all `.base` embeds** (e.g., `![[log-attendees_internal.base]]`, `![[person-logs.base]]`). These are template infrastructure, not content to fill. Use `apply_diff` with precise SEARCH targeting the end of the `[!agent-fill]` block and inserting content below it, never replacing the whole section.
+
+   Example:
+
+   ```md
+   > [!agent-fill]-
+   > 用 1-2 句话说明本次活动的背景和目的。
+
+   本次活动的背景是客户提出了新的 AI 研发诉求，因此需要先做内部方案研判。
+   ```
+
+   Wrong:
+
+   ```md
+   > [!agent-fill]-
+   > 本次活动的背景是客户提出了新的 AI 研发诉求，因此需要先做内部方案研判。
+   ```
 
 8. **Verify, then re-index.** After writing the file:
 
@@ -132,9 +151,19 @@ For each updated note: verify first (`markbase note verify <entity-name>`); on p
 
 - **File creation:** **NEVER create note files directly.** Always use `markbase note new` — this is the only permitted way to create a note. Call it once per note, then use the returned path to write content.
 - **Verify before index:** after every new or modified note, always run `markbase note verify` first. Only index after verify passes. Never index a note that has not passed verify. This applies in all phases.
-- **Directives:** read from instance file, never template. Never remove callouts. Never write to sections without a callout.
+- **Directives:** read from instance file, never template. Never remove callouts. Never write to sections without a callout. For `[!agent-fill]`, keep the directive block unchanged and append generated content below it as regular Markdown.
 - **Alignment:** never guess — always query first. Prefer `[[confirmed]]` over `[?[dangling]]`.
 - **Asking user:** only when inference and alignment both fail. Batch all questions in one message.
+
+### Post-Fill Checklist (after Phase 1 Step 7)
+
+Before running `markbase note verify`, confirm:
+
+- [ ] All `[!agent-fill]` callouts still present and unchanged
+- [ ] Generated content inserted below each `[!agent-fill]` callout, not inside it
+- [ ] All `[!agent-update]` callouts still present (not removed)
+- [ ] All `.base` embeds preserved (e.g., `![[log-attendees_internal.base]]`, `![[person-logs.base]]`)
+- [ ] Chapter structure unchanged (no sections accidentally deleted)
 
 ---
 
