@@ -249,6 +249,23 @@ Behavior:
 - Preserves aliases, section anchors, and block IDs
 - Reindexes the vault immediately after the rename completes
 
+**Resolve one or more entity names to notes:**
+
+```bash
+markbase note resolve "acme"
+markbase note resolve "张伟" "阿里"
+```
+
+Outputs JSON by default for agent-friendly entity alignment. Each input returns `query`, `status`, and `matches`.
+
+Statuses:
+- `exact` — one note matched by `file.name`
+- `alias` — one note matched by frontmatter `aliases`
+- `multiple` — more than one candidate matched; disambiguate before linking
+- `missing` — no matching note or alias found
+
+Each match includes `name`, `path`, `type`, and `matched_by`.
+
 **Verify a note against its template schema:**
 
 ```bash

@@ -7,6 +7,7 @@ mod output;
 mod query;
 mod renamer;
 mod renderer;
+mod resolver;
 mod scanner;
 mod verifier;
 
@@ -131,6 +132,11 @@ enum NoteCommands {
     },
     #[command(about = "Rename a note and update all links to it")]
     Rename { old_name: String, new_name: String },
+    #[command(about = "Resolve one or more entity names to notes")]
+    Resolve {
+        #[arg(required = true, num_args = 1.., help = "One or more note or alias names")]
+        names: Vec<String>,
+    },
     #[command(about = "Verify a note against its template schema")]
     Verify {
         #[arg(help = "Note name (without .md extension)")]
@@ -325,6 +331,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
                 let (_db, stats) = ensure_index_ready(&base_dir, &db_path, compute_backlinks)?;
                 emit_index_output(&stats, index_log_level);
+            }
+            NoteCommands::Resolve { names } => {
+                let (db, stats) = ensure_index_ready(&base_dir, &db_path, compute_backlinks)?;
+                emit_index_output(&stats, index_log_level);
+                let results = resolver::resolve_names(&db, &names)?;
+                println!("{}", serde_json::to_string_pretty(&results)?);
             }
             NoteCommands::Verify { name } => {
                 let (db, stats) = ensure_index_ready(&base_dir, &db_path, compute_backlinks)?;

@@ -171,6 +171,12 @@ impl TestVault {
     pub fn note_verify(&self, name: &str) -> Output {
         self.run_cli(&["note", "verify", name])
     }
+
+    pub fn note_resolve(&self, names: &[&str]) -> Output {
+        let mut args = vec!["note", "resolve"];
+        args.extend(names.iter().copied());
+        self.run_cli(&args)
+    }
 }
 
 impl Default for TestVault {

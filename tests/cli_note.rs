@@ -1,6 +1,7 @@
 mod common;
 
 use common::{TestVault, assert_cli_error, assert_cli_success, stderr_contains};
+use serde_json::Value;
 
 #[test]
 fn test_note_verify_note_not_found() {
@@ -1485,4 +1486,124 @@ related_person: "[[nonexistent-person]]"
     assert!(stderr_contains(&output, "→ Definition:"));
     assert!(stderr_contains(&output, "format=link"));
     assert!(stderr_contains(&output, "target=person"));
+}
+
+#[test]
+fn test_note_resolve_exact_match() {
+    let vault = TestVault::new();
+    vault.create_note(
+        "acme",
+        r#"---
+type: company
+aliases: ["ACME Corp"]
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_resolve(&["acme"]);
+
+    assert_cli_success(&output);
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json[0]["query"], "acme");
+    assert_eq!(json[0]["status"], "exact");
+    assert_eq!(json[0]["matches"][0]["name"], "acme");
+    assert_eq!(json[0]["matches"][0]["type"], "company");
+    assert_eq!(json[0]["matches"][0]["matched_by"], "name");
+}
+
+#[test]
+fn test_note_resolve_alias_match() {
+    let vault = TestVault::new();
+    vault.create_note(
+        "acme",
+        r#"---
+type: company
+aliases: ["阿里"]
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_resolve(&["阿里"]);
+
+    assert_cli_success(&output);
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json[0]["status"], "alias");
+    assert_eq!(json[0]["matches"][0]["name"], "acme");
+    assert_eq!(json[0]["matches"][0]["matched_by"], "alias");
+}
+
+#[test]
+fn test_note_resolve_multiple_matches() {
+    let vault = TestVault::new();
+    vault.create_note(
+        "zhangwei-person",
+        r#"---
+type: person
+aliases: ["张伟"]
+---
+
+# Zhang Wei
+"#,
+    );
+    vault.create_note(
+        "zhangwei-shanghai",
+        r#"---
+type: person
+aliases: ["张伟"]
+---
+
+# Zhang Wei Shanghai
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_resolve(&["张伟"]);
+
+    assert_cli_success(&output);
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json[0]["status"], "multiple");
+    assert_eq!(json[0]["matches"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn test_note_resolve_missing() {
+    let vault = TestVault::new();
+    vault.index();
+
+    let output = vault.note_resolve(&["ghost"]);
+
+    assert_cli_success(&output);
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json[0]["status"], "missing");
+    assert_eq!(json[0]["matches"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn test_note_resolve_multiple_queries() {
+    let vault = TestVault::new();
+    vault.create_note(
+        "acme",
+        r#"---
+type: company
+aliases: ["阿里"]
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_resolve(&["acme", "ghost"]);
+
+    assert_cli_success(&output);
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json.as_array().unwrap().len(), 2);
+    assert_eq!(json[0]["status"], "exact");
+    assert_eq!(json[1]["status"], "missing");
 }
