@@ -1,9 +1,4 @@
-#![allow(
-    clippy::collapsible_if,
-    clippy::redundant_pattern_matching,
-    clippy::manual_strip,
-    dead_code
-)]
+#![allow(clippy::collapsible_if, clippy::manual_strip, dead_code)]
 
 use crate::renderer::output::ColumnMeta;
 use regex::Regex;
@@ -246,35 +241,6 @@ fn translate_string_filter(
             "list_contains((properties->'$.\"{}\"')::VARCHAR[], '{}')",
             field_name, val
         ));
-    }
-
-    if let Some(caps) = COMPARE_RE.captures(&s) {
-        let attr = &caps[1];
-        let op = &caps[2];
-        let raw_value = &caps[3];
-
-        let value = raw_value.trim_matches('"').trim_matches('\'').to_string();
-
-        let (sql_expr, _) = parse_attribute(attr)?;
-
-        let translated_value = if value.starts_with('"') || value.starts_with('\'') {
-            let inner = value.trim_matches('"').trim_matches('\'');
-            if inner.starts_with("[[") && inner.ends_with("]]") {
-                format!("'{}'", inner.replace('\'', "''"))
-            } else {
-                format!("'{}'", unescape_string_literal(inner))
-            }
-        } else if value.parse::<f64>().is_ok() {
-            format!("{}::DOUBLE", value)
-        } else if translate_date_expr(&value).is_some() {
-            translate_date_expr(&value).unwrap()
-        } else {
-            format!("'{}'", value.replace('\'', "''"))
-        };
-
-        eprintln!("DEBUG: translated_value = '{}'", translated_value);
-
-        return Some(format!("{} {} {}", sql_expr, op, translated_value));
     }
 
     warnings.push(format!(
@@ -762,5 +728,55 @@ mod tests {
         ]);
         let result = translate_sort(Some(&sort), "test.base", &mut warnings);
         assert!(result.contains("json_extract_string"));
+    }
+
+    #[test]
+    fn test_translate_bare_column_not_direct_db_col() {
+        let cols = translate_columns(
+            &[serde_json::json!("name")],
+            None,
+            "t.base",
+            &mut Vec::new(),
+        );
+        assert!(cols[0].sql_expr.contains("json_extract_string"));
+        assert!(!cols[0].is_name_col);
+    }
+
+    #[test]
+    fn test_translate_sort_invalid_direction_warns_and_defaults_asc() {
+        let sort = serde_json::json!([{"property": "file.name", "direction": "INVALID"}]);
+        let mut warnings = vec![];
+        let result = translate_sort(Some(&sort), "t.base", &mut warnings);
+        assert!(result.contains("ASC"));
+        assert!(!warnings.is_empty());
+    }
+
+    #[test]
+    fn test_sql_injection_single_quote_escaping() {
+        let mut ctx = ctx();
+        ctx.name = "O'Brien".to_string();
+        let filter = serde_json::json!("related_customer == link(this)");
+        let mut warnings = vec![];
+        let result = translate_filter(&filter, &ctx, "t.base", &mut warnings);
+        let sql = result.unwrap();
+        assert!(
+            sql.contains("O''Brien"),
+            "Single quote must be escaped: {}",
+            sql
+        );
+    }
+
+    #[test]
+    fn test_empty_and_array_returns_none() {
+        let filter = serde_json::json!({"and": []});
+        let mut warnings = vec![];
+        let result = translate_filter(&filter, &ctx(), "t.base", &mut warnings);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_views_empty_silently_skipped() {
+        let cols = translate_columns(&[], None, "t.base", &mut Vec::new());
+        assert_eq!(cols.len(), 3);
     }
 }

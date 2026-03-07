@@ -265,13 +265,19 @@ markbase/
 │   └── template_schema.md           # MTS (Markdown Template Schema)
 ├── src/
 │   ├── main.rs          # CLI entry point
+│   ├── lib.rs           # Library exports
+│   ├── constants.rs     # Shared constants (DB schema, field names, etc.)
 │   ├── db.rs            # Database operations
 │   ├── scanner.rs       # Index scanning
 │   ├── extractor.rs     # Content extraction
 │   ├── creator.rs       # Note creation
 │   ├── renamer.rs       # Note renaming
+│   ├── verifier.rs      # Note verify command, MTS schema validation
 │   ├── describe.rs      # Template description
-│   ├── lib.rs           # Library exports
+│   ├── renderer/        # Note render system
+│   │   ├── mod.rs       # note render command, .base embed expansion pipeline
+│   │   ├── filter.rs    # Base filter → DuckDB SQL translation; column/sort translation
+│   │   └── output.rs    # list / table output formatting; ColumnMeta definition
 │   └── query/           # Query system
 │       ├── mod.rs       # Output formatting
 │       ├── detector.rs  # Mode detection
@@ -291,7 +297,7 @@ The `spec/` directory contains detailed design specifications that complement AG
 | `links_design.md` | Wiki-links, embeds, and backlinks extraction rules, regex patterns, rename rewrite logic |
 | `properties_design.md` | File vs Note property namespaces, query translation rules, SQL generation |
 | `query_design.md` | Query command user interface, expression vs SQL mode, security restrictions |
-| `template_schema.md` | MTS v1.10 specification for template-based knowledge management |
+| `template_schema.md` | MTS v1.11 specification for template-based knowledge management |
 
 **When to consult spec documents:**
 - Before modifying extraction logic → see `links_design.md`
@@ -314,10 +320,12 @@ The `spec/` directory contains detailed design specifications that complement AG
 - Note renaming (link updates)
 - Template management
 - Note schema verification (note verify)
+- Note rendering with .base embed expansion (note render)
 
 ### Technical Debt
 
-- Integration test coverage
+- Unit test output content verification (query/mod.rs)
+- Negative stderr assertions in integration tests
 - Performance benchmarking (10k notes target)
 - Parallel index processing
 - Configuration file support
@@ -337,11 +345,15 @@ The `spec/` directory contains detailed design specifications that complement AG
 | `query/mod.rs` | Output formatting |
 | `creator.rs` | Template parsing, note creation |
 | `renamer.rs` | Link updates, renaming |
+| `verifier.rs` | Note not found, no templates, location mismatch, required fields, type/enum/link validation |
+| `renderer/filter.rs` | Filter translation, column/sort translation, ThisContext, merge_filters |
+| `renderer/output.rs` | list/table format, is_name_col, is_list_col, empty results |
+| `renderer/mod.rs` | CLI integration: note render happy path, dry-run, base not found, link(this) |
 | `main.rs` | CLI argument parsing |
 
 ## 12. Development Workflow
 
-### 11.1 Branch Strategy
+### 12.1 Branch Strategy
 
 **Never develop directly on `main` branch**
 
@@ -353,7 +365,7 @@ git checkout -b fix/<description>
 
 Branch prefixes: `feat/`, `fix/`, `refactor/`, `test/`, `docs/`
 
-### 11.2 Pre-commit Checks
+### 12.2 Pre-commit Checks
 
 **Must pass the following checks**:
 
@@ -365,7 +377,7 @@ cargo fmt --check            # Format
 
 Do not commit if any check fails.
 
-### 11.3 Documentation Sync
+### 12.3 Documentation Sync
 
 **When to update README.md**:
 - Commands, options, or behavior changes
@@ -379,7 +391,7 @@ Do not commit if any check fails.
 - Performance targets or constraint changes
 - Development status changes
 
-### 11.4 Commit Message Convention
+### 12.4 Commit Message Convention
 
 ```
 <type>(<scope>): <summary>
@@ -392,7 +404,7 @@ test(compiler): add coverage for nested JSON paths
 docs(readme): update query operator table
 ```
 
-### 11.5 Definition of Done
+### 12.5 Definition of Done
 
 Task completion requires:
 
@@ -424,19 +436,20 @@ Task completion requires:
 
 ## 14. Rust Best Practices
 
-### 13.1 Error Handling
+### 14.1 Error Handling
 
-- Use `thiserror` to define structured error types
+- Use `Box<dyn std::error::Error>` for command-level errors propagated to `main()` (consistent with existing modules)
+- Reserve `thiserror` for structured error types that need to be matched by callers (currently none in this codebase)
 - No `.unwrap()` / `.expect()` in non-test code
 - Error messages should explain failure reason: `"failed to open {path}: {source}"` not `"io error"`
 
-### 13.2 Dependency Management
+### 14.2 Dependency Management
 
 - Check existing dependencies before adding new ones
 - Use `cargo add <crate>` instead of manually editing `Cargo.toml`
 - Use `cargo add <crate> --features <feature>` when features are needed
 
-### 13.3 Code Style
+### 14.3 Code Style
 
 - Keep functions short and focused
 - Consider extracting code blocks that need comments to explain
@@ -460,24 +473,24 @@ Task completion requires:
 
 ## 16. CLI UX Principles
 
-### 15.1 Output Structure
+### 16.1 Output Structure
 
 - Default output provides structured summary (counts, status, warnings)
 - `--verbose` for process details
 - No uninformative confirmations (e.g., "Done!")
 
-### 15.2 Output Targets
+### 16.2 Output Targets
 
 - Query results and structured data → stdout (supports piping)
 - Warnings, errors, diagnostic info → stderr
 
-### 15.3 Exit Codes
+### 16.3 Exit Codes
 
 - Success → `0`
 - Errors (affecting expected outcome) → non-zero
 - Non-fatal warnings → `0` (but must report to stderr)
 
-### 15.4 Output Examples
+### 16.4 Output Examples
 
 ```
 # index

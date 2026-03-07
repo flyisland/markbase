@@ -12,9 +12,18 @@ mod verifier;
 use clap::{Parser, Subcommand, ValueEnum};
 use std::env;
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use crate::db::Database;
+
+/// Open existing database (single-threaded CLI context)
+fn open_db(db_path: &std::path::Path) -> Result<Database, Box<dyn std::error::Error>> {
+    Database::open_existing(db_path)
+}
+
+/// Create new database (single-threaded CLI context)
+fn create_db(db_path: &std::path::Path) -> Result<Database, Box<dyn std::error::Error>> {
+    Database::new(db_path)
+}
 
 const ENV_BASE_DIR: &str = "MARKBASE_BASE_DIR";
 const ENV_OUTPUT_FORMAT: &str = "MARKBASE_OUTPUT_FORMAT";
@@ -210,8 +219,7 @@ fn run_index(
         std::fs::remove_file(db_path)?;
     }
 
-    let db = Mutex::new(Database::new(db_path)?);
-    let db = db.lock().unwrap();
+    let db = create_db(db_path)?;
     eprintln!("Indexing {}...", base_dir.display());
     let stats = scanner::index_directory(base_dir, &db, force)?;
 
@@ -276,8 +284,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             check_db_exists(&db_path, &base_dir)?;
-            let db = Mutex::new(Database::open_existing(&db_path)?);
-            let db = db.lock().unwrap();
+            let db = open_db(&db_path)?;
             let (field_names, results) =
                 query::execute_query(&db, sql.as_deref()).map_err(|e| e.to_string())?;
 
@@ -325,10 +332,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             NoteCommands::Verify { name } => {
                 let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
                 check_db_exists(&db_path, &base_dir)?;
-                let db = Mutex::new(Database::open_existing(&db_path)?);
-                let db = db
-                    .lock()
-                    .map_err(|e| format!("failed to acquire db lock: {}", e))?;
+                let db = open_db(&db_path)?;
 
                 let result = verifier::verify_note(&base, &db, &name)?;
 
@@ -387,10 +391,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             } => {
                 let base = get_base_dir_absolute_with_cli(cli.base_dir.clone())?;
                 check_db_exists(&db_path, &base_dir)?;
-                let db = Mutex::new(Database::open_existing(&db_path)?);
-                let db = db
-                    .lock()
-                    .map_err(|e| format!("failed to acquire db lock: {}", e))?;
+                let db = open_db(&db_path)?;
 
                 let render_format = match format.or(cli.output_format) {
                     Some(OutputFormat::Table) => renderer::RenderFormat::Table,
@@ -412,10 +413,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 // Use explicit SQL with template-specific fields instead of DEFAULT_FIELDS
                 let sql = "SELECT file.name, _schema.description, file.path FROM notes WHERE file.folder=='templates'";
                 check_db_exists(&db_path, &base_dir)?;
-                let db = Mutex::new(Database::open_existing(&db_path)?);
-                let db_ref = db.lock().unwrap();
+                let db = open_db(&db_path)?;
                 let (field_names, results) =
-                    query::execute_query(&db_ref, Some(sql)).map_err(|e| e.to_string())?;
+                    query::execute_query(&db, Some(sql)).map_err(|e| e.to_string())?;
 
                 let effective_format = format.or(cli.output_format).unwrap_or(OutputFormat::Json);
                 let format_str = match effective_format {

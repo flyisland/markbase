@@ -1,6 +1,6 @@
 mod common;
 
-use common::{assert_cli_error, assert_cli_success, stderr_contains, TestVault};
+use common::{TestVault, assert_cli_error, assert_cli_success, stderr_contains};
 
 #[test]
 fn test_note_verify_note_not_found() {
@@ -1171,7 +1171,6 @@ fn test_note_render_base_not_found() {
 
     assert_cli_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr_contains(&output, "not found"));
     assert!(stdout.contains("not found"));
 }
@@ -1194,8 +1193,10 @@ fn test_note_render_link_this_filter() {
 
     assert_cli_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stdout.contains("rendered from opps.base"));
     assert!(stdout.contains("[[deal1]]"));
+    assert!(stderr.is_empty(), "unexpected stderr output: {}", stderr);
 }
 
 #[test]
@@ -1216,9 +1217,11 @@ fn test_note_render_dry_run() {
 
     assert_cli_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stdout.contains("dry-run from opps.base"));
     assert!(stdout.contains("FROM notes"));
     assert!(stdout.contains("[[acme]]"));
+    assert!(stderr.is_empty(), "unexpected stderr output: {}", stderr);
 }
 
 #[test]
@@ -1236,7 +1239,9 @@ fn test_note_render_table_format() {
 
     assert_cli_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stdout.contains("| name |"));
+    assert!(stderr.is_empty(), "unexpected stderr output: {}", stderr);
 }
 
 #[test]
@@ -1253,7 +1258,9 @@ fn test_note_render_empty_results() {
 
     assert_cli_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stdout.contains("no results"));
+    assert!(stderr.is_empty(), "unexpected stderr output: {}", stderr);
 }
 
 #[test]

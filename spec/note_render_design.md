@@ -32,6 +32,8 @@ markbase note render <n> [-o table] [--dry-run]
 
 > **设计决策：** `note render` 的主要目的是为 agent 提供笔记的完整上下文，默认输出 list 格式（与 `query -o list` 一致），每条 base 记录以 `---` 分隔、每个字段单独一行，方便 agent 按字段名读取。`-o table` 作为辅助选项，供人工偶尔查看使用。view 的 `type` 字段是 Obsidian 的展现配置，与输出格式无关，渲染时忽略。`-o json` 不支持，传入时静默降级为 list 格式。
 
+> **直接渲染 `.base` 文件：** 若 `<n>` 参数对应的是一个 `.base` 文件（即 `name` 字段含扩展名如 `opps.base`），命令将跳过正文扫描步骤，直接执行该 `.base` 文件中的所有 view，等效于该文件作为独立 base 被渲染。此时 `this` 上下文指向该 `.base` 文件本身（`this.name` = `opps.base`）。
+
 **退出码：**
 
 | 退出码 | 含义 |
@@ -173,11 +175,13 @@ SELECT path FROM notes WHERE name = 'customer-opportunities.base'
 在 `![[*.base]]` 原位先输出来源注释行（stdout），再紧跟各 view 的渲染结果：
 
 ```
-<!-- [markbase] rendered from <base-name>.base -->
+<!-- start: [markbase] rendered from <base-name>.base -->
 
 ## <view-name>
 
 <rendered-output>
+
+<!-- end: [markbase] rendered from <base-name>.base -->
 ```
 
 `<view-name>` 取 view 的 `name` 字段；若无 `name`，用 base 文件名（含扩展名）代替。
@@ -185,7 +189,7 @@ SELECT path FROM notes WHERE name = 'customer-opportunities.base'
 **dry-run 模式**（`--dry-run`）：
 
 ```
-<!-- [markbase] dry-run from <base-name>.base -->
+<!-- start: [markbase] dry-run from <base-name>.base -->
 
 ## <view-name>
 
@@ -196,6 +200,8 @@ WHERE ...
 ORDER BY ...
 LIMIT ...
 ```
+
+<!-- end: [markbase] dry-run from <base-name>.base -->
 ```
 
 **正常模式**：执行 SQL（调用 `db.query(&sql, "", usize::MAX)`），将结果转为渲染格式。
@@ -440,13 +446,14 @@ sort:
 
 ### 默认格式：list（key-value 块）
 
-每条记录以 `---` 开头，每个字段单独一行，格式为 `字段名: 值`。字段显示名优先使用 base `properties` 中定义的 `displayName`，若无则使用原始列名。
+每条记录以 `---` 开头，每个字段单独一行，格式为 `字段名: 值`。字段显示名优先使用 base `properties` 中定义的 `displayName`，若无则使用原始列名。整个渲染结果以 YAML 代码块包裹，便于 agent 解析。
 
-```
-<!-- [markbase] rendered from customer-contacts.base -->
+````
+<!-- start: [markbase] rendered from customer-contacts.base -->
 
 ## 相关人员
 
+```yaml
 ---
 name: [[张三]]
 title: 技术总监
@@ -463,6 +470,9 @@ aliases:
 ---
 ```
 
+<!-- end: [markbase] rendered from customer-contacts.base -->
+````
+
 空结果集输出 `(no results)`。
 
 ### `-o table`：Markdown 表格
@@ -470,7 +480,7 @@ aliases:
 字段显示名规则同上。list 类型字段用 `, ` 拼接。
 
 ```
-<!-- [markbase] rendered from customer-contacts.base -->
+<!-- start: [markbase] rendered from customer-contacts.base -->
 
 ## 相关人员
 
@@ -478,6 +488,8 @@ aliases:
 |----------|----------|----------|----------------------|
 | [[张三]] | 技术总监 | Champion | David Zhang, 张总    |
 | [[李四]] | 采购总监 | Economic | 李总                 |
+
+<!-- end: [markbase] rendered from customer-contacts.base -->
 ```
 
 空结果集：输出表头 + `| (no results) |` 行。
@@ -487,7 +499,7 @@ aliases:
 正文普通行原样输出，每个 `![[*.base]]` 嵌入位置替换为该 base 各 view 将要执行的 SQL，以注释块包裹：
 
 ````
-<!-- [markbase] dry-run from customer-opportunities.base -->
+<!-- start: [markbase] dry-run from customer-opportunities.base -->
 
 ## 相关商机
 
@@ -499,6 +511,8 @@ WHERE list_contains(links, '绿米')
 ORDER BY mtime ASC
 LIMIT 10
 ```
+
+<!-- end: [markbase] dry-run from customer-opportunities.base -->
 ````
 
 `--dry-run` 与 `-o` 可同时指定，但 `-o` 在 dry-run 模式下无效（不影响 SQL 输出格式）。
@@ -593,10 +607,11 @@ views:
 
 ## 2. 相关商机
 
-<!-- [markbase] rendered from customer-opportunities.base -->
+<!-- start: [markbase] rendered from customer-opportunities.base -->
 
 ## 相关商机
 
+```yaml
 ---
 name: [[绿米-商机2026]]
 stage: Proposal
@@ -608,12 +623,15 @@ mtime: 2026-01-20
 ---
 ```
 
+<!-- end: [markbase] rendered from customer-opportunities.base -->
+```
+
 **`markbase note render 绿米 --dry-run`**：
 
 ````
 ## 2. 相关商机
 
-<!-- [markbase] dry-run from customer-opportunities.base -->
+<!-- start: [markbase] dry-run from customer-opportunities.base -->
 
 ## 相关商机
 
@@ -625,6 +643,8 @@ WHERE json_extract_string(properties, '$."related_customer"') = '[[绿米]]'
 ORDER BY mtime DESC
 LIMIT 10
 ```
+
+<!-- end: [markbase] dry-run from customer-opportunities.base -->
 ````
 
 ---

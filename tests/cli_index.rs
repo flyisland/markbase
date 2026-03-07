@@ -256,7 +256,10 @@ fn test_index_creates_database() {
     let vault = TestVault::new();
     vault.create_note("test", "# Test");
 
-    vault.index();
+    let output = vault.index();
 
+    assert_cli_success(&output);
     assert!(vault.db_path().exists());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.is_empty(), "unexpected stderr output: {}", stderr);
 }
