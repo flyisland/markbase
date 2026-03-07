@@ -261,5 +261,9 @@ fn test_index_creates_database() {
     assert_cli_success(&output);
     assert!(vault.db_path().exists());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.is_empty(), "unexpected stderr output: {}", stderr);
+    assert!(
+        stderr.contains("Indexing "),
+        "unexpected stderr output: {}",
+        stderr
+    );
 }

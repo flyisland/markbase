@@ -81,6 +81,7 @@ src/
 ├── db.rs            # DuckDB connection management, schema initialization, CRUD
 ├── scanner.rs       # index command driver, directory traversal, incremental update, backlink computation
 ├── extractor.rs     # Single file parsing: frontmatter, wiki-links, tags
+├── output.rs        # Shared YAML list / Markdown table formatters
 ├── creator.rs       # note new command, template rendering
 ├── renamer.rs       # note rename command, link updates
 ├── verifier.rs      # note verify command, MTS schema validation
@@ -91,7 +92,7 @@ src/
 ├── describe.rs      # template describe command
 ├── lib.rs           # Library exports
 └── query/
-    ├── mod.rs       # Output formatting (table/json/list)
+    ├── mod.rs       # Query output orchestration (table/list)
     ├── detector.rs  # SQL/expression mode detection, security validation
     ├── translator.rs # Field name translation
     ├── error_map.rs # DuckDB error mapping
@@ -313,7 +314,7 @@ The `spec/` directory contains detailed design specifications that complement AG
 - Index all files (not just .md)
 - Query system (SQL mode + expression mode)
 - Field translation and security validation
-- Multiple output formats (table/json/list)
+- Multiple output formats (table/list)
 - Backlink tracking
 - Incremental update and deletion detection
 - Note creation (template support)

@@ -38,14 +38,11 @@ markbase query "SELECT file.path, file.name FROM notes WHERE list_contains(file.
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `MARKBASE_BASE_DIR` | Vault directory | `.` (current directory) |
-| `MARKBASE_OUTPUT_FORMAT` | Output format for query/template list | `table` |
 
 **Priority:** CLI args > Environment variables > Defaults
 
 ```bash
 export MARKBASE_BASE_DIR=/path/to/notes
-export MARKBASE_OUTPUT_FORMAT=json
-
 markbase index
 markbase query "list_contains(file.tags, 'design')"
 ```
@@ -185,11 +182,40 @@ markbase query "SELECT file.path, note.author FROM notes WHERE note.author = 'To
 ```
 
 **Output formats:**
+- `-o table` renders compact Markdown tables
+- `-o list` renders YAML lists
 
 ```bash
-markbase query "list_contains(tags, 'todo')" -o json
-markbase query "list_contains(tags, 'todo')" -o list
+markbase query "SELECT file.name, title FROM notes" -o table
 ```
+
+```md
+| file.name | title |
+| --- | --- |
+| readme | README |
+| todo | Todo List |
+```
+
+```bash
+markbase query "SELECT file.name, title, file.tags FROM notes" -o list
+```
+
+```yaml
+- file.name: readme
+  title: README
+  file.tags:
+    - documentation
+    - important
+- file.name: todo
+  title: Todo List
+  file.tags:
+    - todo
+    - work
+```
+
+Empty results stay machine-friendly:
+- `-o table` prints just the header row and separator
+- `-o list` prints `[]`
 
 **Debug:**
 
@@ -248,13 +274,44 @@ Warnings are reported to stderr. Exit code is non-zero only on errors (e.g. miss
 
 ```bash
 markbase note render <n>            # Markdown table (default)
-markbase note render <n> -o list    # list format
+markbase note render <n> -o list    # YAML list format
 markbase note render <n> --dry-run  # show SQL without executing
 ```
 
 Renders the note body to stdout. Each `![[*.base]]` embed is replaced with
 query results from the corresponding Obsidian Base file. Non-`.base` embeds
 are passed through unchanged.
+
+For `-o table`, each rendered Base view becomes a compact Markdown table:
+
+```md
+<!-- start: [markbase] rendered from tasks.base -->
+
+> **Open Tasks**
+
+| name | priority |
+| --- | --- |
+| [[task-a]] | high |
+| [[task-b]] | medium |
+
+<!-- end: [markbase] rendered from tasks.base -->
+```
+
+For `-o list`, the same view is wrapped in a YAML code fence:
+
+````md
+<!-- start: [markbase] rendered from tasks.base -->
+
+> **Open Tasks**
+
+```yaml
+- name: '[[task-a]]'
+  priority: high
+- name: '[[task-b]]'
+  priority: medium
+```
+<!-- end: [markbase] rendered from tasks.base -->
+````
 
 Supported filters: `link(this)`, `link("name")`, `file.hasLink(this.file)`,
 `file.hasTag()`, `file.inFolder()`, date comparisons, `isEmpty()`, `contains()`.
@@ -267,8 +324,8 @@ Exit code is non-zero only on hard errors (e.g. note not found).
 Manage MTS templates.
 
 ```bash
-markbase template list                  # List templates (table format)
-markbase template list -o json          # JSON format
+markbase template list                  # Compact Markdown table (default)
+markbase template list -o list          # YAML list format
 markbase template list -F "tags,type"   # Additional fields
 markbase template describe daily        # Show template content
 ```

@@ -1,3 +1,5 @@
+use crate::output::{OutputValue, render_markdown_table, render_yaml_records};
+
 #[derive(Debug, Clone)]
 pub struct ColumnMeta {
     pub sql_expr: String,
@@ -9,35 +11,35 @@ pub struct ColumnMeta {
 pub type Row = Vec<(String, Option<String>)>;
 
 pub fn render_list(rows: &[Row], columns: &[ColumnMeta]) -> String {
-    if rows.is_empty() {
-        return "(no results)\n".to_string();
-    }
+    let headers: Vec<String> = columns.iter().map(|col| col.display_name.clone()).collect();
+    let records = to_output_rows(rows, columns);
+    render_yaml_records(&headers, &records)
+}
 
-    let mut output = String::new();
-    for row in rows {
-        output.push_str("- ");
-        for (i, (display_name, value)) in row.iter().enumerate() {
-            if let Some(val) = value {
-                if columns[i].is_name_col {
-                    output.push_str(&format!("{}: [[{}]]\n", display_name, val));
-                } else if columns[i].is_list_col {
-                    output.push_str(&format!("{}:\n", display_name));
-                    let items = parse_array_list(val);
-                    for item in items {
-                        output.push_str(&format!("  - {}\n", item));
+pub fn render_table(rows: &[Row], columns: &[ColumnMeta]) -> String {
+    let headers: Vec<String> = columns.iter().map(|col| col.display_name.clone()).collect();
+    let records = to_output_rows(rows, columns);
+    render_markdown_table(&headers, &records)
+}
+
+fn to_output_rows(rows: &[Row], columns: &[ColumnMeta]) -> Vec<Vec<OutputValue>> {
+    rows.iter()
+        .map(|row| {
+            row.iter()
+                .enumerate()
+                .map(|(i, (_display_name, value))| match value {
+                    Some(val) if columns[i].is_name_col => {
+                        OutputValue::Scalar(format!("[[{}]]", val))
                     }
-                } else {
-                    output.push_str(&format!("{}: {}\n", display_name, val));
-                }
-            } else {
-                output.push_str(&format!("{}:\n", display_name));
-            }
-            if i < row.len() - 1 {
-                output.push_str("  ");
-            }
-        }
-    }
-    output
+                    Some(val) if columns[i].is_list_col => {
+                        OutputValue::List(parse_array_list(val.as_str()))
+                    }
+                    Some(val) => OutputValue::Scalar(val.clone()),
+                    None => OutputValue::Empty,
+                })
+                .collect()
+        })
+        .collect()
 }
 
 fn parse_array_list(s: &str) -> Vec<String> {
@@ -46,54 +48,14 @@ fn parse_array_list(s: &str) -> Vec<String> {
         return vec![s.to_string()];
     }
     let inner = &trimmed[1..trimmed.len() - 1];
-    if inner.is_empty() {
+    if inner.trim().is_empty() {
         return vec![];
     }
-    inner.split(", ").map(|s| s.to_string()).collect()
-}
 
-pub fn render_table(rows: &[Row], columns: &[ColumnMeta]) -> String {
-    let mut output = String::new();
-
-    output.push('|');
-    for col in columns {
-        output.push_str(&format!(" {} |", col.display_name));
-    }
-    output.push('\n');
-
-    output.push('|');
-    for _ in columns {
-        output.push_str("---|");
-    }
-    output.push('\n');
-
-    if rows.is_empty() {
-        output.push('|');
-        for _ in columns {
-            output.push_str(" (no results) |");
-        }
-        output.push('\n');
-    } else {
-        for row in rows {
-            output.push('|');
-            for (i, (_display_name, value)) in row.iter().enumerate() {
-                output.push(' ');
-                if let Some(val) = value {
-                    if columns[i].is_name_col {
-                        output.push_str(&format!("[[{}]]", val));
-                    } else if columns[i].is_list_col {
-                        let items = parse_array_list(val);
-                        output.push_str(&items.join(", "));
-                    } else {
-                        output.push_str(val);
-                    }
-                }
-                output.push_str(" |");
-            }
-            output.push('\n');
-        }
-    }
-    output
+    inner
+        .split(',')
+        .map(|item| item.trim().trim_matches('"').to_string())
+        .collect()
 }
 
 #[cfg(test)]
@@ -124,8 +86,7 @@ mod tests {
             ("title", Some("Engineer")),
         ])];
         let out = render_list(&rows, &columns);
-        assert!(out.contains("name: John"));
-        assert!(out.contains("title: Engineer"));
+        assert_eq!(out, "- name: John\n  title: Engineer\n");
     }
 
     #[test]
@@ -133,18 +94,15 @@ mod tests {
         let columns = vec![col("name", true, false)];
         let rows = vec![row(vec![("name", Some("test-note"))])];
         let out = render_list(&rows, &columns);
-        assert!(out.contains("name: [[test-note]]"));
+        assert_eq!(out, "- name: '[[test-note]]'\n");
     }
 
     #[test]
     fn test_render_list_list_col() {
         let columns = vec![col("tags", false, true)];
-        let rows = vec![row(vec![("tags", Some("[tag1, tag2, tag3]"))])];
+        let rows = vec![row(vec![("tags", Some("[\"tag1\",\"tag2\",\"tag3\"]"))])];
         let out = render_list(&rows, &columns);
-        assert!(out.contains("tags:"));
-        assert!(out.contains("  - tag1"));
-        assert!(out.contains("  - tag2"));
-        assert!(out.contains("  - tag3"));
+        assert_eq!(out, "- tags:\n    - tag1\n    - tag2\n    - tag3\n");
     }
 
     #[test]
@@ -152,7 +110,7 @@ mod tests {
         let columns = vec![col("name", false, false)];
         let rows: Vec<Row> = vec![];
         let out = render_list(&rows, &columns);
-        assert_eq!(out, "(no results)\n");
+        assert_eq!(out, "[]\n");
     }
 
     #[test]
@@ -163,16 +121,18 @@ mod tests {
             ("title", Some("Engineer")),
         ])];
         let out = render_table(&rows, &columns);
-        assert!(out.contains("| name | title |"));
-        assert!(out.contains("| John | Engineer |"));
+        assert_eq!(
+            out,
+            "| name | title |\n| --- | --- |\n| John | Engineer |\n"
+        );
     }
 
     #[test]
     fn test_render_table_list_col() {
         let columns = vec![col("tags", false, true)];
-        let rows = vec![row(vec![("tags", Some("[tag1, tag2]"))])];
+        let rows = vec![row(vec![("tags", Some("[\"tag1\",\"tag2\"]"))])];
         let out = render_table(&rows, &columns);
-        assert!(out.contains("| tag1, tag2 |"));
+        assert_eq!(out, "| tags |\n| --- |\n| tag1, tag2 |\n");
     }
 
     #[test]
@@ -180,6 +140,6 @@ mod tests {
         let columns = vec![col("name", false, false)];
         let rows: Vec<Row> = vec![];
         let out = render_table(&rows, &columns);
-        assert!(out.contains("(no results)"));
+        assert_eq!(out, "| name |\n| --- |\n");
     }
 }

@@ -158,16 +158,16 @@ fn test_query_output_table() {
 }
 
 #[test]
-fn test_query_output_json() {
+fn test_query_rejects_json_output() {
     let vault = TestVault::new();
     vault.create_note("test", "# Test");
     vault.index();
 
     let output = vault.query_format("", "json");
 
-    assert_cli_success(&output);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.starts_with('[') || stdout.starts_with('{'));
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("possible values: table, list"));
 }
 
 #[test]
@@ -255,12 +255,15 @@ fn test_query_limit() {
     vault.create_note("note3", "# Note 3");
     vault.index();
 
-    let output = vault.query("LIMIT 2");
+    let output = vault.query("SELECT file.name FROM notes LIMIT 2");
 
     assert_cli_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let count = stdout.matches("note").count();
-    assert!(count <= 2 || stdout.contains("2 results"));
+    let count = stdout
+        .lines()
+        .filter(|line| line.starts_with("| note"))
+        .count();
+    assert!(count <= 2, "unexpected output: {}", stdout);
 }
 
 #[test]
@@ -273,7 +276,8 @@ fn test_query_no_results() {
 
     assert_cli_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("0") || stdout.is_empty() || stdout.contains("results"));
+    let table_lines = stdout.lines().filter(|line| line.starts_with('|')).count();
+    assert_eq!(table_lines, 2, "unexpected output: {}", stdout);
 }
 
 #[test]

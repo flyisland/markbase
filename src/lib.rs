@@ -3,6 +3,7 @@ pub mod creator;
 pub mod db;
 pub mod describe;
 pub mod extractor;
+pub mod output;
 pub mod query;
 pub mod renderer;
 pub mod scanner;

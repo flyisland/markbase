@@ -232,12 +232,8 @@ fn execute_and_render(
                 let output = match opts.format {
                     RenderFormat::Table => render_table(&rows, columns),
                     RenderFormat::List => {
-                        if rows.is_empty() {
-                            "(no results)".to_string()
-                        } else {
-                            let list_output = render_list(&rows, columns);
-                            format!("```yaml\n{}```", list_output)
-                        }
+                        let list_output = render_list(&rows, columns);
+                        format!("```yaml\n{}```", list_output)
                     }
                 };
                 println!("{}", output);

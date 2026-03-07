@@ -199,7 +199,12 @@ pub fn parse_index_stats(output: &Output) -> IndexStats {
 
     let mut stats = IndexStats::default();
 
-    if let Some(caps) = regex::Regex::new(r"✓ (\d+) files indexed")
+    if let Some(caps) = regex::Regex::new(r"— (\d+) total notes")
+        .unwrap()
+        .captures(&stdout)
+    {
+        stats.total = caps.get(1).unwrap().as_str().parse().unwrap_or(0);
+    } else if let Some(caps) = regex::Regex::new(r"✓ (\d+) files indexed")
         .unwrap()
         .captures(&stdout)
     {

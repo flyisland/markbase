@@ -5,6 +5,8 @@ pub mod translator;
 
 use std::path::Path;
 
+use crate::output::{OutputValue, render_markdown_table, render_yaml_records};
+
 pub use executor::{execute_query, translate_query};
 
 pub fn output_results(
@@ -24,16 +26,50 @@ pub fn output_results(
         results.to_vec()
     };
 
-    if results.is_empty() {
-        println!("No results found.");
-        return Ok(());
+    print!("{}", format_results(&results, format, field_names));
+    Ok(())
+}
+
+fn format_results(results: &[Vec<String>], format: &str, field_names: &[String]) -> String {
+    let rows = to_output_rows(results);
+    match format {
+        "list" | "List" => render_yaml_records(field_names, &rows),
+        _ => render_markdown_table(field_names, &rows),
+    }
+}
+
+fn to_output_rows(results: &[Vec<String>]) -> Vec<Vec<OutputValue>> {
+    results
+        .iter()
+        .map(|row| row.iter().map(|value| parse_output_value(value)).collect())
+        .collect()
+}
+
+fn parse_output_value(value: &str) -> OutputValue {
+    if let Some(items) = parse_array_list(value) {
+        OutputValue::List(items)
+    } else {
+        OutputValue::Scalar(value.to_string())
+    }
+}
+
+fn parse_array_list(value: &str) -> Option<Vec<String>> {
+    let trimmed = value.trim();
+    if !trimmed.starts_with('[') || !trimmed.ends_with(']') {
+        return None;
     }
 
-    match format {
-        "json" | "Json" => output_json(&results, field_names),
-        "list" | "List" => output_list(&results, field_names),
-        _ => output_table(&results, field_names),
+    let inner = &trimmed[1..trimmed.len() - 1];
+    if inner.trim().is_empty() {
+        return Some(vec![]);
     }
+
+    Some(
+        inner
+            .split(',')
+            .map(|item| item.trim().trim_matches('"').to_string())
+            .collect(),
+    )
 }
 
 fn convert_to_absolute_paths(
@@ -48,8 +84,6 @@ fn convert_to_absolute_paths(
                 .enumerate()
                 .map(|(i, value)| {
                     let name = field_names.get(i).map_or("", |s| s.as_str());
-                    // Only convert file.path and file.folder (database file properties)
-                    // Bare 'path' and 'folder' are frontmatter fields, not file paths
                     if name == "file.path" || name == "file.folder" {
                         let abs = base_dir.join(value);
                         abs.to_string_lossy().to_string()
@@ -60,117 +94,6 @@ fn convert_to_absolute_paths(
                 .collect()
         })
         .collect()
-}
-
-fn output_json(
-    results: &[Vec<String>],
-    field_names: &[String],
-) -> Result<(), Box<dyn std::error::Error>> {
-    let json_results: Vec<serde_json::Value> = results
-        .iter()
-        .map(|row| {
-            let obj: serde_json::Map<String, serde_json::Value> = row
-                .iter()
-                .enumerate()
-                .map(|(i, v)| {
-                    let name = field_names
-                        .get(i)
-                        .map_or_else(|| format!("col{}", i), |name| name.clone());
-                    (name, serde_json::Value::String(v.clone()))
-                })
-                .collect();
-            serde_json::Value::Object(obj)
-        })
-        .collect();
-
-    let output = serde_json::json!({
-        "metadata": {
-            "count": results.len()
-        },
-        "results": json_results
-    });
-
-    println!("{}", serde_json::to_string_pretty(&output)?);
-    Ok(())
-}
-
-fn output_list(
-    results: &[Vec<String>],
-    field_names: &[String],
-) -> Result<(), Box<dyn std::error::Error>> {
-    for row in results {
-        for (i, col) in row.iter().enumerate() {
-            let name = field_names
-                .get(i)
-                .map_or_else(|| format!("col{}", i), |name| name.clone());
-            println!("{}: {}", name, col);
-        }
-        println!("---");
-    }
-    println!("\n{} results", results.len());
-    Ok(())
-}
-
-fn output_table(
-    results: &[Vec<String>],
-    field_names: &[String],
-) -> Result<(), Box<dyn std::error::Error>> {
-    if results.is_empty() {
-        return Ok(());
-    }
-
-    let col_count = results[0].len();
-    let display_names: Vec<String> = (0..col_count)
-        .map(|i| {
-            field_names
-                .get(i)
-                .cloned()
-                .unwrap_or_else(|| format!("col{}", i))
-        })
-        .collect();
-
-    let col_widths: Vec<usize> = (0..col_count)
-        .map(|i| {
-            let name_width = display_names[i].len();
-            let data_width = results
-                .iter()
-                .map(|row| row.get(i).map_or(0, |s| s.len()))
-                .max()
-                .unwrap_or(0);
-            name_width.max(data_width).max(10)
-        })
-        .collect();
-
-    let header_cells: Vec<String> = display_names
-        .iter()
-        .enumerate()
-        .map(|(i, name)| format!("{:<width$}", name, width = col_widths[i]))
-        .collect();
-    println!("{}", header_cells.join(" | "));
-
-    let separator: String = col_widths
-        .iter()
-        .map(|w| "-".repeat(*w))
-        .collect::<Vec<_>>()
-        .join("-+-");
-    println!("{}", separator);
-
-    for row in results {
-        let cells: Vec<String> = row
-            .iter()
-            .enumerate()
-            .map(|(i, cell)| {
-                if i < col_widths.len() {
-                    format!("{:<width$}", cell, width = col_widths[i])
-                } else {
-                    cell.clone()
-                }
-            })
-            .collect();
-        println!("{}", cells.join(" | "));
-    }
-    println!("\n{} results", results.len());
-    Ok(())
 }
 
 #[cfg(test)]
@@ -189,17 +112,6 @@ mod tests {
     }
 
     #[test]
-    fn test_output_results_json() {
-        let results = vec![
-            vec!["path1".to_string(), "name1".to_string()],
-            vec!["path2".to_string(), "name2".to_string()],
-        ];
-        let fields = vec!["path".to_string(), "name".to_string()];
-        let result = output_results(&results, "json", &fields, None, false);
-        assert!(result.is_ok());
-    }
-
-    #[test]
     fn test_output_results_list() {
         let results = vec![
             vec!["path1".to_string(), "name1".to_string()],
@@ -211,54 +123,49 @@ mod tests {
     }
 
     #[test]
-    fn test_output_results_empty() {
+    fn test_output_results_empty_list() {
         let results: Vec<Vec<String>> = vec![];
         let fields = vec!["path".to_string()];
-        let result = output_results(&results, "table", &fields, None, false);
-        assert!(result.is_ok());
+        let output = format_results(&results, "list", &fields);
+        assert_eq!(output, "[]\n");
+    }
+
+    #[test]
+    fn test_output_results_empty_table() {
+        let results: Vec<Vec<String>> = vec![];
+        let fields = vec!["path".to_string()];
+        let output = format_results(&results, "table", &fields);
+        assert_eq!(output, "| path |\n| --- |\n");
     }
 
     #[test]
     fn test_output_results_default_to_table() {
         let results = vec![vec!["test".to_string()]];
         let fields = vec!["col0".to_string()];
-        let result = output_results(&results, "unknown_format", &fields, None, false);
-        assert!(result.is_ok());
+        let output = format_results(&results, "unknown_format", &fields);
+        assert_eq!(output, "| col0 |\n| --- |\n| test |\n");
     }
 
     #[test]
-    fn test_output_json_structure() {
-        let results = vec![vec!["val1".to_string(), "val2".to_string()]];
-        let fields = vec!["field1".to_string(), "field2".to_string()];
-        let result = output_json(&results, &fields);
-        assert!(result.is_ok());
+    fn test_output_list_structure_is_yaml() {
+        let results = vec![vec!["path".to_string(), "[tag1, tag2]".to_string()]];
+        let fields = vec!["path".to_string(), "tags".to_string()];
+        let output = format_results(&results, "list", &fields);
+        assert_eq!(output, "- path: path\n  tags:\n    - tag1\n    - tag2\n");
     }
 
     #[test]
-    fn test_output_list_structure() {
-        let results = vec![vec!["path".to_string(), "name".to_string()]];
-        let fields = vec!["path".to_string(), "name".to_string()];
-        let result = output_list(&results, &fields);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_output_table_calculates_widths() {
+    fn test_output_table_is_markdown() {
         let results = vec![
             vec!["short".to_string(), "longer_value".to_string()],
             vec!["a".to_string(), "b".to_string()],
         ];
         let fields = vec!["col1".to_string(), "col2".to_string()];
-        let result = output_table(&results, &fields);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_output_table_empty_results() {
-        let results: Vec<Vec<String>> = vec![];
-        let fields = vec!["path".to_string()];
-        let result = output_table(&results, &fields);
-        assert!(result.is_ok());
+        let output = format_results(&results, "table", &fields);
+        assert_eq!(
+            output,
+            "| col1 | col2 |\n| --- | --- |\n| short | longer_value |\n| a | b |\n"
+        );
     }
 
     #[test]
@@ -282,7 +189,7 @@ mod tests {
         ];
         let fields = vec!["path".to_string(), "name".to_string(), "tags".to_string()];
 
-        for format in &["table", "json", "list"] {
+        for format in &["table", "list"] {
             let result = output_results(&results, format, &fields, None, false);
             assert!(result.is_ok(), "Failed for format: {}", format);
         }
@@ -295,9 +202,10 @@ mod tests {
             vec!["notes/test.md".to_string(), "notes".to_string()],
             vec!["notes/other.md".to_string(), "notes".to_string()],
         ];
-        let fields = vec!["path".to_string(), "folder".to_string()];
+        let fields = vec!["file.path".to_string(), "file.folder".to_string()];
 
-        let result = output_results(&results, "table", &fields, Some(&base_dir), true);
-        assert!(result.is_ok());
+        let converted = convert_to_absolute_paths(&results, &fields, &base_dir);
+        assert_eq!(converted[0][0], "/base/notes/test.md");
+        assert_eq!(converted[0][1], "/base/notes");
     }
 }

@@ -3,6 +3,7 @@ mod creator;
 mod db;
 mod describe;
 mod extractor;
+mod output;
 mod query;
 mod renamer;
 mod renderer;
@@ -26,20 +27,12 @@ fn create_db(db_path: &std::path::Path) -> Result<Database, Box<dyn std::error::
 }
 
 const ENV_BASE_DIR: &str = "MARKBASE_BASE_DIR";
-const ENV_OUTPUT_FORMAT: &str = "MARKBASE_OUTPUT_FORMAT";
 
 // Build script generates the complete version string
 const VERSION: &str = env!("MARKBASE_VERSION");
 
-#[derive(Clone, ValueEnum, Debug, PartialEq)]
+#[derive(Clone, Copy, ValueEnum, Debug, PartialEq)]
 enum OutputFormat {
-    Table,
-    Json,
-    List,
-}
-
-#[derive(Clone, ValueEnum, Debug, PartialEq)]
-enum RenderOutputFormat {
     Table,
     List,
 }
@@ -50,7 +43,6 @@ impl std::str::FromStr for OutputFormat {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "table" => Ok(OutputFormat::Table),
-            "json" => Ok(OutputFormat::Json),
             "list" => Ok(OutputFormat::List),
             _ => Err(format!("Invalid output format: {}", s)),
         }
@@ -73,15 +65,6 @@ struct Cli {
         help = "Directory to index (default: .)"
     )]
     base_dir: Option<PathBuf>,
-
-    #[arg(
-        long = "output-format",
-        global = true,
-        env = ENV_OUTPUT_FORMAT,
-        help_heading = "Output",
-        help = "Output format: table, json, list"
-    )]
-    output_format: Option<OutputFormat>,
 }
 
 #[derive(Subcommand)]
@@ -142,7 +125,7 @@ enum NoteCommands {
         name: String,
 
         #[arg(short = 'o', help = "Output format: table (default) or list")]
-        format: Option<RenderOutputFormat>,
+        format: Option<OutputFormat>,
 
         #[arg(long = "dry-run", help = "Show SQL instead of executing queries")]
         dry_run: bool,
@@ -153,7 +136,7 @@ enum NoteCommands {
 enum TemplateCommands {
     #[command(about = "List all available templates")]
     List {
-        #[arg(short = 'o', help = "Output format (default: json)")]
+        #[arg(short = 'o', help = "Output format (default: table)")]
         format: Option<OutputFormat>,
     },
     #[command(about = "Show template content")]
@@ -183,29 +166,17 @@ fn get_base_dir_absolute_with_cli(cli_base_dir: Option<PathBuf>) -> Result<PathB
         .map_err(|e| format!("Failed to resolve base-dir '{}': {}", base.display(), e))
 }
 
-fn get_output_format(cli_format: Option<OutputFormat>) -> OutputFormat {
-    cli_format.unwrap_or_else(|| {
-        env::var(ENV_OUTPUT_FORMAT)
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(OutputFormat::Table)
-    })
+fn output_format_name(format: OutputFormat) -> &'static str {
+    match format {
+        OutputFormat::Table => "table",
+        OutputFormat::List => "list",
+    }
 }
 
-fn get_render_format(
-    command_format: Option<RenderOutputFormat>,
-    global_format: Option<OutputFormat>,
-) -> Result<renderer::RenderFormat, String> {
-    match command_format {
-        Some(RenderOutputFormat::List) => Ok(renderer::RenderFormat::List),
-        Some(RenderOutputFormat::Table) => Ok(renderer::RenderFormat::Table),
-        None => match global_format {
-            Some(OutputFormat::List) => Ok(renderer::RenderFormat::List),
-            Some(OutputFormat::Json) => Err(
-                "note render only supports 'table' or 'list'; 'json' is not available".to_string(),
-            ),
-            _ => Ok(renderer::RenderFormat::Table),
-        },
+fn to_render_format(format: OutputFormat) -> renderer::RenderFormat {
+    match format {
+        OutputFormat::Table => renderer::RenderFormat::Table,
+        OutputFormat::List => renderer::RenderFormat::List,
     }
 }
 
@@ -292,12 +263,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             abs_path,
             dry_run,
         } => {
-            let effective_format = get_output_format(format.or(cli.output_format));
-            let format_str = match effective_format {
-                OutputFormat::Table => "table",
-                OutputFormat::Json => "json",
-                OutputFormat::List => "list",
-            };
+            let effective_format = format.unwrap_or(OutputFormat::Table);
+            let format_str = output_format_name(effective_format);
 
             if dry_run {
                 let translated =
@@ -416,7 +383,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 check_db_exists(&db_path, &base_dir)?;
                 let db = open_db(&db_path)?;
 
-                let render_format = get_render_format(format, cli.output_format)?;
+                let render_format = to_render_format(format.unwrap_or(OutputFormat::Table));
                 let opts = renderer::RenderOptions {
                     format: render_format,
                     dry_run,
@@ -437,12 +404,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 let (field_names, results) =
                     query::execute_query(&db, Some(sql)).map_err(|e| e.to_string())?;
 
-                let effective_format = format.or(cli.output_format).unwrap_or(OutputFormat::Json);
-                let format_str = match effective_format {
-                    OutputFormat::Table => "table",
-                    OutputFormat::Json => "json",
-                    OutputFormat::List => "list",
-                };
+                let effective_format = format.unwrap_or(OutputFormat::Table);
+                let format_str = output_format_name(effective_format);
                 query::output_results(&results, format_str, &field_names, None, false)?;
             }
             TemplateCommands::Describe { name } => {
@@ -508,10 +471,10 @@ mod tests {
     }
 
     #[test]
-    fn test_output_format_option() {
-        let cli = Cli::parse_from(["markbase", "query", "name == 'test'", "-o", "json"]);
+    fn test_query_output_format_option() {
+        let cli = Cli::parse_from(["markbase", "query", "name == 'test'", "-o", "list"]);
         if let Commands::Query { format, .. } = cli.command {
-            assert_eq!(format, Some(OutputFormat::Json));
+            assert_eq!(format, Some(OutputFormat::List));
         } else {
             panic!("Expected Query command");
         }
@@ -521,7 +484,7 @@ mod tests {
     fn test_abs_path_option_default() {
         let cli = Cli::parse_from(["markbase", "query", "name == 'test'"]);
         if let Commands::Query { abs_path, .. } = cli.command {
-            assert_eq!(abs_path, false);
+            assert!(!abs_path);
         } else {
             panic!("Expected Query command");
         }
@@ -531,7 +494,7 @@ mod tests {
     fn test_abs_path_option_enabled() {
         let cli = Cli::parse_from(["markbase", "query", "name == 'test'", "--abs-path"]);
         if let Commands::Query { abs_path, .. } = cli.command {
-            assert_eq!(abs_path, true);
+            assert!(abs_path);
         } else {
             panic!("Expected Query command");
         }
@@ -541,7 +504,7 @@ mod tests {
     fn test_dry_run_option() {
         let cli = Cli::parse_from(["markbase", "query", "name == 'test'", "--dry-run"]);
         if let Commands::Query { dry_run, .. } = cli.command {
-            assert_eq!(dry_run, true);
+            assert!(dry_run);
         } else {
             panic!("Expected Query command");
         }
@@ -596,16 +559,33 @@ mod tests {
     }
 
     #[test]
+    fn test_note_render_output_format_option() {
+        let cli = Cli::parse_from(["markbase", "note", "render", "demo", "-o", "list"]);
+        if let Commands::Note { command } = cli.command {
+            match command {
+                NoteCommands::Render { format, .. } => {
+                    assert_eq!(format, Some(OutputFormat::List));
+                }
+                _ => panic!("Expected Render command"),
+            }
+        } else {
+            panic!("Expected Note command");
+        }
+    }
+
+    #[test]
+    fn test_note_render_rejects_json_option() {
+        let result = Cli::try_parse_from(["markbase", "note", "render", "demo", "-o", "json"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_template_list_command() {
         let cli = Cli::parse_from(["markbase", "template", "list"]);
         if let Commands::Template { command } = cli.command {
             match command {
-                TemplateCommands::List { format } => {
-                    assert_eq!(format, None);
-                }
-                TemplateCommands::Describe { .. } => {
-                    panic!("Expected List command, got Describe");
-                }
+                TemplateCommands::List { format } => assert_eq!(format, None),
+                TemplateCommands::Describe { .. } => panic!("Expected List command, got Describe"),
             }
         } else {
             panic!("Expected Template command");
@@ -614,15 +594,11 @@ mod tests {
 
     #[test]
     fn test_template_list_with_output_format() {
-        let cli = Cli::parse_from(["markbase", "template", "list", "-o", "json"]);
+        let cli = Cli::parse_from(["markbase", "template", "list", "-o", "list"]);
         if let Commands::Template { command } = cli.command {
             match command {
-                TemplateCommands::List { format } => {
-                    assert_eq!(format, Some(OutputFormat::Json));
-                }
-                TemplateCommands::Describe { .. } => {
-                    panic!("Expected List command, got Describe");
-                }
+                TemplateCommands::List { format } => assert_eq!(format, Some(OutputFormat::List)),
+                TemplateCommands::Describe { .. } => panic!("Expected List command, got Describe"),
             }
         } else {
             panic!("Expected Template command");
@@ -634,103 +610,11 @@ mod tests {
         let cli = Cli::parse_from(["markbase", "template", "describe", "daily"]);
         if let Commands::Template { command } = cli.command {
             match command {
-                TemplateCommands::List { .. } => {
-                    panic!("Expected Describe command, got List");
-                }
-                TemplateCommands::Describe { name } => {
-                    assert_eq!(name, "daily");
-                }
+                TemplateCommands::List { .. } => panic!("Expected Describe command, got List"),
+                TemplateCommands::Describe { name } => assert_eq!(name, "daily"),
             }
         } else {
             panic!("Expected Template command");
         }
-    }
-
-    #[test]
-    fn test_global_output_format() {
-        let cli = Cli::parse_from([
-            "markbase",
-            "--output-format",
-            "json",
-            "query",
-            "name == 'test'",
-        ]);
-        assert_eq!(cli.output_format, Some(OutputFormat::Json));
-    }
-
-    #[test]
-    fn test_query_format_overrides_global() {
-        let cli = Cli::parse_from([
-            "markbase",
-            "--output-format",
-            "json",
-            "query",
-            "name == 'test'",
-            "-o",
-            "list",
-        ]);
-        if let Commands::Query { format, .. } = cli.command {
-            assert_eq!(format, Some(OutputFormat::List));
-        } else {
-            panic!("Expected Query command");
-        }
-    }
-
-    #[test]
-    fn test_template_list_format_overrides_global() {
-        let cli = Cli::parse_from([
-            "markbase",
-            "--output-format",
-            "table",
-            "template",
-            "list",
-            "-o",
-            "json",
-        ]);
-        if let Commands::Template { command } = cli.command {
-            match command {
-                TemplateCommands::List { format, .. } => {
-                    assert_eq!(format, Some(OutputFormat::Json));
-                }
-                _ => panic!("Expected List command"),
-            }
-        } else {
-            panic!("Expected Template command");
-        }
-    }
-
-    #[test]
-    fn test_render_format_defaults_to_table() {
-        assert_eq!(
-            get_render_format(None, None).unwrap(),
-            renderer::RenderFormat::Table
-        );
-        assert_eq!(
-            get_render_format(None, Some(OutputFormat::List)).unwrap(),
-            renderer::RenderFormat::List
-        );
-    }
-
-    #[test]
-    fn test_render_format_command_overrides_global() {
-        assert_eq!(
-            get_render_format(Some(RenderOutputFormat::List), Some(OutputFormat::Table),).unwrap(),
-            renderer::RenderFormat::List
-        );
-        assert_eq!(
-            get_render_format(Some(RenderOutputFormat::Table), Some(OutputFormat::List),).unwrap(),
-            renderer::RenderFormat::Table
-        );
-    }
-
-    #[test]
-    fn test_render_format_rejects_global_json() {
-        assert!(get_render_format(None, Some(OutputFormat::Json)).is_err());
-    }
-
-    #[test]
-    fn test_note_render_rejects_json_option() {
-        let result = Cli::try_parse_from(["markbase", "note", "render", "demo", "-o", "json"]);
-        assert!(result.is_err());
     }
 }
