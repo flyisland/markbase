@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-03-08
+
+### Changed
+
+- **Verify diagnostics for agents** - `markbase note verify` now includes `file.path` in the verification header so agents can identify the exact file being checked.
+- **Global description repair hints** - Global `description` warnings now print a structured `Definition:` line with the required type, non-empty constraint, and the spec-aligned guidance `一句话说明这个 note 是什么`.
+
 ## [0.5.0] - 2026-03-08
 
 ### Changed

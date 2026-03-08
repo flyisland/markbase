@@ -1622,7 +1622,20 @@ fn test_note_verify_no_templates_reports_description_warning_first() {
     assert_cli_error(&output);
     assert!(stderr_contains(
         &output,
+        "Verifying note 'test-note' (file.path: test-note.md) against template(s):"
+    ));
+    assert!(stderr_contains(
+        &output,
         "missing global field 'description'"
+    ));
+    assert!(stderr_contains(&output, "→ Definition:"));
+    assert!(stderr_contains(&output, "scope=global"));
+    assert!(stderr_contains(&output, "required=true"));
+    assert!(stderr_contains(&output, "type=text"));
+    assert!(stderr_contains(&output, "nonempty=true"));
+    assert!(stderr_contains(
+        &output,
+        "description=\"一句话说明这个 note 是什么\""
     ));
     assert!(stderr_contains(&output, "no 'templates'"));
 }
@@ -1699,7 +1712,13 @@ description:
     assert_cli_success(&output);
     assert!(stderr_contains(
         &output,
-        "non-string global field 'description'"
+        "invalid global field 'description'. Expected non-empty text, got 'unknown'"
+    ));
+    assert!(stderr_contains(&output, "→ Definition:"));
+    assert!(stderr_contains(&output, "scope=global"));
+    assert!(stderr_contains(
+        &output,
+        "description=\"一句话说明这个 note 是什么\""
     ));
 }
 

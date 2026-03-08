@@ -33,6 +33,7 @@ pub enum IssueLevel {
 }
 
 pub struct VerifyResult {
+    pub note_path: Option<String>,
     pub template_names: Vec<String>,
     pub issues: Vec<VerifyIssue>,
 }
@@ -58,22 +59,31 @@ impl VerifyResult {
 }
 
 fn check_global_description(name: &str, properties: &Value, issues: &mut Vec<VerifyIssue>) {
+    let field_definition = Some(global_description_definition());
+
     match properties.get("description") {
         None => issues.push(VerifyIssue {
             level: IssueLevel::Warn,
             message: format!("note '{}' is missing global field 'description'.", name),
-            field_definition: None,
+            field_definition: field_definition.clone(),
         }),
         Some(Value::String(value)) if value.trim().is_empty() => issues.push(VerifyIssue {
             level: IssueLevel::Warn,
             message: format!("note '{}' has empty global field 'description'.", name),
-            field_definition: None,
+            field_definition: field_definition.clone(),
         }),
         Some(Value::String(_)) => {}
         Some(_) => issues.push(VerifyIssue {
             level: IssueLevel::Warn,
-            message: format!("note '{}' has non-string global field 'description'.", name),
-            field_definition: None,
+            message: format!(
+                "note '{}' has invalid global field 'description'. Expected non-empty text, got '{}'.",
+                name,
+                properties
+                    .get("description")
+                    .map(get_actual_type)
+                    .unwrap_or("null")
+            ),
+            field_definition,
         }),
     }
 }
@@ -93,6 +103,7 @@ pub fn verify_note(
             field_definition: None,
         });
         return Ok(VerifyResult {
+            note_path: None,
             template_names: vec![],
             issues,
         });
@@ -105,12 +116,19 @@ pub fn verify_note(
             field_definition: None,
         });
         return Ok(VerifyResult {
+            note_path: None,
             template_names: vec![],
             issues,
         });
     }
 
     let note = &notes[0];
+    let note_path_value = note.path.clone();
+    let make_result = |template_names: Vec<String>, issues: Vec<VerifyIssue>| VerifyResult {
+        note_path: Some(note_path_value.clone()),
+        template_names,
+        issues,
+    };
     let folder = note.folder.clone();
     let properties = note.properties.clone();
     let note_path = base_dir.join(&note.path);
@@ -131,10 +149,7 @@ pub fn verify_note(
                 ),
                 field_definition: None,
             });
-            return Ok(VerifyResult {
-                template_names: vec![],
-                issues,
-            });
+            return Ok(make_result(vec![], issues));
         }
     };
 
@@ -151,10 +166,7 @@ pub fn verify_note(
                     ),
                     field_definition: None,
                 });
-                return Ok(VerifyResult {
-                    template_names: vec![],
-                    issues,
-                });
+                return Ok(make_result(vec![], issues));
             }
         };
 
@@ -170,10 +182,7 @@ pub fn verify_note(
                     ),
                     field_definition: None,
                 });
-                return Ok(VerifyResult {
-                    template_names: vec![],
-                    issues,
-                });
+                return Ok(make_result(vec![], issues));
             }
         };
 
@@ -188,10 +197,7 @@ pub fn verify_note(
                 ),
                 field_definition: None,
             });
-            return Ok(VerifyResult {
-                template_names: vec![],
-                issues,
-            });
+            return Ok(make_result(vec![], issues));
         }
     }
 
@@ -204,10 +210,7 @@ pub fn verify_note(
             ),
             field_definition: None,
         });
-        return Ok(VerifyResult {
-            template_names: vec![],
-            issues,
-        });
+        return Ok(make_result(vec![], issues));
     }
 
     let mut all_schema_fields: std::collections::HashMap<String, SchemaFieldInfo> =
@@ -224,10 +227,7 @@ pub fn verify_note(
                 message: format!("template file 'templates/{}.md' not found.", template_name),
                 field_definition: None,
             });
-            return Ok(VerifyResult {
-                template_names: templates_with_schema,
-                issues,
-            });
+            return Ok(make_result(templates_with_schema, issues));
         }
 
         let content = match std::fs::read_to_string(&tmpl_path) {
@@ -242,10 +242,7 @@ pub fn verify_note(
                     ),
                     field_definition: None,
                 });
-                return Ok(VerifyResult {
-                    template_names: templates_with_schema,
-                    issues,
-                });
+                return Ok(make_result(templates_with_schema, issues));
             }
         };
 
@@ -542,10 +539,7 @@ pub fn verify_note(
 
     verify_embedded_bases(db, &extracted.embeds, &mut issues);
 
-    Ok(VerifyResult {
-        template_names: templates_with_schema,
-        issues,
-    })
+    Ok(make_result(templates_with_schema, issues))
 }
 
 #[derive(Clone)]
@@ -578,6 +572,10 @@ fn format_field_definition(field: &SchemaFieldInfo) -> String {
     }
 
     parts.join(", ")
+}
+
+fn global_description_definition() -> String {
+    "scope=global, required=true, type=text, nonempty=true, description=\"一句话说明这个 note 是什么\"".to_string()
 }
 
 fn check_type(val: &Value, expected_type: &str) -> bool {

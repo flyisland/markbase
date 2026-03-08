@@ -287,7 +287,7 @@ Checks that the note conforms to all constraints defined in its referenced MTS t
 - Field types and enum values are correct
 - Link fields point to notes of the expected `type`
 
-Warnings are reported to stderr. Exit code is non-zero only on errors (e.g. missing note or template file).
+Warnings are reported to stderr. For issue output, the header includes `file.path`, and each schema-related issue includes a compact `Definition:` line so agents can repair notes with the expected type/constraints. Exit code is non-zero only on errors (e.g. missing note or template file).
 
 **Render a note (expand .base embeds):**
 

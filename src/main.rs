@@ -355,8 +355,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
 
                 eprintln!(
-                    "Verifying note '{}' against template(s): {}\n",
-                    name, template_list
+                    "Verifying note '{}' (file.path: {}) against template(s): {}\n",
+                    name,
+                    result.note_path.as_deref().unwrap_or("<unknown>"),
+                    template_list
                 );
                 for issue in &result.issues {
                     let prefix = match issue.level {
