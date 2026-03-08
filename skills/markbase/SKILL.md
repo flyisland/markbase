@@ -47,6 +47,7 @@ markbase template list
 
 - `markbase query`, `markbase template list`, `markbase note resolve` → stdout is pure `json`; parse stdout only.
 - `markbase note render` → stdout is rendered Markdown; each expanded `.base` result appears inside a `json` fenced code block.
+- `markbase note new` → stdout is only the note path relative to `base-dir`; read the file separately when you need its content.
 - Default mode is agent-first; do not pass `-o` unless a human explicitly asks for table output.
 - Warnings and indexing summaries go to stderr.
 
@@ -80,8 +81,8 @@ Batch all required questions into one message.
 - Run Phase 2 for every mentioned entity before filling links.
 - Read the template with `markbase template describe <template-name>`.
 - Derive the filename from `_schema.filename.description` and confirm all required fields are fillable.
-- Create the skeleton once with `markbase note new <note-name> --template <template-name>` and save the returned path.
-- Fill the saved file path, then run `markbase note verify <note-name>`.
+- Create the skeleton once with `markbase note new <note-name> --template <template-name>` and save the returned relative path.
+- Read that file from disk, fill it in place, then run `markbase note verify <note-name>`.
 
 ### Phase 1 Rules
 

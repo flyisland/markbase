@@ -900,8 +900,8 @@ fn test_note_create_simple() {
 
     assert_cli_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("my-note.md"));
-    assert!(vault.path.join("my-note.md").exists());
+    assert_eq!(stdout.trim(), "inbox/my-note.md");
+    assert!(vault.path.join("inbox").join("my-note.md").exists());
 }
 
 #[test]
@@ -938,7 +938,8 @@ Date: {{date}}
 
     assert_cli_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("today") || stdout.contains("Date:"));
+    assert_eq!(stdout.trim(), "inbox/today.md");
+    assert!(vault.path.join("inbox").join("today.md").exists());
 }
 
 #[test]
@@ -948,6 +949,17 @@ fn test_note_create_invalid_template() {
     let output = vault.note_new_with_template("test", "nonexistent");
 
     assert_cli_error(&output);
+}
+
+#[test]
+fn test_note_create_rejects_directory_in_name() {
+    let vault = TestVault::new();
+
+    let output = vault.note_new("notes/my-note");
+
+    assert_cli_error(&output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("must not include directories"));
 }
 
 #[test]
@@ -1729,7 +1741,7 @@ fn test_note_create_simple_adds_default_description() {
     let output = vault.note_new("my-note");
 
     assert_cli_success(&output);
-    let content = std::fs::read_to_string(vault.path.join("my-note.md")).unwrap();
+    let content = std::fs::read_to_string(vault.path.join("inbox").join("my-note.md")).unwrap();
     assert!(content.contains("description: 临时笔记"));
 }
 
@@ -1754,7 +1766,7 @@ Date: {{date}}
     let output = vault.note_new_with_template("today", "daily");
 
     assert_cli_success(&output);
-    let content = std::fs::read_to_string(vault.path.join("today.md")).unwrap();
+    let content = std::fs::read_to_string(vault.path.join("inbox").join("today.md")).unwrap();
     assert!(content.contains("description:"));
     assert!(!content.contains("_schema"));
 }

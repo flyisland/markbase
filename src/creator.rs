@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::LazyLock;
 
 use regex::Regex;
@@ -15,7 +15,6 @@ static RE_DATETIME: LazyLock<Regex> =
 #[derive(Debug)]
 pub struct CreatedNote {
     pub path: PathBuf,
-    pub content: String,
 }
 
 pub fn create_note(
@@ -23,6 +22,8 @@ pub fn create_note(
     name: &str,
     template_name: Option<&str>,
 ) -> Result<CreatedNote, Box<dyn std::error::Error>> {
+    validate_note_name(name)?;
+
     let (content, location) = match template_name {
         Some(tmpl) => process_template_document(&TemplateDocument::load(base_dir, tmpl)?, name)?,
         None => (default_note_content()?, None),
@@ -33,23 +34,78 @@ pub fn create_note(
         let file_name = format!("{}.md", name);
         dir.join(&file_name)
     } else {
-        base_dir.join(format!("{}.md", name))
+        base_dir.join("inbox").join(format!("{}.md", name))
     };
 
-    if target_path.exists() {
-        return Err(format!("Note '{}' already exists", target_path.display()).into());
+    if let Some(existing_path) = find_existing_note_path(base_dir, name)? {
+        return Err(format!(
+            "Note '{}' already exists at '{}'",
+            name,
+            existing_path.display()
+        )
+        .into());
     }
 
     if let Some(parent) = target_path.parent() {
         fs::create_dir_all(parent)?;
     }
 
-    fs::write(&target_path, content.clone())?;
+    fs::write(&target_path, content)?;
 
-    Ok(CreatedNote {
-        path: target_path,
-        content,
-    })
+    Ok(CreatedNote { path: target_path })
+}
+
+fn validate_note_name(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let path = Path::new(name);
+
+    if name.is_empty() {
+        return Err("Note name cannot be empty".into());
+    }
+
+    if path
+        .components()
+        .any(|component| !matches!(component, Component::Normal(_)))
+        || path.components().count() != 1
+    {
+        return Err(format!(
+            "Invalid note name '{}': note name must not include directories",
+            name
+        )
+        .into());
+    }
+
+    Ok(())
+}
+
+fn find_existing_note_path(
+    base_dir: &Path,
+    name: &str,
+) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
+    for entry in walkdir::WalkDir::new(base_dir)
+        .follow_links(true)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+    {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        let file_stem = path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or("");
+        let file_name = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("");
+
+        if file_stem == name || file_name == name {
+            return Ok(Some(path.to_path_buf()));
+        }
+    }
+
+    Ok(None)
 }
 
 fn replace_template_variables(content: &str, name: &str) -> String {
@@ -206,11 +262,13 @@ mod tests {
         assert!(result.is_ok());
         let created = result.unwrap();
         assert!(created.path.exists());
+        assert_eq!(created.path.parent().unwrap(), test_dir.join("inbox"));
         assert_eq!(
             created.path.file_name().unwrap().to_str().unwrap(),
             "test-note.md"
         );
-        assert!(created.content.contains("description: 临时笔记"));
+        let content = fs::read_to_string(&created.path).unwrap();
+        assert!(content.contains("description: 临时笔记"));
 
         let _ = fs::remove_dir_all(&test_dir);
     }
@@ -245,9 +303,11 @@ mod tests {
         assert!(result.is_ok());
         let created = result.unwrap();
         assert!(created.path.exists());
-        assert!(created.content.contains("# today"));
-        assert!(created.content.contains("Date: "));
-        assert!(created.content.contains("description:"));
+        assert_eq!(created.path.parent().unwrap(), test_dir.join("inbox"));
+        let content = fs::read_to_string(&created.path).unwrap();
+        assert!(content.contains("# today"));
+        assert!(content.contains("Date: "));
+        assert!(content.contains("description:"));
 
         let _ = fs::remove_dir_all(&test_dir);
     }
@@ -262,6 +322,47 @@ mod tests {
         let result = create_note(&test_dir, "test", Some("nonexistent"));
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_create_note_rejects_path_like_name() {
+        let temp_dir = std::env::temp_dir();
+        let test_dir = temp_dir.join("mdb_test_invalid_name");
+        let _ = fs::remove_dir_all(&test_dir);
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let result = create_note(&test_dir, "notes/test-note", None);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("must not include directories")
+        );
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_create_note_with_template_location_uses_template_directory() {
+        let temp_dir = std::env::temp_dir();
+        let test_dir = temp_dir.join("mdb_test_template_location");
+        let _ = fs::remove_dir_all(&test_dir);
+
+        let tmpl_dir = test_dir.join("templates");
+        fs::create_dir_all(&tmpl_dir).unwrap();
+        fs::write(
+            tmpl_dir.join("customer.md"),
+            "---\n_schema:\n  location: customers/\n---\n# {{name}}",
+        )
+        .unwrap();
+
+        let result = create_note(&test_dir, "acme", Some("customer"));
+        assert!(result.is_ok());
+        let created = result.unwrap();
+        assert_eq!(created.path.parent().unwrap(), test_dir.join("customers"));
 
         let _ = fs::remove_dir_all(&test_dir);
     }

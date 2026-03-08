@@ -234,13 +234,17 @@ Create and manage notes.
 
 **Create a note:**
 
-Without a template, `markbase note new` creates a Markdown note with a default frontmatter field: `description: 临时笔记`.
+Without a template, `markbase note new` creates a Markdown note in `base-dir/inbox` with a default frontmatter field: `description: 临时笔记`.
 
 ```bash
-markbase note new my-note                    # Create in base-dir
-markbase note new notes/my-note              # Create in subdirectory
-markbase note new my-note --template daily   # Use template
+markbase note new my-note                    # Create in base-dir/inbox
+markbase note new my-note --template daily   # Create in base-dir/inbox if template has no location
+markbase note new customer --template company # Create in _schema.location if template defines one
 ```
+
+`name` must be a pure note name and cannot include directory components.
+
+On success, `markbase note new` prints only the note path relative to `base-dir`.
 
 **Rename a note:**
 

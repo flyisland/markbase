@@ -126,6 +126,7 @@ enum Commands {
 enum NoteCommands {
     #[command(about = "Create a new markdown note with optional template")]
     New {
+        #[arg(help = "Note name only (without directories or .md extension)")]
         name: String,
 
         #[arg(short, long)]
@@ -313,12 +314,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Note { command } => match command {
             NoteCommands::New { name, template } => {
                 let created = creator::create_note(&base_dir, &name, template.as_deref())?;
-                if template.is_some() {
-                    println!("path: {}", created.path.display());
-                    println!("content: {}", created.content);
-                } else {
-                    println!("Created: {}", created.path.display());
-                }
+                let relative_path = created
+                    .path
+                    .strip_prefix(&base_dir)
+                    .unwrap_or(created.path.as_path());
+                println!("{}", relative_path.display());
             }
             NoteCommands::Rename { old_name, new_name } => {
                 let result = renamer::rename_note(&base_dir, &old_name, &new_name)?;
