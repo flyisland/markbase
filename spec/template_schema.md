@@ -18,6 +18,16 @@ The schema serves three roles:
 
 For agent operational procedures (capture, entity alignment, knowledge consolidation), see `SKILL.md`.
 
+### Terminology Note: the three `description` keys
+
+This spec uses the word `description` in three different places. They are related, but they do **not** mean the same thing:
+
+1. **`_schema.description`** — template-level routing prompt. The Agent uses this to decide whether an information stream matches the template.
+2. **`_schema.properties.description`** — schema definition for the instance field named `description`.
+3. **Outer frontmatter `description`** — the actual one-line semantic summary stored on the instance note.
+
+When authoring templates, keep these three layers distinct. In particular, `_schema.description` does **not** replace `_schema.properties.description`, and neither of them replaces the instance frontmatter field `description`.
+
 ---
 
 ## Part I: Frontmatter Schema
@@ -67,14 +77,28 @@ _schema:
 
 ### 1.2 Required Instance Frontmatter
 
-Every instance file created from a template must include the following two fields. Both are defined in the outer frontmatter of the template (outside `_schema`) and are copied as-is by `markbase note new`:
+Every instance file created from a template must include the following fields. `type` and `templates` are defined in the outer frontmatter of the template (outside `_schema`) and are copied as-is by `markbase note new`. `description` is the instance-level semantic summary field and should also be present in the outer frontmatter schema contract.
 
 | Field           | Description | Example |
 | --------------- | ----------- | ------- |
 | **`type`**      | Entity type. Used for cross-template entity alignment queries (e.g. `note.type == 'company'`). | `type: company` |
 | **`templates`** | Internal link(s) to the template(s) used to create this file (`list` type, `format: link`). All templates live in the `templates/` directory. Each link element must be quoted. | `templates: ["[[company_customer]]"]` |
+| **`description`** | One-line semantic summary of what this note is. This is an instance field, not a routing prompt. | `description: 潜在客户，主营智能家居设备` |
 
-`type` enables cross-template entity queries. `templates` allows the Agent to look up the `_schema` definition when needed. The internal link format also lets Obsidian navigate directly to the template file.
+`type` enables cross-template entity queries. `templates` allows the Agent to look up the `_schema` definition when needed. The internal link format also lets Obsidian navigate directly to the template file. `description` gives the instance a low-cost semantic summary for alignment, verification, and default query output.
+
+To make the `description` field explicit in template constraints, templates should also define `_schema.properties.description`, for example:
+
+```yaml
+description: ""
+_schema:
+  properties:
+    description:
+      type: text
+      description: 一句话说明这个 note 是什么
+```
+
+For backward compatibility, markbase may auto-normalize older templates that omit this field-level schema, but new templates should declare it explicitly.
 
 ### 1.3 Schema Object
 

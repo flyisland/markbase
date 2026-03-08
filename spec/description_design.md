@@ -76,6 +76,8 @@ description: 一句话说明这个 note 是什么
 - 所有 Markdown note 必须具备该字段
 - 语义目标为非空、可辨识的字符串
 
+补充说明：在模板语境中，`description` 存在三个不同层次：`_schema.description`（模板路由提示）、`_schema.properties.description`（实例字段的 schema 定义）以及 outer frontmatter `description`（实例 note 的真实摘要字段）。三者不能互相替代。更完整定义见 `spec/template_schema.md`。
+
 ### 4.2 为什么一刀切要求所有 Markdown note
 
 选择“所有 Markdown note 都必须有 `description`”而不是“仅实体类模板要求”的原因：

@@ -354,7 +354,21 @@ markbase template list -o table   # Compact Markdown table
 markbase template describe daily  # Show normalized template content
 ```
 
-Templates are stored in `templates/` under base-dir. `template describe` shows the normalized template view used by the CLI, including auto-injected `description` schema/default fields when older templates omit them.
+Templates are stored in `templates/` under base-dir. `template describe` shows the normalized template view used by the CLI, including auto-injected `description` schema/default fields when older templates omit them. For new templates, prefer declaring all three `description` layers explicitly:
+
+```yaml
+description: ""
+_schema:
+  description: 用于匹配客户公司资料的模板
+  required:
+    - description
+  properties:
+    description:
+      type: text
+      description: 一句话说明这个 note 是什么
+```
+
+Here, outer frontmatter `description` is the instance note field, `_schema.description` is the template routing prompt, and `_schema.properties.description` is the schema definition for that instance field.
 
 ## Query Syntax
 
