@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-03-08
+
+### Added
+
+- **`note resolve` command** - Added agent-friendly entity alignment for one or more names with JSON output and match statuses: `exact`, `alias`, `multiple`, and `missing`.
+- **Description-aware matches** - Resolve results now include normalized `description` data alongside `name`, `path`, `type`, and `matched_by` to make disambiguation cheaper for agents.
+- **Implicit indexing for DB-backed commands** - Commands that rely on the DuckDB index now trigger indexing automatically before execution, reducing stale-query footguns.
+
+### Changed
+
+- **Render output defaults** - `markbase note render` now defaults to table output, and unsupported `json` output is rejected explicitly.
+- **Shared output rendering** - YAML list and Markdown table rendering paths now use unified formatting helpers for more consistent output.
+
+### Fixed
+
+- **Verification diagnostics** - `note verify` now reports field-definition context in warnings and detects missing embedded `.base` files.
+- **Version output** - Crates.io installs continue to show plain version output without git metadata, while git builds retain SHA and timestamp details.
+
 ## [0.3.2] - 2026-03-06
 
 ### Fixed
@@ -101,6 +119,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Note renaming with link updates
 - Multiple output formats (table, json, list)
 
+[0.4.0]: https://github.com/flyisland/markbase/compare/0.3.2...0.4.0
 [0.3.2]: https://github.com/flyisland/markbase/compare/0.3.1...0.3.2
 [0.3.1]: https://github.com/flyisland/markbase/compare/0.3.0...0.3.1
 [0.3.0]: https://github.com/flyisland/markbase/compare/0.2.0...0.3.0
