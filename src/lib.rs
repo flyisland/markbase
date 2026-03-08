@@ -8,4 +8,5 @@ pub mod query;
 pub mod renderer;
 pub mod resolver;
 pub mod scanner;
+pub mod template;
 pub mod verifier;

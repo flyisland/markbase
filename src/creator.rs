@@ -1,12 +1,10 @@
-use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
-use gray_matter::Matter;
-use gray_matter::engine::YAML;
 use regex::Regex;
-use serde_json::Value;
+
+use crate::template::{TemplateDocument, default_note_content};
 
 static RE_NAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\{\{\s*name\s*\}\}").unwrap());
 static RE_DATE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\{\{\s*date\s*\}\}").unwrap());
@@ -25,23 +23,9 @@ pub fn create_note(
     name: &str,
     template_name: Option<&str>,
 ) -> Result<CreatedNote, Box<dyn std::error::Error>> {
-    let template_dir = base_dir.join("templates");
-
     let (content, location) = match template_name {
-        Some(tmpl) => {
-            let template_path = template_dir.join(format!("{}.md", tmpl));
-            if !template_path.exists() {
-                return Err(format!(
-                    "Template '{}' not found at '{}'",
-                    tmpl,
-                    template_path.display()
-                )
-                .into());
-            }
-            let tmpl_content = fs::read_to_string(&template_path)?;
-            process_template(&tmpl_content, name)?
-        }
-        None => (String::new(), None),
+        Some(tmpl) => process_template_document(&TemplateDocument::load(base_dir, tmpl)?, name)?,
+        None => (default_note_content()?, None),
     };
 
     let target_path = if let Some(loc) = location {
@@ -77,81 +61,23 @@ fn replace_template_variables(content: &str, name: &str) -> String {
     RE_DATETIME.replace_all(&result, &now.datetime).to_string()
 }
 
+fn process_template_document(
+    template: &TemplateDocument,
+    name: &str,
+) -> Result<(String, Option<String>), Box<dyn std::error::Error>> {
+    let content = template.render_for_instance()?;
+    Ok((
+        replace_template_variables(&content, name),
+        template.location().map(ToString::to_string),
+    ))
+}
+
+#[cfg(test)]
 fn process_template(
     content: &str,
     name: &str,
 ) -> Result<(String, Option<String>), Box<dyn std::error::Error>> {
-    let matter = Matter::<YAML>::new();
-
-    match matter.parse::<Value>(content) {
-        Ok(parsed) => {
-            let frontmatter = parsed.data;
-            let body = parsed.content;
-
-            let mut outer_fields: HashMap<String, String> = HashMap::new();
-            let mut location: Option<String> = None;
-
-            if let Some(fm) = frontmatter
-                && let Some(obj) = fm.as_object()
-            {
-                for (key, value) in obj.iter() {
-                    if key == "_schema" {
-                        if let Some(schema_obj) = value.as_object()
-                            && let Some(loc_val) = schema_obj.get("location")
-                            && let Value::String(loc) = loc_val
-                        {
-                            location = Some(loc.clone());
-                        }
-                        continue;
-                    }
-                    let val_str = match value {
-                        Value::String(s) => s.clone(),
-                        other => other.to_string(),
-                    };
-                    outer_fields.insert(key.clone(), val_str);
-                }
-            }
-
-            let skeleton_frontmatter = build_skeleton_frontmatter(&outer_fields);
-
-            let final_content = if skeleton_frontmatter.is_empty() {
-                body.to_string()
-            } else {
-                format!("---\n{}---\n\n{}", skeleton_frontmatter, body)
-            };
-
-            Ok((replace_template_variables(&final_content, name), location))
-        }
-        Err(_) => Ok((replace_template_variables(content, name), None)),
-    }
-}
-
-fn build_skeleton_frontmatter(outer_fields: &HashMap<String, String>) -> String {
-    if outer_fields.is_empty() {
-        return String::new();
-    }
-
-    let mut lines = Vec::new();
-    for (key, value) in outer_fields.iter() {
-        if value.contains('\n') {
-            lines.push(format!("{}: |", key));
-            for line in value.lines() {
-                lines.push(format!("  {}", line));
-            }
-        } else if value.contains(':')
-            || value.contains('#')
-            || value.starts_with('"')
-            || value.starts_with('\'')
-        {
-            lines.push(format!("{}: '{}'", key, value.replace('\'', "''")));
-        } else {
-            lines.push(format!("{}: {}", key, value));
-        }
-    }
-
-    let mut result = lines.join("\n");
-    result.push('\n');
-    result
+    process_template_document(&TemplateDocument::from_content(content), name)
 }
 
 fn chrono_lite_now() -> ChronoLite {
@@ -284,7 +210,7 @@ mod tests {
             created.path.file_name().unwrap().to_str().unwrap(),
             "test-note.md"
         );
-        assert!(created.content.is_empty());
+        assert!(created.content.contains("description: 临时笔记"));
 
         let _ = fs::remove_dir_all(&test_dir);
     }
@@ -321,6 +247,7 @@ mod tests {
         assert!(created.path.exists());
         assert!(created.content.contains("# today"));
         assert!(created.content.contains("Date: "));
+        assert!(created.content.contains("description:"));
 
         let _ = fs::remove_dir_all(&test_dir);
     }
@@ -362,6 +289,7 @@ _schema:
         assert!(!result.contains("_schema"));
         assert!(result.contains("type: company"));
         assert!(result.contains("template: company_customer"));
+        assert!(result.contains("description:"));
     }
 
     #[test]
@@ -386,6 +314,7 @@ age: 30
         let (result, _) = process_template(content, "world").unwrap();
         assert!(result.contains("# Hello world"));
         assert!(result.contains("Some content"));
+        assert!(result.contains("description:"));
     }
 
     #[test]
@@ -411,6 +340,7 @@ aliases: []
         assert!(result.starts_with("---\n"));
         assert!(result.contains("type: person\n"));
         assert!(result.contains("template: person_work\n"));
+        assert!(result.contains("description:"));
         assert!(result.contains("---\n\n# Body"));
     }
 

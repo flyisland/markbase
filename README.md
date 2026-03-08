@@ -173,6 +173,8 @@ markbase query "SELECT file.path, note.author FROM notes WHERE note.author = 'To
 `file.backlinks` is empty unless backlinks computation is enabled with
 `--compute-backlinks` or `MARKBASE_COMPUTE_BACKLINKS`.
 
+Default columns for empty input or expression mode: `file.path`, `file.name`, `description`, `file.mtime`, `file.size`, `file.tags`.
+
 **Output formats:**
 - `-o table` renders compact Markdown tables
 - `-o list` renders YAML lists
@@ -230,6 +232,8 @@ Create and manage notes.
 
 **Create a note:**
 
+Without a template, `markbase note new` creates a Markdown note with a default frontmatter field: `description: 临时笔记`.
+
 ```bash
 markbase note new my-note                    # Create in base-dir
 markbase note new notes/my-note              # Create in subdirectory
@@ -264,7 +268,9 @@ Statuses:
 - `multiple` — more than one candidate matched; disambiguate before linking
 - `missing` — no matching note or alias found
 
-Each match includes `name`, `path`, `type`, and `matched_by`.
+Each match includes `name`, `path`, `type`, `description`, and `matched_by`. Missing descriptions are emitted as `null`, not omitted.
+
+A single `exact` or `alias` match is still only a low-cost alignment hint: compare `description` and context before reusing the note. If the description is clearly about a different thing, prefer creating a new note instead of forcing reuse.
 
 **Verify a note against its template schema:**
 
@@ -272,7 +278,8 @@ Each match includes `name`, `path`, `type`, and `matched_by`.
 markbase note verify <name>
 ```
 
-Checks that the note conforms to all constraints defined in its referenced MTS template(s):
+Checks that the note conforms to all constraints defined in its referenced MTS template(s), and also runs a global `description` check before template validation:
+- Global frontmatter `description` exists, is a string, and is not blank (reported as WARN)
 - Directory location matches `_schema.location`
 - Required frontmatter fields are present
 - Field types and enum values are correct
@@ -336,10 +343,10 @@ Manage MTS templates.
 ```bash
 markbase template list            # Compact Markdown table (default)
 markbase template list -o list    # YAML list format
-markbase template describe daily  # Show template content
+markbase template describe daily  # Show normalized template content
 ```
 
-Templates are stored in `templates/` under base-dir.
+Templates are stored in `templates/` under base-dir. `template describe` shows the normalized template view used by the CLI, including auto-injected `description` schema/default fields when older templates omit them.
 
 ## Query Syntax
 

@@ -133,7 +133,9 @@ const SQL_KEYWORDS: &[&str] = &[
 ];
 
 fn build_default_select() -> String {
-    let sql = translate("SELECT file.path, file.name, file.mtime, file.size, file.tags FROM notes");
+    let sql = translate(
+        "SELECT file.path, file.name, description, file.mtime, file.size, file.tags FROM notes",
+    );
     normalize_sql(&sql)
 }
 
@@ -604,6 +606,7 @@ mod tests {
         // Default fields should have file.* aliases
         assert!(sql.contains(r#"path AS "file.path""#));
         assert!(sql.contains(r#"name AS "file.name""#));
+        assert!(sql.contains(r#"AS "description""#));
         assert!(sql.contains(r#"mtime AS "file.mtime""#));
         assert!(sql.contains(r#"size AS "file.size""#));
         assert!(sql.contains(r#"tags AS "file.tags""#));
@@ -620,6 +623,7 @@ mod tests {
         // Default fields should have file.* aliases
         assert!(sql.contains(r#"path AS "file.path""#));
         assert!(sql.contains(r#"name AS "file.name""#));
+        assert!(sql.contains(r#"AS "description""#));
         assert!(sql.contains("FROM notes"));
         assert!(sql.contains("WHERE"));
         assert!(sql.contains("author"));

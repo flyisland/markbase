@@ -349,3 +349,25 @@ fn test_query_not_equal() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(!stdout.contains("readme") || stdout.matches("readme").count() < 4);
 }
+
+#[test]
+fn test_query_default_output_includes_description() {
+    let vault = TestVault::new();
+    vault.create_note(
+        "test",
+        r#"---
+description: Test description
+---
+
+# Test
+"#,
+    );
+    vault.index();
+
+    let output = vault.query("file.name == 'test'");
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("description"));
+    assert!(stdout.contains("Test description"));
+}

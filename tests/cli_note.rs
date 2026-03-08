@@ -296,6 +296,7 @@ type: simple
         r#"---
 templates: ["[[simple_template]]"]
 type: simple
+description: Test note
 ---
 
 # Test
@@ -528,6 +529,7 @@ _schema:
         r#"---
 templates: ["[[event]]"]
 type: event
+description: Holiday event
 date: "2024-12-25"
 ---
 
@@ -874,6 +876,7 @@ _schema:
         r#"---
 templates: ["[[task]]"]
 type: task
+description: Task note
 tags: [todo, important, extra-tag]
 ---
 
@@ -1606,4 +1609,178 @@ aliases: ["阿里"]
     assert_eq!(json.as_array().unwrap().len(), 2);
     assert_eq!(json[0]["status"], "exact");
     assert_eq!(json[1]["status"], "missing");
+}
+
+#[test]
+fn test_note_verify_no_templates_reports_description_warning_first() {
+    let vault = TestVault::new();
+    vault.create_note("test-note", "# Test Note");
+    vault.index();
+
+    let output = vault.note_verify("test-note");
+
+    assert_cli_error(&output);
+    assert!(stderr_contains(
+        &output,
+        "missing global field 'description'"
+    ));
+    assert!(stderr_contains(&output, "no 'templates'"));
+}
+
+#[test]
+fn test_note_verify_empty_description_warns() {
+    let vault = TestVault::new();
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company_customer.md"),
+        r#"---
+type: company
+_schema:
+  required: [description]
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "acme",
+        r#"---
+templates: ["[[company_customer]]"]
+type: company
+description: ""
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("acme");
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(&output, "empty global field 'description'"));
+}
+
+#[test]
+fn test_note_verify_non_string_description_warns() {
+    let vault = TestVault::new();
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company_customer.md"),
+        r#"---
+type: company
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "acme",
+        r#"---
+templates: ["[[company_customer]]"]
+type: company
+description:
+  nested: true
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("acme");
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(
+        &output,
+        "non-string global field 'description'"
+    ));
+}
+
+#[test]
+fn test_note_create_simple_adds_default_description() {
+    let vault = TestVault::new();
+
+    let output = vault.note_new("my-note");
+
+    assert_cli_success(&output);
+    let content = std::fs::read_to_string(vault.path.join("my-note.md")).unwrap();
+    assert!(content.contains("description: 临时笔记"));
+}
+
+#[test]
+fn test_note_create_with_template_adds_description_when_template_omits_it() {
+    let vault = TestVault::new();
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("daily.md"),
+        r#"---
+template: daily
+---
+
+# {{name}}
+Date: {{date}}
+"#,
+    )
+    .unwrap();
+    vault.index();
+
+    let output = vault.note_new_with_template("today", "daily");
+
+    assert_cli_success(&output);
+    let content = std::fs::read_to_string(vault.path.join("today.md")).unwrap();
+    assert!(content.contains("description:"));
+    assert!(!content.contains("_schema"));
+}
+
+#[test]
+fn test_note_resolve_includes_description() {
+    let vault = TestVault::new();
+    vault.create_note(
+        "acme",
+        r#"---
+type: company
+description: Smart home customer
+aliases: ["ACME Corp"]
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_resolve(&["acme"]);
+
+    assert_cli_success(&output);
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json[0]["matches"][0]["description"], "Smart home customer");
+}
+
+#[test]
+fn test_note_resolve_missing_description_returns_null() {
+    let vault = TestVault::new();
+    vault.create_note(
+        "acme",
+        r#"---
+type: company
+aliases: ["ACME Corp"]
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_resolve(&["acme"]);
+
+    assert_cli_success(&output);
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(json[0]["matches"][0]["description"].is_null());
 }

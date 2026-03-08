@@ -57,6 +57,27 @@ impl VerifyResult {
     }
 }
 
+fn check_global_description(name: &str, properties: &Value, issues: &mut Vec<VerifyIssue>) {
+    match properties.get("description") {
+        None => issues.push(VerifyIssue {
+            level: IssueLevel::Warn,
+            message: format!("note '{}' is missing global field 'description'.", name),
+            field_definition: None,
+        }),
+        Some(Value::String(value)) if value.trim().is_empty() => issues.push(VerifyIssue {
+            level: IssueLevel::Warn,
+            message: format!("note '{}' has empty global field 'description'.", name),
+            field_definition: None,
+        }),
+        Some(Value::String(_)) => {}
+        Some(_) => issues.push(VerifyIssue {
+            level: IssueLevel::Warn,
+            message: format!("note '{}' has non-string global field 'description'.", name),
+            field_definition: None,
+        }),
+    }
+}
+
 pub fn verify_note(
     base_dir: &Path,
     db: &Database,
@@ -96,6 +117,7 @@ pub fn verify_note(
     let note_content = std::fs::read_to_string(&note_path)
         .map_err(|e| format!("failed to read note file '{}': {}", note_path.display(), e))?;
     let extracted = Extractor::extract(&note_content);
+    check_global_description(name, &properties, &mut issues);
 
     let templates_val = properties.get("templates");
     let templates_arr = match templates_val {

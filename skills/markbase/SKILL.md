@@ -63,7 +63,7 @@ Load each template's `name`, `path`, `_schema.description` into context. If `tem
 | `verify` shows any error | Yes | This is a hard blocker. |
 | `resolve` returns `status: "missing"` during Phase 1 | No | Create via Phase 1, or write `[?[dangling-note-name]]` if deferred. Default `dangling-note-name` to the original mention / query. Use a different name only when the surrounding context already states a more reliable target name. |
 | `resolve` returns `status: "missing"` during Phase 1.5 | No | Keep `[?[dangling-note-name]]`; Phase 1.5 never creates notes. Default `dangling-note-name` to the original mention / query. Use a different name only when the surrounding context already states a more reliable target name. |
-| `resolve` returns `status: "exact"` or `status: "alias"` | No | Continue with the resolved note name. |
+| `resolve` returns `status: "exact"` or `status: "alias"` | No | First compare `type`, `description`, and context. Reuse only when they still point to the same entity; if `description` is clearly about something else, create a new note instead of forcing reuse. |
 
 **Question batching:** if more than one row above requires a question, ask all questions in one message.
 
@@ -154,12 +154,14 @@ Minimal output shape:
         "name": "张伟-person",
         "path": "people/张伟-person.md",
         "type": "person",
+        "description": "某业务线联系人",
         "matched_by": "alias"
       },
       {
         "name": "张伟-绿米",
         "path": "people/张伟-绿米.md",
         "type": "person",
+        "description": "绿米合作接口人",
         "matched_by": "alias"
       }
     ]
@@ -171,14 +173,15 @@ Decision table by `status`:
 
 | `status`    | Action                                                                                                 |
 | ----------- | ------------------------------------------------------------------------------------------------------ |
-| `exact`     | One note matched by `file.name`. Use the resolved note name directly as `[[note-name]]`. If `type` differs from expectation, adjust the filename only when creating a new note. |
-| `alias`     | One note matched by `aliases`. Use the returned matched note name for the wiki-link, not the raw query string. |
+| `exact`     | One note matched by `file.name`. Still compare `type`, `description`, and context before reuse. If `description` is clearly about a different thing, do not force reuse; create a new note or ask only if needed. |
+| `alias`     | One note matched by `aliases`. Use the returned matched note name only after checking that `description` and context still fit the target entity. |
 | `multiple`  | More than one candidate matched. Disambiguate via context; if still unclear, ask user. On confirmation, add the chosen spelling to `aliases`. |
 | `missing`   | No existing note or alias matched. Create via Phase 1, or write `[?[dangling-note-name]]` if deferred. |
 
 Additional rules:
 - `matches[*].matched_by` is ordered with `name` hits before `alias` hits; prefer earlier entries when context already disambiguates.
 - Always inspect all `matches` before creating a new note; different `type` values can still conflict on name uniqueness.
+- Even for a single `exact` hit, treat `description` as the cheap semantic guardrail: if it obviously describes another entity, prefer creating a new note.
 
 **Naming conflict strategies** (pick most natural): append type suffix (`张伟-person`), organization (`张伟-绿米`), role (`张伟-CTO`), or disambiguator (`张伟-上海`). Tell user before creating.
 

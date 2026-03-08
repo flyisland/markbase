@@ -1,15 +1,12 @@
-use std::fs;
 use std::path::Path;
+
+use crate::template::TemplateDocument;
 
 pub fn describe_template(
     base_dir: &Path,
     name: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    let template_path = base_dir.join("templates").join(format!("{}.md", name));
-    if !template_path.exists() {
-        return Err(format!("Template '{}' not found", name).into());
-    }
-    Ok(fs::read_to_string(&template_path)?)
+    TemplateDocument::load(base_dir, name)?.render_for_describe()
 }
 
 #[cfg(test)]
@@ -29,7 +26,10 @@ mod tests {
 
         let result = describe_template(&test_dir, "daily");
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "# Daily Note\nDate: {{date}}");
+        let content = result.unwrap();
+        assert!(content.contains("description:"));
+        assert!(content.contains("_schema:"));
+        assert!(content.contains("# Daily Note"));
 
         let _ = fs::remove_dir_all(&test_dir);
     }

@@ -9,6 +9,7 @@ mod renamer;
 mod renderer;
 mod resolver;
 mod scanner;
+mod template;
 mod verifier;
 
 use clap::{ArgAction, Parser, Subcommand, ValueEnum};

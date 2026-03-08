@@ -14,6 +14,7 @@ pub struct ResolveMatch {
     pub path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub r#type: Option<String>,
+    pub description: Option<String>,
     pub matched_by: MatchSource,
 }
 
@@ -44,6 +45,7 @@ fn resolve_name(db: &Database, name: &str) -> Result<ResolveResult, Box<dyn std:
     let escaped = name.replace('\'', "''");
     let sql = format!(
         "SELECT path, name, json_extract_string(properties, '$.\"type\"') AS type, \
+         json_extract_string(properties, '$.\"description\"') AS description, \
          CASE WHEN name = '{escaped}' THEN 'name' ELSE 'alias' END AS matched_by \
          FROM notes \
          WHERE name = '{escaped}' OR list_contains((properties->'$.\"aliases\"')::VARCHAR[], '{escaped}') \
@@ -51,7 +53,7 @@ fn resolve_name(db: &Database, name: &str) -> Result<ResolveResult, Box<dyn std:
     );
 
     let (field_names, rows) = db.query(&sql, "*", usize::MAX)?;
-    debug_assert_eq!(field_names.len(), 4);
+    debug_assert_eq!(field_names.len(), 5);
 
     let matches: Vec<ResolveMatch> = rows
         .into_iter()
@@ -59,7 +61,8 @@ fn resolve_name(db: &Database, name: &str) -> Result<ResolveResult, Box<dyn std:
             path: row[0].clone(),
             name: row[1].clone(),
             r#type: normalize_optional(&row[2]),
-            matched_by: match row[3].as_str() {
+            description: normalize_optional(&row[3]),
+            matched_by: match row[4].as_str() {
                 "name" => MatchSource::Name,
                 _ => MatchSource::Alias,
             },
@@ -109,10 +112,19 @@ mod tests {
         (temp_dir, db)
     }
 
-    fn note(name: &str, path: &str, aliases: &[&str], note_type: Option<&str>) -> Note {
+    fn note(
+        name: &str,
+        path: &str,
+        aliases: &[&str],
+        note_type: Option<&str>,
+        description: Option<&str>,
+    ) -> Note {
         let mut properties = json!({ "aliases": aliases });
         if let Some(note_type) = note_type {
             properties["type"] = json!(note_type);
+        }
+        if let Some(description) = description {
+            properties["description"] = json!(description);
         }
 
         Note {
@@ -139,6 +151,7 @@ mod tests {
             "companies/acme.md",
             &["ACME Corp"],
             Some("company"),
+            Some("A customer company"),
         ))
         .unwrap();
 
@@ -147,6 +160,10 @@ mod tests {
         assert_eq!(results[0].status, ResolveStatus::Exact);
         assert_eq!(results[0].matches[0].matched_by, MatchSource::Name);
         assert_eq!(results[0].matches[0].r#type.as_deref(), Some("company"));
+        assert_eq!(
+            results[0].matches[0].description.as_deref(),
+            Some("A customer company")
+        );
     }
 
     #[test]
@@ -157,6 +174,7 @@ mod tests {
             "companies/acme.md",
             &["阿里"],
             Some("company"),
+            Some("A customer company"),
         ))
         .unwrap();
 
@@ -164,6 +182,10 @@ mod tests {
 
         assert_eq!(results[0].status, ResolveStatus::Alias);
         assert_eq!(results[0].matches[0].matched_by, MatchSource::Alias);
+        assert_eq!(
+            results[0].matches[0].description.as_deref(),
+            Some("A customer company")
+        );
     }
 
     #[test]
@@ -174,6 +196,7 @@ mod tests {
             "people/zhangwei-person.md",
             &["张伟"],
             Some("person"),
+            Some("Shanghai contact"),
         ))
         .unwrap();
         db.upsert_note(&note(
@@ -181,6 +204,7 @@ mod tests {
             "people/zhangwei-shanghai.md",
             &["张伟"],
             Some("person"),
+            Some("Another person"),
         ))
         .unwrap();
 
@@ -198,5 +222,24 @@ mod tests {
 
         assert_eq!(results[0].status, ResolveStatus::Missing);
         assert!(results[0].matches.is_empty());
+    }
+
+    #[test]
+    fn test_resolve_missing_description_serializes_as_null() {
+        let (_dir, db) = make_db();
+        db.upsert_note(&note(
+            "acme",
+            "companies/acme.md",
+            &["ACME Corp"],
+            Some("company"),
+            None,
+        ))
+        .unwrap();
+
+        let results = resolve_names(&db, &["acme".to_string()]).unwrap();
+        let value = serde_json::to_value(&results).unwrap();
+
+        assert!(value[0]["matches"][0].get("description").is_some());
+        assert!(value[0]["matches"][0]["description"].is_null());
     }
 }
