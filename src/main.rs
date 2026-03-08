@@ -13,7 +13,6 @@ mod template;
 mod verifier;
 
 use clap::{ArgAction, Parser, Subcommand, ValueEnum};
-use std::env;
 use std::path::PathBuf;
 
 use crate::db::Database;
@@ -69,10 +68,10 @@ struct Cli {
         long = "base-dir",
         env = ENV_BASE_DIR,
         global = true,
-        help_heading = "Environment Variables",
-        help = "Directory to index (default: .)"
+        default_value = ".",
+        help = "Directory to index"
     )]
-    base_dir: Option<PathBuf>,
+    base_dir: PathBuf,
 
     #[arg(
         long = "index-log-level",
@@ -171,7 +170,7 @@ enum TemplateCommands {
     },
 }
 
-fn get_database_path(cli_base_dir: Option<PathBuf>) -> Result<PathBuf, String> {
+fn get_database_path(cli_base_dir: PathBuf) -> Result<PathBuf, String> {
     let base = get_base_dir_with_cli(cli_base_dir);
     let absolute = base
         .canonicalize()
@@ -179,13 +178,11 @@ fn get_database_path(cli_base_dir: Option<PathBuf>) -> Result<PathBuf, String> {
     Ok(absolute.join(".markbase/markbase.duckdb"))
 }
 
-fn get_base_dir_with_cli(cli_base_dir: Option<PathBuf>) -> PathBuf {
+fn get_base_dir_with_cli(cli_base_dir: PathBuf) -> PathBuf {
     cli_base_dir
-        .or_else(|| env::var(ENV_BASE_DIR).ok().map(PathBuf::from))
-        .unwrap_or_else(|| PathBuf::from("."))
 }
 
-fn get_base_dir_absolute_with_cli(cli_base_dir: Option<PathBuf>) -> Result<PathBuf, String> {
+fn get_base_dir_absolute_with_cli(cli_base_dir: PathBuf) -> Result<PathBuf, String> {
     let base = get_base_dir_with_cli(cli_base_dir);
     base.canonicalize()
         .map_err(|e| format!("Failed to resolve base-dir '{}': {}", base.display(), e))
@@ -280,7 +277,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let compute_backlinks = cli.compute_backlinks;
 
     let db_path = get_database_path(cli_base_dir.clone())?;
-    let base_dir = get_base_dir_absolute_with_cli(cli_base_dir.clone())?;
+    let base_dir = get_base_dir_absolute_with_cli(cli_base_dir)?;
 
     match cli.command {
         Commands::Query {
@@ -475,6 +472,7 @@ fn print_index_details(stats: &scanner::IndexStats) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::CommandFactory;
 
     #[test]
     fn test_index_command_removed() {
@@ -498,6 +496,22 @@ mod tests {
     fn test_global_compute_backlinks_option() {
         let cli = Cli::parse_from(["markbase", "--compute-backlinks", "query", "name == 'test'"]);
         assert!(cli.compute_backlinks);
+    }
+
+    #[test]
+    fn test_global_base_dir_default_option() {
+        let cli = Cli::parse_from(["markbase", "query", "name == 'test'"]);
+        assert_eq!(cli.base_dir, PathBuf::from("."));
+    }
+
+    #[test]
+    fn test_global_options_share_same_help_section() {
+        let help = Cli::command().render_long_help().to_string();
+
+        assert!(help.contains("Options:\n      --base-dir <BASE_DIR>"));
+        assert!(help.contains("      --index-log-level <INDEX_LOG_LEVEL>"));
+        assert!(help.contains("      --compute-backlinks"));
+        assert!(!help.contains("Environment Variables:"));
     }
 
     #[test]
