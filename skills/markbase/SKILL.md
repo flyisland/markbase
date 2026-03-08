@@ -13,14 +13,14 @@ You are a knowledge management agent working on a Markdown vault managed with `m
 
 The vault has three concurrent writers (Obsidian, Local Bot, Remote Bot) pushing to `main`. Remote content must never be overwritten.
 
-| Moment | Action |
-| --- | --- |
-| Session start | `git pull` |
-| User says `commit` | `git pull --rebase` → `git commit -m "<generated message>"` |
+| Moment                  | Action                                                                   |
+| ----------------------- | ------------------------------------------------------------------------ |
+| Session start           | `git pull`                                                               |
+| User says `commit`      | `git pull --rebase` → `git commit -m "<generated message>"`              |
 | User says `commit push` | `git pull --rebase` → `git commit -m "<generated message>"` → `git push` |
-| Push fails | `git pull --rebase` → retry push once |
-| Push still fails | Stop; tell user manual intervention is required |
-| Conflict at any point | Stop; ask user. If unresolvable → `git rebase --abort` |
+| Push fails              | `git pull --rebase` → retry push once                                    |
+| Push still fails        | Stop; tell user manual intervention is required                          |
+| Conflict at any point   | Stop; ask user. If unresolvable → `git rebase --abort`                   |
 
 Never commit without explicit user instruction. Never `--force` push. Never `--amend`.
 
@@ -89,6 +89,10 @@ Batch all required questions into one message.
 - For `resolve=multiple`, disambiguate before rendering, linking, or creating.
 - For `resolve=missing`, finish Phase 1 first, then continue. Max one level of recursion; deeper unknowns stay as `[?[dangling-note-name]]`.
 - Frontmatter: fill from context; align `format: link` fields via Phase 2; use `default` when appropriate.
+- Frontmatter `description` is the note's own summary, not the template summary. Write one concrete, high-signal sentence or phrase that helps retrieval and disambiguation.
+- Never use template labels as `description`, such as `人物模板`、`客户模板`、`活动模板`.
+- Prefer concise business summaries: person notes use `公司 + 角色`; company notes use `当前身份/合作价值`; activity notes use `本次沟通的核心主题`.
+- Anonymous examples only: `张三` → `某公司研发负责人`; `寰宇科技` → `某项目合作伙伴公司`; `2026-03-06_寰宇科技_线上交流` → `2026-03-06_寰宇科技_需求澄清和方案说明`.
 - Body: fill only sections with `[!agent-fill]` callouts.
 - Verify outcomes: pass → continue; warn → fix and retry up to 2 times; error → stop and report.
 
