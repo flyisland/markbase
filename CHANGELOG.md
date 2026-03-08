@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-03-08
+
+### Changed
+
+- **JSON-first CLI defaults** - `markbase query`, `markbase template list`, and Base view rendering in `markbase note render` now default to JSON output for agent and script workflows.
+- **Output format simplification** - The legacy `list` output mode has been removed in favor of `json` and `table`.
+- **Documentation clarity** - Template and description docs now explicitly distinguish `_schema.description`, `_schema.properties.description`, and the instance frontmatter `description` field.
+
 ## [0.4.0] - 2026-03-08
 
 ### Added
@@ -119,6 +127,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Note renaming with link updates
 - Multiple output formats (table, json, list)
 
+[0.5.0]: https://github.com/flyisland/markbase/compare/0.4.0...0.5.0
 [0.4.0]: https://github.com/flyisland/markbase/compare/0.3.2...0.4.0
 [0.3.2]: https://github.com/flyisland/markbase/compare/0.3.1...0.3.2
 [0.3.1]: https://github.com/flyisland/markbase/compare/0.3.0...0.3.1
