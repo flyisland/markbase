@@ -1,4 +1,4 @@
-use crate::output::{OutputValue, render_markdown_table, render_yaml_records};
+use crate::output::{OutputValue, render_json_records, render_markdown_table};
 
 #[derive(Debug, Clone)]
 pub struct ColumnMeta {
@@ -10,10 +10,10 @@ pub struct ColumnMeta {
 
 pub type Row = Vec<(String, Option<String>)>;
 
-pub fn render_list(rows: &[Row], columns: &[ColumnMeta]) -> String {
+pub fn render_json(rows: &[Row], columns: &[ColumnMeta]) -> String {
     let headers: Vec<String> = columns.iter().map(|col| col.display_name.clone()).collect();
     let records = to_output_rows(rows, columns);
-    render_yaml_records(&headers, &records)
+    render_json_records(&headers, &records)
 }
 
 pub fn render_table(rows: &[Row], columns: &[ColumnMeta]) -> String {
@@ -61,6 +61,7 @@ fn parse_array_list(s: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     fn col(name: &str, is_name: bool, is_list: bool) -> ColumnMeta {
         ColumnMeta {
@@ -79,38 +80,42 @@ mod tests {
     }
 
     #[test]
-    fn test_render_list_basic() {
+    fn test_render_json_basic() {
         let columns = vec![col("name", false, false), col("title", false, false)];
         let rows = vec![row(vec![
             ("name", Some("John")),
             ("title", Some("Engineer")),
         ])];
-        let out = render_list(&rows, &columns);
-        assert_eq!(out, "- name: John\n  title: Engineer\n");
+        let out = render_json(&rows, &columns);
+        let actual: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let expected = json!([{"name": "John", "title": "Engineer"}]);
+        assert_eq!(actual, expected);
     }
 
     #[test]
-    fn test_render_list_name_col() {
+    fn test_render_json_name_col() {
         let columns = vec![col("name", true, false)];
         let rows = vec![row(vec![("name", Some("test-note"))])];
-        let out = render_list(&rows, &columns);
-        assert_eq!(out, "- name: '[[test-note]]'\n");
+        let out = render_json(&rows, &columns);
+        assert_eq!(out, "[\n  {\n    \"name\": \"[[test-note]]\"\n  }\n]");
     }
 
     #[test]
-    fn test_render_list_list_col() {
+    fn test_render_json_list_col() {
         let columns = vec![col("tags", false, true)];
         let rows = vec![row(vec![("tags", Some("[\"tag1\",\"tag2\",\"tag3\"]"))])];
-        let out = render_list(&rows, &columns);
-        assert_eq!(out, "- tags:\n    - tag1\n    - tag2\n    - tag3\n");
+        let out = render_json(&rows, &columns);
+        let actual: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let expected = json!([{"tags": ["tag1", "tag2", "tag3"]}]);
+        assert_eq!(actual, expected);
     }
 
     #[test]
-    fn test_render_list_empty() {
+    fn test_render_json_empty() {
         let columns = vec![col("name", false, false)];
         let rows: Vec<Row> = vec![];
-        let out = render_list(&rows, &columns);
-        assert_eq!(out, "[]\n");
+        let out = render_json(&rows, &columns);
+        assert_eq!(out, "[]");
     }
 
     #[test]

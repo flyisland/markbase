@@ -158,29 +158,34 @@ fn test_query_output_table() {
 }
 
 #[test]
-fn test_query_rejects_json_output() {
+fn test_query_output_json() {
     let vault = TestVault::new();
     vault.create_note("test", "# Test");
     vault.index();
 
     let output = vault.query_format("", "json");
 
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("possible values: table, list"));
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"file.path\"")
+            || stdout.contains("\"file.name\"")
+            || stdout.contains("\"description\"")
+    );
 }
 
 #[test]
-fn test_query_output_list() {
+fn test_query_rejects_list_output() {
     let vault = TestVault::new();
     vault.create_note("test", "# Test");
     vault.index();
 
     let output = vault.query_format("", "list");
 
-    assert_cli_success(&output);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("test.md") || stdout.contains(".md"));
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("invalid value 'list'"));
+    assert!(stderr.contains("possible values: json, table"));
 }
 
 #[test]
@@ -259,10 +264,8 @@ fn test_query_limit() {
 
     assert_cli_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let count = stdout
-        .lines()
-        .filter(|line| line.starts_with("| note"))
-        .count();
+    let rows: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let count = rows.as_array().map(|items| items.len()).unwrap_or_default();
     assert!(count <= 2, "unexpected output: {}", stdout);
 }
 
@@ -276,8 +279,7 @@ fn test_query_no_results() {
 
     assert_cli_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let table_lines = stdout.lines().filter(|line| line.starts_with('|')).count();
-    assert_eq!(table_lines, 2, "unexpected output: {}", stdout);
+    assert_eq!(stdout.trim(), "[]", "unexpected output: {}", stdout);
 }
 
 #[test]

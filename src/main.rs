@@ -34,8 +34,8 @@ const VERSION: &str = env!("MARKBASE_VERSION");
 
 #[derive(Clone, Copy, ValueEnum, Debug, PartialEq, Eq)]
 enum OutputFormat {
+    Json,
     Table,
-    List,
 }
 
 impl std::str::FromStr for OutputFormat {
@@ -43,8 +43,8 @@ impl std::str::FromStr for OutputFormat {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
+            "json" => Ok(OutputFormat::Json),
             "table" => Ok(OutputFormat::Table),
-            "list" => Ok(OutputFormat::List),
             _ => Err(format!("Invalid output format: {}", s)),
         }
     }
@@ -148,7 +148,7 @@ enum NoteCommands {
         #[arg(help = "Note name (without .md extension)")]
         name: String,
 
-        #[arg(short = 'o', help = "Output format: table (default) or list")]
+        #[arg(short = 'o', help = "Output format: json (default) or table")]
         format: Option<OutputFormat>,
 
         #[arg(long = "dry-run", help = "Show SQL instead of executing queries")]
@@ -160,7 +160,7 @@ enum NoteCommands {
 enum TemplateCommands {
     #[command(about = "List all available templates")]
     List {
-        #[arg(short = 'o', help = "Output format (default: table)")]
+        #[arg(short = 'o', help = "Output format (default: json)")]
         format: Option<OutputFormat>,
     },
     #[command(about = "Show template content")]
@@ -192,15 +192,15 @@ fn get_base_dir_absolute_with_cli(cli_base_dir: Option<PathBuf>) -> Result<PathB
 
 fn output_format_name(format: OutputFormat) -> &'static str {
     match format {
+        OutputFormat::Json => "json",
         OutputFormat::Table => "table",
-        OutputFormat::List => "list",
     }
 }
 
 fn to_render_format(format: OutputFormat) -> renderer::RenderFormat {
     match format {
+        OutputFormat::Json => renderer::RenderFormat::Json,
         OutputFormat::Table => renderer::RenderFormat::Table,
-        OutputFormat::List => renderer::RenderFormat::List,
     }
 }
 
@@ -288,7 +288,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             abs_path,
             dry_run,
         } => {
-            let effective_format = format.unwrap_or(OutputFormat::Table);
+            let effective_format = format.unwrap_or(OutputFormat::Json);
             let format_str = output_format_name(effective_format);
 
             if dry_run {
@@ -404,7 +404,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     db
                 };
 
-                let render_format = to_render_format(format.unwrap_or(OutputFormat::Table));
+                let render_format = to_render_format(format.unwrap_or(OutputFormat::Json));
                 let opts = renderer::RenderOptions {
                     format: render_format,
                     dry_run,
@@ -424,7 +424,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 let (field_names, results) =
                     query::execute_query(&db, Some(sql)).map_err(|e| e.to_string())?;
 
-                let effective_format = format.unwrap_or(OutputFormat::Table);
+                let effective_format = format.unwrap_or(OutputFormat::Json);
                 let format_str = output_format_name(effective_format);
                 query::output_results(&results, format_str, &field_names, None, false)?;
             }
@@ -520,9 +520,9 @@ mod tests {
 
     #[test]
     fn test_query_output_format_option() {
-        let cli = Cli::parse_from(["markbase", "query", "name == 'test'", "-o", "list"]);
+        let cli = Cli::parse_from(["markbase", "query", "name == 'test'", "-o", "json"]);
         if let Commands::Query { format, .. } = cli.command {
-            assert_eq!(format, Some(OutputFormat::List));
+            assert_eq!(format, Some(OutputFormat::Json));
         } else {
             panic!("Expected Query command");
         }
@@ -608,11 +608,11 @@ mod tests {
 
     #[test]
     fn test_note_render_output_format_option() {
-        let cli = Cli::parse_from(["markbase", "note", "render", "demo", "-o", "list"]);
+        let cli = Cli::parse_from(["markbase", "note", "render", "demo", "-o", "json"]);
         if let Commands::Note { command } = cli.command {
             match command {
                 NoteCommands::Render { format, .. } => {
-                    assert_eq!(format, Some(OutputFormat::List));
+                    assert_eq!(format, Some(OutputFormat::Json));
                 }
                 _ => panic!("Expected Render command"),
             }
@@ -622,9 +622,9 @@ mod tests {
     }
 
     #[test]
-    fn test_note_render_rejects_json_option() {
-        let result = Cli::try_parse_from(["markbase", "note", "render", "demo", "-o", "json"]);
-        assert!(result.is_err());
+    fn test_note_render_accepts_table_option() {
+        let result = Cli::try_parse_from(["markbase", "note", "render", "demo", "-o", "table"]);
+        assert!(result.is_ok());
     }
 
     #[test]
@@ -642,10 +642,10 @@ mod tests {
 
     #[test]
     fn test_template_list_with_output_format() {
-        let cli = Cli::parse_from(["markbase", "template", "list", "-o", "list"]);
+        let cli = Cli::parse_from(["markbase", "template", "list", "-o", "json"]);
         if let Commands::Template { command } = cli.command {
             match command {
-                TemplateCommands::List { format } => assert_eq!(format, Some(OutputFormat::List)),
+                TemplateCommands::List { format } => assert_eq!(format, Some(OutputFormat::Json)),
                 TemplateCommands::Describe { .. } => panic!("Expected List command, got Describe"),
             }
         } else {

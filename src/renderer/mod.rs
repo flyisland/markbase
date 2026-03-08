@@ -12,14 +12,14 @@ use serde_json::Value;
 
 use crate::db::Database;
 use crate::renderer::filter::{ThisContext, merge_filters, translate_columns, translate_sort};
-use crate::renderer::output::{Row, render_list, render_table};
+use crate::renderer::output::{Row, render_json, render_table};
 
 static BASE_EMBED_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^!\[\[([^\]]+\.base)\]\]\s*$").unwrap());
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum RenderFormat {
-    List,
+    Json,
     Table,
 }
 
@@ -227,9 +227,9 @@ fn execute_and_render(
 
                 let output = match opts.format {
                     RenderFormat::Table => render_table(&rows, columns),
-                    RenderFormat::List => {
-                        let list_output = render_list(&rows, columns);
-                        format!("```yaml\n{}```", list_output)
+                    RenderFormat::Json => {
+                        let json_output = render_json(&rows, columns);
+                        format!("```json\n{}\n```", json_output)
                     }
                 };
                 println!("{}", output);

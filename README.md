@@ -176,8 +176,8 @@ markbase query "SELECT file.path, note.author FROM notes WHERE note.author = 'To
 Default columns for empty input or expression mode: `file.path`, `file.name`, `description`, `file.mtime`, `file.size`, `file.tags`.
 
 **Output formats:**
-- `-o table` renders compact Markdown tables
-- `-o list` renders YAML lists
+- default output is `json`, optimized for agents and scripts
+- `-o table` renders compact Markdown tables for humans
 
 ```bash
 markbase query "SELECT file.name, title FROM notes" -o table
@@ -191,25 +191,27 @@ markbase query "SELECT file.name, title FROM notes" -o table
 ```
 
 ```bash
-markbase query "SELECT file.name, title, file.tags FROM notes" -o list
+markbase query "SELECT file.name, title, file.tags FROM notes"
 ```
 
-```yaml
-- file.name: readme
-  title: README
-  file.tags:
-    - documentation
-    - important
-- file.name: todo
-  title: Todo List
-  file.tags:
-    - todo
-    - work
+```json
+[
+  {
+    "file.name": "readme",
+    "title": "README",
+    "file.tags": ["documentation", "important"]
+  },
+  {
+    "file.name": "todo",
+    "title": "Todo List",
+    "file.tags": ["todo", "work"]
+  }
+]
 ```
 
 Empty results stay machine-friendly:
+- default `json` prints `[]`
 - `-o table` prints just the header row and separator
-- `-o list` prints `[]`
 
 **Debug:**
 
@@ -290,9 +292,9 @@ Warnings are reported to stderr. Exit code is non-zero only on errors (e.g. miss
 **Render a note (expand .base embeds):**
 
 ```bash
-markbase note render <n>            # Markdown table (default)
-markbase note render <n> -o list    # YAML list format
-markbase note render <n> --dry-run  # show SQL without executing
+markbase note render <n>            # Markdown with embedded JSON blocks (default)
+markbase note render <n> -o table    # Markdown tables for embedded Base views
+markbase note render <n> --dry-run   # show SQL without executing
 ```
 
 Renders the note body to stdout. Each `![[*.base]]` embed is replaced with
@@ -314,18 +316,24 @@ For `-o table`, each rendered Base view becomes a compact Markdown table:
 <!-- end: [markbase] rendered from tasks.base -->
 ```
 
-For `-o list`, the same view is wrapped in a YAML code fence:
+By default, the same view is wrapped in a JSON code fence so agents can parse it directly from the rendered Markdown:
 
 ````md
 <!-- start: [markbase] rendered from tasks.base -->
 
 > **Open Tasks**
 
-```yaml
-- name: '[[task-a]]'
-  priority: high
-- name: '[[task-b]]'
-  priority: medium
+```json
+[
+  {
+    "name": "[[task-a]]",
+    "priority": "high"
+  },
+  {
+    "name": "[[task-b]]",
+    "priority": "medium"
+  }
+]
 ```
 <!-- end: [markbase] rendered from tasks.base -->
 ````
@@ -341,8 +349,8 @@ Exit code is non-zero only on hard errors (e.g. note not found).
 Manage MTS templates.
 
 ```bash
-markbase template list            # Compact Markdown table (default)
-markbase template list -o list    # YAML list format
+markbase template list            # JSON (default, agent-first)
+markbase template list -o table   # Compact Markdown table
 markbase template describe daily  # Show normalized template content
 ```
 

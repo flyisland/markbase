@@ -1,3 +1,5 @@
+use serde_json::{Map, Value};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OutputValue {
     Empty,
@@ -13,45 +15,16 @@ impl OutputValue {
             Self::List(items) => escape_markdown_cell(&items.join(", ")),
         }
     }
-}
 
-pub fn render_yaml_records(headers: &[String], rows: &[Vec<OutputValue>]) -> String {
-    if rows.is_empty() {
-        return "[]\n".to_string();
-    }
-
-    let mut output = String::new();
-    for row in rows {
-        for (index, header) in headers.iter().enumerate() {
-            let prefix = if index == 0 { "- " } else { "  " };
-            match row.get(index).unwrap_or(&OutputValue::Empty) {
-                OutputValue::Empty => {
-                    output.push_str(prefix);
-                    output.push_str(header);
-                    output.push_str(":\n");
-                }
-                OutputValue::Scalar(value) => {
-                    output.push_str(prefix);
-                    output.push_str(header);
-                    output.push_str(": ");
-                    output.push_str(&yaml_scalar(value));
-                    output.push('\n');
-                }
-                OutputValue::List(items) => {
-                    output.push_str(prefix);
-                    output.push_str(header);
-                    output.push_str(":\n");
-                    for item in items {
-                        output.push_str("    - ");
-                        output.push_str(&yaml_scalar(item));
-                        output.push('\n');
-                    }
-                }
+    fn to_json_value(&self) -> Value {
+        match self {
+            Self::Empty => Value::Null,
+            Self::Scalar(value) => Value::String(value.clone()),
+            Self::List(items) => {
+                Value::Array(items.iter().cloned().map(Value::String).collect::<Vec<_>>())
             }
         }
     }
-
-    output
 }
 
 pub fn render_markdown_table(headers: &[String], rows: &[Vec<OutputValue>]) -> String {
@@ -91,41 +64,66 @@ pub fn render_markdown_table(headers: &[String], rows: &[Vec<OutputValue>]) -> S
     output
 }
 
-fn escape_markdown_cell(value: &str) -> String {
-    value.replace('|', "\\|").replace('\n', "<br>")
+pub fn render_json_records(headers: &[String], rows: &[Vec<OutputValue>]) -> String {
+    let records: Vec<Value> = rows
+        .iter()
+        .map(|row| {
+            let object = headers
+                .iter()
+                .enumerate()
+                .map(|(index, header)| {
+                    let value = row
+                        .get(index)
+                        .unwrap_or(&OutputValue::Empty)
+                        .to_json_value();
+                    (header.clone(), value)
+                })
+                .collect::<Map<String, Value>>();
+            Value::Object(object)
+        })
+        .collect();
+
+    serde_json::to_string_pretty(&records).unwrap_or_else(|_| "[]".to_string())
 }
 
-fn yaml_scalar(value: &str) -> String {
-    match serde_yaml::to_string(value) {
-        Ok(rendered) => rendered
-            .strip_prefix("---\n")
-            .unwrap_or(&rendered)
-            .trim_end()
-            .to_string(),
-        Err(_) => format!("'{}'", value.replace('\'', "''")),
-    }
+fn escape_markdown_cell(value: &str) -> String {
+    value.replace('|', "\\|").replace('\n', "<br>")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
-    fn test_render_yaml_records_empty() {
-        let output = render_yaml_records(&["name".to_string()], &[]);
-        assert_eq!(output, "[]\n");
+    fn test_render_json_records_empty() {
+        let output = render_json_records(&["name".to_string()], &[]);
+        assert_eq!(output, "[]");
     }
 
     #[test]
-    fn test_render_yaml_records_scalars_and_lists() {
-        let headers = vec!["name".to_string(), "tags".to_string()];
+    fn test_render_json_records_scalars_and_lists() {
+        let headers = vec![
+            "name".to_string(),
+            "tags".to_string(),
+            "description".to_string(),
+        ];
         let rows = vec![vec![
             OutputValue::Scalar("demo".to_string()),
             OutputValue::List(vec!["alpha".to_string(), "beta".to_string()]),
+            OutputValue::Empty,
         ]];
 
-        let output = render_yaml_records(&headers, &rows);
-        assert_eq!(output, "- name: demo\n  tags:\n    - alpha\n    - beta\n");
+        let output = render_json_records(&headers, &rows);
+        let actual: Value = serde_json::from_str(&output).unwrap();
+        let expected = json!([
+            {
+                "name": "demo",
+                "tags": ["alpha", "beta"],
+                "description": null
+            }
+        ]);
+        assert_eq!(actual, expected);
     }
 
     #[test]

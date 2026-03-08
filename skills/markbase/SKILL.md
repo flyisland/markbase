@@ -5,231 +5,201 @@ description: Capture information from conversations and organize it into a Markd
 
 # Markbase Knowledge Vault Agent Skill
 
-You are a knowledge management agent working on a Markdown vault managed with `markbase`. Capture information from conversations into structured, interlinked notes. You have shell access and full read/write access to vault files.
+You are a knowledge management agent working on a Markdown vault managed with `markbase`. Capture information into structured, interlinked notes. You have shell access and full read/write access to vault files.
 
 ---
 
-## Git Protocol (always in effect, overrides everything)
+## Git Protocol
 
-The vault has three concurrent writers (Obsidian, Local Bot, Remote Bot) all pushing to `main`. Remote may have new commits at any time. **Remote content must never be overwritten or lost.**
+The vault has three concurrent writers (Obsidian, Local Bot, Remote Bot) pushing to `main`. Remote content must never be overwritten.
 
-| Moment                  | Action                                                                   |
-| ----------------------- | ------------------------------------------------------------------------ |
-| Session start           | `git pull`                                                               |
-| User says `commit`      | `git pull --rebase` → `git commit -m "<generated message>"`              |
+| Moment | Action |
+| --- | --- |
+| Session start | `git pull` |
+| User says `commit` | `git pull --rebase` → `git commit -m "<generated message>"` |
 | User says `commit push` | `git pull --rebase` → `git commit -m "<generated message>"` → `git push` |
-| Push fails              | `git pull --rebase` → retry push once                                    |
-| Push still fails        | Stop; tell user — manual intervention required                           |
-| Conflict at any point   | Stop; ask user. If unresolvable → `git rebase --abort`                   |
+| Push fails | `git pull --rebase` → retry push once |
+| Push still fails | Stop; tell user manual intervention is required |
+| Conflict at any point | Stop; ask user. If unresolvable → `git rebase --abort` |
 
-**Never commit without explicit user instruction. Never `--force` push. Never `--amend`.**
+Never commit without explicit user instruction. Never `--force` push. Never `--amend`.
 
 ---
 
-## Session Initialization
+## Session Start Checklist
 
-Run before responding to anything:
+- Run:
 
 ```bash
 git pull
-markbase template list -o list
+markbase template list
 ```
 
-Load each template's `name`, `path`, `_schema.description` into context. If `template list` returns empty, stop and tell the user.
+- Load each template's `name`, `path`, `_schema.description` into context.
+- If `template list` returns empty, stop and tell the user.
+- Route the request:
+  - `事件：` or obviously an event → Phase 1
+  - `补充：` or obviously supplemental info → Phase 1.5
+  - Obviously a query / chat / analysis → respond directly
+  - Unclear → ask once
 
-**Route the input:**
+### CLI Contract
 
-| Prefix / Intent                         | Action                                                                                                        |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `事件：` or obviously an event          | → Phase 1                                                                                                     |
-| `补充：` or obviously supplemental info | → Phase 1.5                                                                                                   |
-| Obviously a query / chat / analysis     | → respond directly                                                                                            |
-| Unclear                                 | → ask once using the Question Batching rule below |
-
----
-
-## Ask User Only When
-
-| Situation | Ask user? | Reason |
-| --------- | --------- | ------ |
-| Input intent is unclear (`事件：` vs `补充：`) | Yes | The workflow branch changes. |
-| Template routing is ambiguous | Yes | Template choice controls required fields and filename rules. |
-| One entity fits multiple templates | Yes | Do not silently drop a valid template. |
-| `resolve` returns `status: "multiple"` and context cannot disambiguate | Yes | Linking or creating before disambiguation is unsafe. |
-| Filename cannot be determined from `_schema.filename.description` | Yes | Creating with the wrong note name is hard to unwind. |
-| A required field is still unresolved after inference + alignment | Yes | Phase 1 must not create an incomplete note. |
-| No relevant `[!agent-update]` callout exists during Phase 1.5 / 3 | Yes | The agent must not write outside directive-owned sections. |
-| `verify` still shows warnings after 2 fix attempts | Yes | Human judgment is required. |
-| `verify` shows any error | Yes | This is a hard blocker. |
-| `resolve` returns `status: "missing"` during Phase 1 | No | Create via Phase 1, or write `[?[dangling-note-name]]` if deferred. Default `dangling-note-name` to the original mention / query. Use a different name only when the surrounding context already states a more reliable target name. |
-| `resolve` returns `status: "missing"` during Phase 1.5 | No | Keep `[?[dangling-note-name]]`; Phase 1.5 never creates notes. Default `dangling-note-name` to the original mention / query. Use a different name only when the surrounding context already states a more reliable target name. |
-| `resolve` returns `status: "exact"` or `status: "alias"` | No | First compare `type`, `description`, and context. Reuse only when they still point to the same entity; if `description` is clearly about something else, create a new note instead of forcing reuse. |
-
-**Question batching:** if more than one row above requires a question, ask all questions in one message.
+- `markbase query`, `markbase template list`, `markbase note resolve` → stdout is pure `json`; parse stdout only.
+- `markbase note render` → stdout is rendered Markdown; each expanded `.base` result appears inside a `json` fenced code block.
+- Default mode is agent-first; do not pass `-o` unless a human explicitly asks for table output.
+- Warnings and indexing summaries go to stderr.
 
 ---
 
-## Phase 1 — Capture (采集)
+## Ask User Checklist
 
-1. **Route to template.** Match input against `_schema.description`. If ambiguous, show top two and ask. If entity fits multiple templates, ask user to confirm the full list — don't pick silently. Conflicts across templates resolved by first template's definition.
+Ask only if one of these blocks progress:
 
-2. **Prefetch entities.** For every person/company/entity mentioned, run Phase 2 alignment.
-   - `status: "exact"` or `status: "alias"` → **Must use `markbase note render <resolved-note-name>`** to get the full expanded view including all `.base` embeds. Do not use `read_file` for this purpose.
-   - `status: "multiple"` → disambiguate first. Do not render, link, or create until one note is confirmed.
-   - `status: "missing"` → complete the full Phase 1 flow first (including fill and verify), then continue. **Max one level of recursion.** Deeper unknowns → `[?[dangling-note-name]]`, report at end.
+- Intent is unclear.
+- Template routing is ambiguous, or one entity fits multiple templates.
+- `resolve` returns `multiple` and context still cannot disambiguate.
+- Filename cannot be derived from `_schema.filename.description`.
+- A required field is still unresolved after inference and alignment.
+- No relevant `[!agent-update]` callout exists during Phase 1.5 or Phase 3.
+- `verify` still warns after 2 fix attempts, or shows any error.
 
-3. **Read template:** `markbase template describe <template-name>`. Load `_schema.required`, `_schema.filename.description`, `_schema.properties`.
+Do not ask in these cases:
 
-4. **Determine filename** from `_schema.filename.description`. Ask user if unresolvable.
+- `resolve=missing` during Phase 1 → create via Phase 1, or use `[?[dangling-note-name]]` if deferred.
+- `resolve=missing` during Phase 1.5 → keep `[?[dangling-note-name]]`; Phase 1.5 never creates notes.
+- `resolve=exact|alias` → reuse only after checking `type`, `description`, and context.
 
-5. **Validate required fields.** For each: infer → align if link → ask user if still unclear. Don't create file until all required fields are fillable.
-
-6. **Create skeleton:** `markbase note new <note-name> --template <template-name>`. Provide name only — `--template` sets the directory. **Save the returned path.**
-
-7. **Fill the file** using the saved path and your native file-writing tool. Do not call `markbase note new` again.
-   - Frontmatter: fill from context; align `format: link` fields via Phase 2; use `default` if nothing available.
-   - Body: fill only sections with `[!agent-fill]` callouts, generating content per each callout's instructions. Leave sections without callouts empty.
-   - **`[!agent-fill]` handling is append-below, not replace-inside.** Keep the entire callout block exactly as-is (including its original instruction text). Insert the generated content **after the callout block ends**, as normal Markdown paragraphs/lists that do **not** start with `>`.
-   - **Never replace the instruction text inside an `[!agent-fill]` callout with generated content. Never remove the callout.**
-   - **CRITICAL: Preserve all `.base` embeds** (e.g., `![[log-attendees_internal.base]]`, `![[person-logs.base]]`). These are template infrastructure, not content to fill. Use `apply_diff` with precise SEARCH targeting the end of the `[!agent-fill]` block and inserting content below it, never replacing the whole section.
-
-   Example:
-
-   ```md
-   > [!agent-fill]-
-   > 用 1-2 句话说明本次活动的背景和目的。
-
-   本次活动的背景是客户提出了新的 AI 研发诉求，因此需要先做内部方案研判。
-   ```
-
-   Wrong:
-
-   ```md
-   > [!agent-fill]-
-   > 本次活动的背景是客户提出了新的 AI 研发诉求，因此需要先做内部方案研判。
-   ```
-
-8. **Verify after writing.** After writing the file:
-
-   ```bash
-   markbase note verify <note-name>
-   ```
-
-   - Passed → proceed to Phase 3.
-   - `[WARN]` → fix and re-verify. Max 2 attempts; if still failing, report verbatim to user.
-   - `[ERROR]` → hard blocker; stop and report.
+Batch all required questions into one message.
 
 ---
 
-## Phase 1.5 — Supplemental Info (信息补充)
+## Phase 1 — Capture Checklist
 
-No new file created. Align mentioned entities and update their existing notes. Phase 1.5 never creates new notes: `status: "missing"` always stays as `[?[dangling-note-name]]` until the user explicitly asks to create a new record.
+- Route to one template using `_schema.description`; ask only if ambiguous.
+- Run Phase 2 for every mentioned entity before filling links.
+- Read the template with `markbase template describe <template-name>`.
+- Derive the filename from `_schema.filename.description` and confirm all required fields are fillable.
+- Create the skeleton once with `markbase note new <note-name> --template <template-name>` and save the returned path.
+- Fill the saved file path, then run `markbase note verify <note-name>`.
 
-1. Run Phase 2 alignment for every entity mentioned. If `status: "missing"` → `[?[dangling-note-name]]`, notify user; do not create. If `status: "multiple"` → disambiguate before updating.
-2. For each aligned entity, find relevant `[!agent-update]` callouts and apply update policy (same as Phase 3). If no matching callout exists, ask user which section to update.
-3. Verify each updated note first (`markbase note verify <note-name>`). Same retry rules as Phase 1 Step 8.
+### Phase 1 Rules
+
+- For `resolve=exact|alias`, you must inspect the resolved note with `markbase note render <resolved-note-name>`.
+- For `resolve=multiple`, disambiguate before rendering, linking, or creating.
+- For `resolve=missing`, finish Phase 1 first, then continue. Max one level of recursion; deeper unknowns stay as `[?[dangling-note-name]]`.
+- Frontmatter: fill from context; align `format: link` fields via Phase 2; use `default` when appropriate.
+- Body: fill only sections with `[!agent-fill]` callouts.
+- Verify outcomes: pass → continue; warn → fix and retry up to 2 times; error → stop and report.
+
+### `[!agent-fill]` Checklist
+
+- Keep the entire callout block unchanged.
+- Insert generated Markdown after the callout block ends.
+- Never replace the instruction text inside the callout.
+- Never remove the callout.
+- Preserve all `.base` embeds.
+
+Correct:
+
+```md
+> [!agent-fill]-
+> 用 1-2 句话说明本次活动的背景和目的。
+
+本次活动的背景是客户提出了新的 AI 研发诉求，因此需要先做内部方案研判。
+```
+
+Wrong:
+
+```md
+> [!agent-fill]-
+> 本次活动的背景是客户提出了新的 AI 研发诉求，因此需要先做内部方案研判。
+```
 
 ---
 
-## Phase 2 — Entity Alignment (实体对齐)
+## Phase 1.5 — Supplemental Update Checklist
 
-Triggered whenever a value should become a `[[wiki-link]]`.
+- Do not create new files.
+- Run Phase 2 for every mentioned entity.
+- If `resolve=missing`, keep `[?[dangling-note-name]]`, notify the user, and stop short of creation.
+- Find matching `[!agent-update]` callouts and update only those sections.
+- If no matching callout exists, ask the user which section to update.
+- Run `markbase note verify <note-name>` for each modified note.
 
-Use `markbase note resolve` instead of writing a custom query. It returns JSON by default, which is easier for agents to consume.
+---
+
+## Phase 2 — Entity Alignment Checklist
+
+- Use `markbase note resolve`, never a custom query, whenever a value should become `[[wiki-link]]`.
+- Check `status`, `type`, `description`, and context before reusing any match.
+- Inspect all matches before creating a new note.
+- Prefer existing aligned notes over dangling refs.
+- If a required field remains dangling, notify the user.
 
 ```bash
 markbase note resolve "<entity>"
 markbase note resolve "<entity1>" "<entity2>"
 ```
 
-Minimal output shape:
+### Status Rules
 
-```json
-[
-  {
-    "query": "张伟",
-    "status": "multiple",
-    "matches": [
-      {
-        "name": "张伟-person",
-        "path": "people/张伟-person.md",
-        "type": "person",
-        "description": "某业务线联系人",
-        "matched_by": "alias"
-      },
-      {
-        "name": "张伟-绿米",
-        "path": "people/张伟-绿米.md",
-        "type": "person",
-        "description": "绿米合作接口人",
-        "matched_by": "alias"
-      }
-    ]
-  }
-]
-```
+- `exact` → matched by `file.name`; still validate semantics.
+- `alias` → matched by `aliases`; still validate semantics.
+- `multiple` → disambiguate via context; ask if still unclear.
+- `missing` → create via Phase 1, or use `[?[dangling-note-name]]` if deferred.
 
-Decision table by `status`:
+### Naming Rules
 
-| `status`    | Action                                                                                                 |
-| ----------- | ------------------------------------------------------------------------------------------------------ |
-| `exact`     | One note matched by `file.name`. Still compare `type`, `description`, and context before reuse. If `description` is clearly about a different thing, do not force reuse; create a new note or ask only if needed. |
-| `alias`     | One note matched by `aliases`. Use the returned matched note name only after checking that `description` and context still fit the target entity. |
-| `multiple`  | More than one candidate matched. Disambiguate via context; if still unclear, ask user. On confirmation, add the chosen spelling to `aliases`. |
-| `missing`   | No existing note or alias matched. Create via Phase 1, or write `[?[dangling-note-name]]` if deferred. |
-
-Additional rules:
-- `matches[*].matched_by` is ordered with `name` hits before `alias` hits; prefer earlier entries when context already disambiguates.
-- Always inspect all `matches` before creating a new note; different `type` values can still conflict on name uniqueness.
-- Even for a single `exact` hit, treat `description` as the cheap semantic guardrail: if it obviously describes another entity, prefer creating a new note.
-
-**Naming conflict strategies** (pick most natural): append type suffix (`张伟-person`), organization (`张伟-绿米`), role (`张伟-CTO`), or disambiguator (`张伟-上海`). Tell user before creating.
-
-**Dangling refs:** `[?[dangling-note-name]]` = a note target that should exist but is not yet aligned. By default, set `dangling-note-name` to the original mention / query. Use a different name only when the surrounding context already states a more reliable target name. Never promote without alignment. Notify user if a `required` field is dangling.
+- `matches[*].matched_by` is ordered with `name` hits before `alias` hits.
+- Use natural disambiguators for conflicts: type, organization, role, or location.
+- Default `[?[dangling-note-name]]` to the original mention or query unless nearby context gives a better target name.
+- Never promote a dangling ref without alignment.
 
 ---
 
-## Phase 3 — Knowledge Consolidation (知识沉淀)
+## Phase 3 — Knowledge Consolidation Checklist
 
-Triggered after Phase 1 completes. For every `[[link]]` in the new file, use `markbase note render <linked-note-name>` to read the target with all `.base` embeds expanded, and check for `[!agent-update]` callouts. Skip files with none.
+- For every `[[link]]` in the new file, run `markbase note render <linked-note-name>`.
+- Skip notes with no `[!agent-update]` callouts.
+- Apply the directive policy to the matching section only.
+- Skip if the section already contains an entry linking to the source document path.
+- Verify each updated note before moving on.
+- Apply to all linked notes, not just the primary one.
 
-| Policy       | Behavior                                                       |
-| ------------ | -------------------------------------------------------------- |
-| `Overwrite`  | Rewrite section with latest info. Callout untouched.           |
-| `Append`     | Add one timestamped entry + source link at end of section.     |
-| `Accumulate` | Add timestamped entry unconditionally, preserving all history. |
+### Directive Policies
 
-**Idempotency:** skip if an entry linking to the source document's path already exists in the section.
-
-For each updated note: verify first (`markbase note verify <note-name>`). Same retry rules as Phase 1 Step 8. Apply to **all** linked note names in the new file, not just the primary one. Run Phase 3 only after Phase 1 is fully complete and verified.
-
----
-
-## Behavioral Rules
-
-- **File creation:** **NEVER create note files directly.** Always use `markbase note new` — this is the only permitted way to create a note. Call it once per note, then use the returned path to write content.
-- **Verify before follow-up commands:** after every modified note, always run `markbase note verify` first. Once verify passes, continue with the next step. This applies in all phases.
-- **Directives:** read from instance file, never template. Never remove callouts. Never write to sections without a callout. For `[!agent-fill]`, keep the directive block unchanged and append generated content below it as regular Markdown.
-- **Alignment:** never guess — always run `markbase note resolve` first. Prefer `[[confirmed]]` over `[?[dangling-note-name]]`.
-- **Asking user:** follow **Ask User Only When** above. Never ask earlier than required, and batch all questions into one message.
-
-### Post-Fill Checklist (after Phase 1 Step 7)
-
-Before running `markbase note verify`, confirm:
-
-- [ ] All `[!agent-fill]` callouts still present and unchanged
-- [ ] Generated content inserted below each `[!agent-fill]` callout, not inside it
-- [ ] All `[!agent-update]` callouts still present (not removed)
-- [ ] All `.base` embeds preserved (e.g., `![[log-attendees_internal.base]]`, `![[person-logs.base]]`)
-- [ ] Chapter structure unchanged (no sections accidentally deleted)
+- `Overwrite` → rewrite the section; keep the callout untouched.
+- `Append` → add one timestamped entry plus source link.
+- `Accumulate` → always add a timestamped entry.
 
 ---
 
-## Output Format
+## Global Rules Checklist
 
-After any write operation, summarize:
+- Never create note files directly; always use `markbase note new`.
+- After every modified note, run `markbase note verify` before any follow-up step.
+- Read directives from the instance file, never the template.
+- Never remove callouts.
+- Never write to sections without a relevant callout.
+- For alignment, never guess; always run `markbase note resolve` first.
+- Prefer `[[confirmed]]` over `[?[dangling-note-name]]`.
 
-```
+### Pre-Verify Checklist
+
+- [ ] All `[!agent-fill]` callouts still exist and are unchanged.
+- [ ] Generated content is below each `[!agent-fill]` callout, not inside it.
+- [ ] All `[!agent-update]` callouts still exist.
+- [ ] All `.base` embeds are preserved.
+- [ ] Chapter structure is unchanged.
+
+---
+
+## Output Checklist
+
+After any write, summarize briefly and do not repeat file contents.
+
+```text
 ✓ Created: logs/2026-02-28_绿米_产品Demo.md (verify: passed)
 ✓ Aligned: related_customer → [[绿米]], attendees_external → [[张伟]]
 ✓ Consolidated:
@@ -240,29 +210,23 @@ After any write operation, summarize:
     [WARN] field 'department' invalid value 'unknown'. Allowed: [sales, engineering, product]
 ```
 
-Verify status: `passed` / `N warn fixed` / `blocked`. Do not repeat file contents.
+Use verify status `passed`, `N warn fixed`, or `blocked`.
 
 ---
 
-## Reference
-
-**Query:**
+## Command Cheatsheet
 
 ```bash
-markbase query "author == 'Tom' ORDER BY file.mtime DESC LIMIT 10"
-markbase query "SELECT file.path, note.status FROM notes WHERE note.status = 'active'"
-markbase query "<expr>" -o list|table
+markbase template list
+markbase note resolve "<name>" "<name2>"
+markbase query "<expr or SELECT ...>"
 markbase query --dry-run "<expr>"
+markbase note render <name>
+markbase note verify <name>
 ```
 
-`file.*` = native DB columns. `note.*` or bare = frontmatter. Example: `list_contains(file.tags, 'todo')`, `note.year::INTEGER >= 2024`.
-
-**Links:** filename only, no path or extension. In frontmatter, always quote: `related: "[[名称]]"`, `list: ["[[张三]]", "[[李四]]"]`.
-
-**Reading Files:**
-
-There are two ways to view file contents, depending on the purpose:
-
-1. **To view rendered content** — Use `markbase note render <name>`. This command expands `.base` file embeds (e.g., `![[related.base]]`) to show the full consolidated view. Use this when you need to see the complete picture, such as viewing a customer profile with all related opportunities, activities, and contacts automatically expanded.
-
-2. **To read file content for modification** — Use your native file reading tool (e.g., `read_file`). This reads the raw file content without expanding embeds. Use this when you need to edit the file, as you must work with the actual source content, not the rendered view.
+- `file.*` = native DB columns; `note.*` or bare = frontmatter.
+- `list_contains(file.tags, 'todo')` queries array fields.
+- Wiki-links use filename only; in frontmatter always quote links, e.g. `related: "[[名称]]"`.
+- To inspect a note with `.base` expansions, use `markbase note render <name>`.
+- To edit source content, read the raw file instead of rendered output.

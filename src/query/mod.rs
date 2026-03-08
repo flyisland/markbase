@@ -5,7 +5,7 @@ pub mod translator;
 
 use std::path::Path;
 
-use crate::output::{OutputValue, render_markdown_table, render_yaml_records};
+use crate::output::{OutputValue, render_json_records, render_markdown_table};
 
 pub use executor::{execute_query, translate_query};
 
@@ -33,8 +33,8 @@ pub fn output_results(
 fn format_results(results: &[Vec<String>], format: &str, field_names: &[String]) -> String {
     let rows = to_output_rows(results);
     match format {
-        "list" | "List" => render_yaml_records(field_names, &rows),
-        _ => render_markdown_table(field_names, &rows),
+        "table" | "Table" => render_markdown_table(field_names, &rows),
+        _ => render_json_records(field_names, &rows),
     }
 }
 
@@ -99,113 +99,68 @@ fn convert_to_absolute_paths(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn test_output_results_table() {
-        let results = vec![
-            vec!["path1".to_string(), "name1".to_string()],
-            vec!["path2".to_string(), "name2".to_string()],
-        ];
+        let results = vec![vec!["notes/a.md".to_string(), "a".to_string()]];
         let fields = vec!["path".to_string(), "name".to_string()];
         let result = output_results(&results, "table", &fields, None, false);
         assert!(result.is_ok());
     }
 
     #[test]
-    fn test_output_results_list() {
-        let results = vec![
-            vec!["path1".to_string(), "name1".to_string()],
-            vec!["path2".to_string(), "name2".to_string()],
-        ];
-        let fields = vec!["path".to_string(), "name".to_string()];
-        let result = output_results(&results, "list", &fields, None, false);
-        assert!(result.is_ok());
+    fn test_format_results_json() {
+        let results = vec![vec![
+            "readme".to_string(),
+            "[\"docs\",\"important\"]".to_string(),
+        ]];
+        let fields = vec!["file.name".to_string(), "file.tags".to_string()];
+        let output = format_results(&results, "json", &fields);
+        let actual: serde_json::Value = serde_json::from_str(&output).unwrap();
+        let expected = json!([
+            {
+                "file.name": "readme",
+                "file.tags": ["docs", "important"]
+            }
+        ]);
+        assert_eq!(actual, expected);
     }
 
     #[test]
-    fn test_output_results_empty_list() {
-        let results: Vec<Vec<String>> = vec![];
-        let fields = vec!["path".to_string()];
-        let output = format_results(&results, "list", &fields);
-        assert_eq!(output, "[]\n");
+    fn test_format_results_empty_json() {
+        let results = vec![];
+        let fields = vec!["name".to_string()];
+        let output = format_results(&results, "json", &fields);
+        assert_eq!(output, "[]");
     }
 
     #[test]
-    fn test_output_results_empty_table() {
-        let results: Vec<Vec<String>> = vec![];
-        let fields = vec!["path".to_string()];
-        let output = format_results(&results, "table", &fields);
-        assert_eq!(output, "| path |\n| --- |\n");
-    }
-
-    #[test]
-    fn test_output_results_default_to_table() {
-        let results = vec![vec!["test".to_string()]];
-        let fields = vec!["col0".to_string()];
-        let output = format_results(&results, "unknown_format", &fields);
-        assert_eq!(output, "| col0 |\n| --- |\n| test |\n");
-    }
-
-    #[test]
-    fn test_output_list_structure_is_yaml() {
-        let results = vec![vec!["path".to_string(), "[tag1, tag2]".to_string()]];
-        let fields = vec!["path".to_string(), "tags".to_string()];
-        let output = format_results(&results, "list", &fields);
-        assert_eq!(output, "- path: path\n  tags:\n    - tag1\n    - tag2\n");
-    }
-
-    #[test]
-    fn test_output_table_is_markdown() {
-        let results = vec![
-            vec!["short".to_string(), "longer_value".to_string()],
-            vec!["a".to_string(), "b".to_string()],
-        ];
-        let fields = vec!["col1".to_string(), "col2".to_string()];
+    fn test_format_results_table() {
+        let results = vec![vec!["Alice".to_string(), "Engineer".to_string()]];
+        let fields = vec!["name".to_string(), "title".to_string()];
         let output = format_results(&results, "table", &fields);
         assert_eq!(
             output,
-            "| col1 | col2 |\n| --- | --- |\n| short | longer_value |\n| a | b |\n"
+            "| name | title |\n| --- | --- |\n| Alice | Engineer |\n"
         );
     }
 
     #[test]
-    fn test_output_multiple_rows() {
-        let results = vec![
-            vec![
-                "path1".to_string(),
-                "name1".to_string(),
-                "tags1".to_string(),
-            ],
-            vec![
-                "path2".to_string(),
-                "name2".to_string(),
-                "tags2".to_string(),
-            ],
-            vec![
-                "path3".to_string(),
-                "name3".to_string(),
-                "tags3".to_string(),
-            ],
-        ];
-        let fields = vec!["path".to_string(), "name".to_string(), "tags".to_string()];
-
-        for format in &["table", "list"] {
-            let result = output_results(&results, format, &fields, None, false);
-            assert!(result.is_ok(), "Failed for format: {}", format);
-        }
+    fn test_unknown_format_defaults_to_json() {
+        let results = vec![vec!["Alice".to_string()]];
+        let fields = vec!["name".to_string()];
+        let output = format_results(&results, "unknown_format", &fields);
+        assert_eq!(output, "[\n  {\n    \"name\": \"Alice\"\n  }\n]");
     }
 
     #[test]
-    fn test_abs_path_converts_path_and_folder() {
-        let base_dir = std::path::PathBuf::from("/base");
-        let results = vec![
-            vec!["notes/test.md".to_string(), "notes".to_string()],
-            vec!["notes/other.md".to_string(), "notes".to_string()],
-        ];
-        let fields = vec!["file.path".to_string(), "file.folder".to_string()];
-
-        let converted = convert_to_absolute_paths(&results, &fields, &base_dir);
-        assert_eq!(converted[0][0], "/base/notes/test.md");
-        assert_eq!(converted[0][1], "/base/notes");
+    fn test_convert_to_absolute_paths() {
+        let results = vec![vec!["notes/a.md".to_string(), "a".to_string()]];
+        let fields = vec!["file.path".to_string(), "file.name".to_string()];
+        let base_dir = Path::new("/vault");
+        let converted = convert_to_absolute_paths(&results, &fields, base_dir);
+        assert_eq!(converted[0][0], "/vault/notes/a.md");
+        assert_eq!(converted[0][1], "a");
     }
 }

@@ -1156,7 +1156,7 @@ fn test_note_render_no_base_embeds() {
     vault.create_note("test-note", "# Test Note\n\nSome content here.");
     vault.index();
 
-    let output = vault.run_cli(&["note", "render", "test-note", "-o", "list"]);
+    let output = vault.run_cli(&["note", "render", "test-note"]);
 
     assert_cli_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -1263,13 +1263,13 @@ fn test_note_render_empty_results() {
     assert_cli_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stdout.contains("| name |"));
-    assert!(stdout.contains("| --- |"));
+    assert!(stdout.contains("```json"));
+    assert!(stdout.contains("[]"));
     assert!(stderr.is_empty(), "unexpected stderr output: {}", stderr);
 }
 
 #[test]
-fn test_note_render_list_field() {
+fn test_note_render_json_field() {
     let vault = TestVault::new();
     vault.create_note("test-note", "---\ntags: [tag1, tag2]\n---\n![[tags.base]]");
     vault.create_file(
@@ -1278,14 +1278,14 @@ fn test_note_render_list_field() {
     );
     vault.index();
 
-    let output = vault.run_cli(&["note", "render", "test-note", "-o", "list"]);
+    let output = vault.run_cli(&["note", "render", "test-note"]);
 
     assert_cli_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("```yaml"));
-    assert!(stdout.contains("- tags:"));
-    assert!(stdout.contains("    - tag1"));
-    assert!(stdout.contains("    - tag2"));
+    assert!(stdout.contains("```json"));
+    assert!(stdout.contains("\"tags\""));
+    assert!(stdout.contains("\"tag1\""));
+    assert!(stdout.contains("\"tag2\""));
 }
 
 #[test]
