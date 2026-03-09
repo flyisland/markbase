@@ -171,7 +171,7 @@ status: planning
 
     let new_output = vault.note_new_with_template("2024-01-15", "daily");
     assert_cli_success(&new_output);
-    assert!(vault.path.join("2024-01-15.md").exists());
+    assert!(vault.path.join("inbox").join("2024-01-15.md").exists());
 }
 
 #[test]
