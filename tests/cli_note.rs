@@ -15,6 +15,17 @@ fn test_note_verify_note_not_found() {
 }
 
 #[test]
+fn test_note_verify_rejects_path_like_name() {
+    let vault = TestVault::new();
+
+    let output = vault.note_verify("logs/opportunities/test-note");
+
+    assert_cli_error(&output);
+    assert!(stderr_contains(&output, "must not include directories"));
+    assert!(!stderr_contains(&output, "not found in the vault"));
+}
+
+#[test]
 fn test_note_verify_no_templates_field() {
     let vault = TestVault::new();
     vault.create_note("test-note", "# Test Note");
@@ -1082,6 +1093,44 @@ fn test_note_rename_not_found() {
 }
 
 #[test]
+fn test_note_rename_rejects_path_like_old_name() {
+    let vault = TestVault::new();
+
+    let output = vault.note_rename("notes/old-name", "new-name");
+
+    assert_cli_error(&output);
+    assert!(stderr_contains(
+        &output,
+        "Invalid old_name 'notes/old-name'"
+    ));
+}
+
+#[test]
+fn test_note_rename_rejects_path_like_new_name() {
+    let vault = TestVault::new();
+    vault.create_file("aaa.jpeg", "image-bytes");
+
+    let output = vault.note_rename("aaa.jpeg", "assets/bbb.jpeg");
+
+    assert_cli_error(&output);
+    assert!(stderr_contains(
+        &output,
+        "Invalid new_name 'assets/bbb.jpeg'"
+    ));
+}
+
+#[test]
+fn test_note_rename_allows_extension_bearing_resource_name() {
+    let vault = TestVault::new();
+    vault.create_file("aaa.jpeg", "image-bytes");
+
+    let output = vault.note_rename("aaa.jpeg", "bbb.jpeg");
+
+    assert_cli_success(&output);
+    assert!(vault.path.join("bbb.jpeg").exists());
+}
+
+#[test]
 fn test_note_rename_target_exists() {
     let vault = TestVault::new();
     vault.create_note("note-a", "# Note A");
@@ -1160,6 +1209,38 @@ fn test_note_render_note_not_found() {
 
     assert_cli_error(&output);
     assert!(stderr_contains(&output, "not found"));
+}
+
+#[test]
+fn test_note_render_rejects_path_like_name() {
+    let vault = TestVault::new();
+
+    let output = vault.run_cli(&["note", "render", "logs/test-note"]);
+
+    assert_cli_error(&output);
+    assert!(stderr_contains(&output, "must not include directories"));
+    assert!(!stderr_contains(&output, "not found in the vault"));
+}
+
+#[test]
+fn test_note_render_accepts_base_filename() {
+    let vault = TestVault::new();
+    vault.create_file(
+        "tasks.base",
+        "views:
+  - type: table
+    name: Tasks
+    order:
+      - file.name
+",
+    );
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "tasks.base"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("rendered from tasks.base") || stdout.contains("```json"));
 }
 
 #[test]
@@ -1597,6 +1678,43 @@ fn test_note_resolve_missing() {
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(json[0]["status"], "missing");
     assert_eq!(json[0]["matches"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn test_note_resolve_rejects_path_like_input() {
+    let vault = TestVault::new();
+
+    let output = vault.note_resolve(&["logs/acme"]);
+
+    assert_cli_error(&output);
+    assert!(stderr_contains(
+        &output,
+        "Invalid resolve input 'logs/acme'"
+    ));
+}
+
+#[test]
+fn test_note_resolve_rejects_path_like_input_in_multi_query() {
+    let vault = TestVault::new();
+    vault.create_note(
+        "acme",
+        r#"---
+type: company
+aliases: ["ACME Corp"]
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_resolve(&["acme", "logs/ghost"]);
+
+    assert_cli_error(&output);
+    assert!(stderr_contains(
+        &output,
+        "Invalid resolve input 'logs/ghost'"
+    ));
 }
 
 #[test]

@@ -1,9 +1,10 @@
 use std::fs;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 use regex::Regex;
 
+use crate::name_validator::validate_note_name;
 use crate::template::{TemplateDocument, default_note_content};
 
 static RE_NAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\{\{\s*name\s*\}\}").unwrap());
@@ -53,28 +54,6 @@ pub fn create_note(
     fs::write(&target_path, content)?;
 
     Ok(CreatedNote { path: target_path })
-}
-
-fn validate_note_name(name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let path = Path::new(name);
-
-    if name.is_empty() {
-        return Err("Note name cannot be empty".into());
-    }
-
-    if path
-        .components()
-        .any(|component| !matches!(component, Component::Normal(_)))
-        || path.components().count() != 1
-    {
-        return Err(format!(
-            "Invalid note name '{}': note name must not include directories",
-            name
-        )
-        .into());
-    }
-
-    Ok(())
 }
 
 fn find_existing_note_path(

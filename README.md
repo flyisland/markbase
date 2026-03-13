@@ -242,7 +242,7 @@ markbase note new my-note --template daily   # Create in base-dir/inbox if templ
 markbase note new customer --template company # Create in _schema.location if template defines one
 ```
 
-`name` must be a pure note name and cannot include directory components.
+`name` must be a pure note/resource name and cannot include directory components.
 
 On success, `markbase note new` prints only the note path relative to `base-dir`.
 
@@ -253,11 +253,14 @@ markbase note rename old-name new-name
 ```
 
 Behavior:
+- `old-name` and `new-name` must be names only (no path components)
 - Looks up note by name (not path)
 - Fails if name is ambiguous or new name exists
 - Updates all `[[old-name]]` links and `![[old-name]]` embeds across the vault (body and frontmatter)
 - Preserves aliases, section anchors, and block IDs
 - Reindexes the vault immediately after the rename completes
+
+Extensions are allowed when renaming resource-style files such as `aaa.jpeg`; the forbidden part is the path, not the suffix.
 
 **Resolve one or more entity names to notes:**
 
@@ -267,6 +270,8 @@ markbase note resolve "张伟" "阿里"
 ```
 
 Outputs JSON by default for agent-friendly entity alignment. Each input returns `query`, `status`, and `matches`.
+
+Each resolve input must be a name or alias only, never a path.
 
 Statuses:
 - `exact` — one note matched by `file.name`
@@ -284,6 +289,8 @@ A single `exact` or `alias` match is still only a low-cost alignment hint: compa
 markbase note verify <name>
 ```
 
+`<name>` must be a note/resource name only, never a path.
+
 Checks that the note conforms to all constraints defined in its referenced MTS template(s), and also runs a global `description` check before template validation:
 - Global frontmatter `description` exists, is a string, and is not blank (reported as WARN)
 - Directory location matches `_schema.location`
@@ -300,6 +307,8 @@ markbase note render <n>            # Markdown with embedded JSON blocks (defaul
 markbase note render <n> -o table    # Markdown tables for embedded Base views
 markbase note render <n> --dry-run   # show SQL without executing
 ```
+
+`<n>` must be a note or `.base` filename only, never a path.
 
 Renders the note body to stdout. Each `![[*.base]]` embed is replaced with
 query results from the corresponding Obsidian Base file. Non-`.base` embeds

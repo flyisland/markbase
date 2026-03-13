@@ -4,6 +4,8 @@ use gray_matter::engine::YAML;
 use std::fs;
 use std::path::Path;
 
+use crate::name_validator::validate_path_free_name;
+
 pub struct RenameResult {
     pub old_path: String,
     pub new_path: String,
@@ -15,6 +17,9 @@ pub fn rename_note(
     old_name: &str,
     new_name: &str,
 ) -> Result<RenameResult, Box<dyn std::error::Error>> {
+    validate_path_free_name(old_name, "old_name")?;
+    validate_path_free_name(new_name, "new_name")?;
+
     // Find the old note file by name (search filesystem)
     let old_file_path = find_note_by_name(base_dir, old_name)?;
 

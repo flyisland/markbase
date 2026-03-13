@@ -7,6 +7,7 @@ use std::sync::LazyLock;
 
 use crate::db::Database;
 use crate::extractor::{Extractor, WIKILINK_RE};
+use crate::name_validator::validate_note_name;
 
 static WIKILINK_BRACKET_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\[\[(.+)\]\]$").expect("invalid regex: WIKILINK_BRACKET_RE"));
@@ -93,6 +94,8 @@ pub fn verify_note(
     db: &Database,
     name: &str,
 ) -> Result<VerifyResult, Box<dyn std::error::Error>> {
+    validate_note_name(name)?;
+
     let mut issues = Vec::new();
 
     let notes = db.get_notes_by_name(name)?;

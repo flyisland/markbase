@@ -3,6 +3,7 @@ pub mod creator;
 pub mod db;
 pub mod describe;
 pub mod extractor;
+pub mod name_validator;
 pub mod output;
 pub mod query;
 pub mod renderer;
