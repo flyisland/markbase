@@ -11,7 +11,7 @@ use regex::Regex;
 use serde_json::Value;
 
 use crate::db::Database;
-use crate::name_validator::validate_note_name;
+use crate::name_validator::validate_render_target_name;
 use crate::renderer::filter::{ThisContext, merge_filters, translate_columns, translate_sort};
 use crate::renderer::output::{Row, render_json, render_table};
 
@@ -35,7 +35,7 @@ pub fn render_note(
     name: &str,
     opts: &RenderOptions,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    validate_note_name(name)?;
+    validate_render_target_name(name)?;
 
     let name_escaped = name.replace('\'', "''");
     let sql = format!(

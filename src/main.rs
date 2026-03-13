@@ -17,7 +17,10 @@ use clap::{ArgAction, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 use crate::db::Database;
-use crate::name_validator::{validate_note_name, validate_path_free_name};
+use crate::name_validator::{
+    validate_note_name, validate_path_free_name, validate_render_target_name,
+    validate_resolve_input,
+};
 
 fn open_db(db_path: &std::path::Path) -> Result<Database, Box<dyn std::error::Error>> {
     Database::open_existing(db_path)
@@ -152,12 +155,12 @@ enum NoteCommands {
     },
     #[command(about = "Verify a note against its template schema")]
     Verify {
-        #[arg(help = "Note name only (no directories; extension allowed for resources)")]
+        #[arg(help = "Note name only (no directories or file extensions)")]
         name: String,
     },
     #[command(about = "Render a note to stdout, expanding .base embeds")]
     Render {
-        #[arg(help = "Note or .base file name only (no directories)")]
+        #[arg(help = "Note name or .base filename only (no directories)")]
         name: String,
 
         #[arg(short = 'o', help = "Output format: json (default) or table")]
@@ -346,7 +349,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             NoteCommands::Resolve { names } => {
                 for name in &names {
-                    validate_path_free_name(name, "resolve input")?;
+                    validate_resolve_input(name)?;
                 }
                 let (db, stats) = ensure_index_ready(&base_dir, &db_path, compute_backlinks)?;
                 emit_index_output(&stats, index_log_level);
@@ -412,7 +415,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 format,
                 dry_run,
             } => {
-                validate_note_name(&name)?;
+                validate_render_target_name(&name)?;
                 let db = if dry_run {
                     check_db_exists(&db_path, &base_dir)?;
                     open_db(&db_path)?

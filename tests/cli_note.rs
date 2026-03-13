@@ -26,6 +26,20 @@ fn test_note_verify_rejects_path_like_name() {
 }
 
 #[test]
+fn test_note_verify_rejects_extension_in_name() {
+    let vault = TestVault::new();
+
+    let output = vault.note_verify("test-note.md");
+
+    assert_cli_error(&output);
+    assert!(stderr_contains(
+        &output,
+        "must not include a file extension"
+    ));
+    assert!(!stderr_contains(&output, "not found in the vault"));
+}
+
+#[test]
 fn test_note_verify_no_templates_field() {
     let vault = TestVault::new();
     vault.create_note("test-note", "# Test Note");
@@ -974,6 +988,17 @@ fn test_note_create_rejects_directory_in_name() {
 }
 
 #[test]
+fn test_note_create_rejects_extension_in_name() {
+    let vault = TestVault::new();
+
+    let output = vault.note_new("my-note.md");
+
+    assert_cli_error(&output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("must not include a file extension"));
+}
+
+#[test]
 fn test_note_rename_simple() {
     let vault = TestVault::new();
     vault.create_note("old-name", "# Old Name");
@@ -1241,6 +1266,19 @@ fn test_note_render_accepts_base_filename() {
     assert_cli_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("rendered from tasks.base") || stdout.contains("```json"));
+}
+
+#[test]
+fn test_note_render_rejects_non_base_extension() {
+    let vault = TestVault::new();
+
+    let output = vault.run_cli(&["note", "render", "diagram.png"]);
+
+    assert_cli_error(&output);
+    assert!(stderr_contains(
+        &output,
+        "render target must be a note name or .base filename"
+    ));
 }
 
 #[test]
@@ -1690,6 +1728,19 @@ fn test_note_resolve_rejects_path_like_input() {
     assert!(stderr_contains(
         &output,
         "Invalid resolve input 'logs/acme'"
+    ));
+}
+
+#[test]
+fn test_note_resolve_rejects_extension_in_input() {
+    let vault = TestVault::new();
+
+    let output = vault.note_resolve(&["acme.md"]);
+
+    assert_cli_error(&output);
+    assert!(stderr_contains(
+        &output,
+        "resolve input must not include a file extension"
     ));
 }
 

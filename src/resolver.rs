@@ -1,5 +1,5 @@
 use crate::db::Database;
-use crate::name_validator::validate_path_free_name;
+use crate::name_validator::validate_resolve_input;
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -40,7 +40,7 @@ pub fn resolve_names(
     names: &[String],
 ) -> Result<Vec<ResolveResult>, Box<dyn std::error::Error>> {
     for name in names {
-        validate_path_free_name(name, "resolve input")?;
+        validate_resolve_input(name)?;
     }
 
     names.iter().map(|name| resolve_name(db, name)).collect()

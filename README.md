@@ -242,7 +242,7 @@ markbase note new my-note --template daily   # Create in base-dir/inbox if templ
 markbase note new customer --template company # Create in _schema.location if template defines one
 ```
 
-`name` must be a pure note/resource name and cannot include directory components.
+`name` must be a pure note name: no directory components and no file extension.
 
 On success, `markbase note new` prints only the note path relative to `base-dir`.
 
@@ -271,7 +271,7 @@ markbase note resolve "张伟" "阿里"
 
 Outputs JSON by default for agent-friendly entity alignment. Each input returns `query`, `status`, and `matches`.
 
-Each resolve input must be a name or alias only, never a path.
+Each resolve input must be a name or alias only, never a path or file-style name with an extension.
 
 Statuses:
 - `exact` — one note matched by `file.name`
@@ -289,7 +289,7 @@ A single `exact` or `alias` match is still only a low-cost alignment hint: compa
 markbase note verify <name>
 ```
 
-`<name>` must be a note/resource name only, never a path.
+`<name>` must be a note name only: no path and no file extension.
 
 Checks that the note conforms to all constraints defined in its referenced MTS template(s), and also runs a global `description` check before template validation:
 - Global frontmatter `description` exists, is a string, and is not blank (reported as WARN)
@@ -308,7 +308,7 @@ markbase note render <n> -o table    # Markdown tables for embedded Base views
 markbase note render <n> --dry-run   # show SQL without executing
 ```
 
-`<n>` must be a note or `.base` filename only, never a path.
+`<n>` must be either a note name (no extension) or a `.base` filename, never a path.
 
 Renders the note body to stdout. Each `![[*.base]]` embed is replaced with
 query results from the corresponding Obsidian Base file. Non-`.base` embeds
