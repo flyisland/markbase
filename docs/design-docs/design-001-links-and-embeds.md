@@ -401,22 +401,32 @@ Examples:
 
 The CLI orchestration in `main.rs` runs indexing after rename completes, which rebuilds `links`, `embeds`, and optionally `backlinks`.
 
-## 12. `.base` File Interaction
+## 12. Render-Time Note And `.base` Interaction
 
-Obsidian bases are relevant here for two reasons:
+Render-time embed handling matters here for two reasons:
 
+- Obsidian allows Markdown notes to be embedded with `![[Note]]`
 - `.base` is an accepted Obsidian file format
 - Obsidian allows bases to be embedded with `![[File.base]]` and view-selected with `![[File.base#View]]`
 
 markbase behavior:
 
+- extractor stores Markdown note embed targets in `links` and `embeds` using the normalized note name, for example `customer`
 - extractor stores `.base` embed targets in `links` and `embeds` using the full filename, for example `customer.base`
+- renderer gives special runtime treatment to whole-note Markdown embed tokens found in normal Markdown body content
 - renderer gives special runtime treatment to `.base` embed tokens found in normal Markdown body content
 - renderer determines those candidate tokens using the same `MarkdownBody` scanning rules as extractor and rename, so fenced code blocks and inline code spans are excluded
-- when the embed shares a line with surrounding text, render expands the embed at that token position rather than requiring whole-line ownership
-- when the embed appears inside blockquote/list/callout-prefixed body lines, render still expands it, but the emitted Base block does not preserve those container prefixes line-by-line
+- a Markdown note embed is render-eligible only when it resolves to a Markdown note target and does not include a heading or block selector
+- `![[note|Alias]]` is rendered the same as `![[note]]`; the alias does not change runtime render behavior
+- whole-note Markdown embed rendering uses the embedded note's Markdown body after frontmatter removal; embedded frontmatter is never emitted
+- when a Markdown note embed shares a line with surrounding text, render inserts the expanded note body as a separate block, so `Before![[note]]After` becomes `Before`, then the rendered note body, then `After`
+- embedded Markdown note rendering is recursive and reuses the same `MarkdownBody` scanning rules as top-level note rendering, so nested Markdown note embeds and nested `.base` embeds are both expanded
+- when a nested `.base` embed is expanded from inside an embedded Markdown note, its `this` context is the embedded note currently being rendered, not the original top-level render target
+- recursion must be cycle-safe: if a note embed would revisit a note already on the active render stack, render emits a warning plus a placeholder comment and skips descending into that note again
+- when a `.base` embed shares a line with surrounding text, render expands the embed at that token position rather than requiring whole-line ownership
+- when a `.base` embed appears inside blockquote/list/callout-prefixed body lines, render still expands it, but the emitted Base block does not preserve those container prefixes line-by-line
 - this means rendered Base output may break out of the original Markdown container; users who need stable structure should place `.base` embeds on ordinary body lines
-- non-`.base` embeds are indexed, but `note render` leaves them unchanged in output
+- note embeds with heading or block selectors, and non-Markdown non-`.base` embeds, are indexed but remain literal output in `note render`
 
 For `.base#View` rendering:
 
@@ -432,10 +442,17 @@ Required failure output for missing view:
 - stdout:
   `<!-- [markbase] view '<view-name>' not found in '<base-name>' -->`
 
+Required failure output for recursive note cycles:
+
+- stderr:
+  `WARN: recursive note embed skipped for '<note-name>' to avoid cycle.`
+- stdout:
+  `<!-- [markbase] recursive note embed skipped for '<note-name>' -->`
+
 This means indexing and rendering have different responsibilities:
 
 - indexing records all embeds uniformly
-- rendering has special execution logic only for `.base` embeds
+- rendering has special execution logic only for whole-note Markdown embeds and `.base` embeds
 
 ## 13. Current Boundaries and Known Non-Goals
 
@@ -447,6 +464,7 @@ The following are not current design goals for markbase link/embed indexing:
 - resolving duplicate note names by path during indexing
 - extracting frontmatter `![[...]]` embeds
 - supporting self-relative forms such as `[[#Heading]]` and `[[^blockid]]`
+- rendering heading-target or block-target note embeds such as `![[note#Heading]]` and `![[note#^blockid]]`
 
 If any of these change, this document, `ARCHITECTURE.md`, and relevant tests should change together.
 
@@ -458,7 +476,7 @@ Shared ownership boundaries:
 - `src/extractor.rs`: single-file extraction using the shared parser
 - `src/scanner.rs`: persistence of extracted `links` and `embeds`, and derived backlink computation
 - `src/renamer.rs`: vault-wide rewrite of link/embed syntax during rename using token spans
-- `src/renderer/mod.rs`: special runtime handling for `.base` embeds
+- `src/renderer/mod.rs`: special runtime handling for whole-note Markdown embeds and `.base` embeds
 
 Architectural rule:
 

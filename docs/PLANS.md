@@ -4,7 +4,7 @@ This file is the entry index for execution plans across their lifecycle states.
 
 ## Active Plans
 
-- None currently.
+- `exec-plans/active/exec-002-render-note-embeds.md`: add Markdown note embed rendering to `note render`, including body-only expansion, recursive render, and cycle protection
 
 ## Completed Plans
 
