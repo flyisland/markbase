@@ -1,11 +1,15 @@
 # Execution Plans
 
-This file is the entry index for active execution plans.
+This file is the entry index for execution plans across their lifecycle states.
 
 ## Active Plans
 
-- `exec-plans/active/exec-001-link-syntax-unification.md`: unify Obsidian link/embed parsing semantics across extractor, renamer, verifier, and renderer
+- None currently.
 
-## Historical Plans
+## Completed Plans
 
-- `../plans/completed/`: legacy implementation plans created before the current Exec Plan / Task Spec structure
+- `exec-plans/completed/exec-001-link-syntax-unification.md`: unify Obsidian link/embed parsing semantics across extractor, renamer, verifier, and renderer
+
+## Legacy Plans
+
+- `exec-plans/legacy/`: implementation plans created before the current Exec Plan / Task Spec structure
