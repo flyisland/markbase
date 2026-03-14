@@ -201,7 +201,7 @@ Markbase is designed around predictable local performance, not distributed compl
 When changing one part of the system, inspect the neighboring contracts as well.
 
 - Query semantics: update `src/query/`, `src/renderer/filter.rs`, `README.md`, and query-related specs/tests.
-- Link parsing or rename behavior: update `src/extractor.rs`, `src/renamer.rs`, `src/verifier.rs`, `spec/links_design.md`, and note-related tests.
+- Link parsing or rename behavior: update `src/extractor.rs`, `src/renamer.rs`, `src/verifier.rs`, `docs/design-docs/design-001-links-and-embeds.md`, and note-related tests.
 - Index schema or note fields: update `src/db.rs`, `src/scanner.rs`, `README.md`, `AGENTS.md`, and any affected specs.
 - Template behavior: update `src/template.rs`, `src/creator.rs`, `src/describe.rs`, `src/verifier.rs`, and `spec/template_schema.md`.
 - Render pipeline behavior: update `src/renderer/`, `spec/note_render_design.md`, and render tests.

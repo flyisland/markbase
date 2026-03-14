@@ -23,16 +23,17 @@ cargo run -- query "author == 'Tom'"
 Before making non-trivial changes, read these in order:
 
 1. `ARCHITECTURE.md`
-2. `core-beliefs.md`
-3. Relevant files under `spec/`
+2. `docs/core-beliefs.md`
+3. Relevant files under `docs/design-docs/` and `spec/`
 4. `README.md` if user-visible behavior may change
 
 ## Core Documents
 
 - `ARCHITECTURE.md`: system map, boundaries, invariants, and shared-logic rules
-- `core-beliefs.md`: project-specific engineering beliefs for choosing between valid implementations
+- `docs/core-beliefs.md`: project-specific engineering beliefs for choosing between valid implementations
+- `docs/DESIGN.md`: entry index for design docs
 - `README.md`: user-facing behavior and command contract
-- `spec/links_design.md`: link, embed, backlink, and rename semantics
+- `docs/design-docs/design-001-links-and-embeds.md`: link, embed, backlink, and rename semantics
 - `spec/properties_design.md`: `file.*` vs `note.*` field model
 - `spec/query_design.md`: query mode and translation rules
 - `spec/note_render_design.md`: `.base` rendering pipeline
@@ -51,7 +52,7 @@ Before making non-trivial changes, read these in order:
 - Run `cargo test`, `cargo clippy -- -D warnings`, and `cargo fmt --check` before considering a task complete.
 - If behavior changes, update `README.md`.
 - If structure, invariants, or shared-logic boundaries change, update `ARCHITECTURE.md`.
-- If project-level decision principles change, update `core-beliefs.md`.
+- If project-level decision principles change, update `docs/core-beliefs.md`.
 - If a repeatable bug is fixed, add or strengthen a test.
 
 ## Notes for This Repo
