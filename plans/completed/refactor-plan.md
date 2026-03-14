@@ -436,11 +436,11 @@ src/
 
 ---
 
-### Task 3.3：更新 `spec/note_render_design.md` 使其与实现一致
+### Task 3.3：更新 `docs/design-docs/legacy/note_render_design.md` 使其与实现一致
 
 **问题：** spec 中的输出格式示例与实际实现存在三处偏差。
 
-**影响文件：** `spec/note_render_design.md`
+**影响文件：** `docs/design-docs/legacy/note_render_design.md`
 
 **具体改动：**
 

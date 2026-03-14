@@ -2,7 +2,7 @@
 
 **状态：** 草案  
 **目标系统：** markbase CLI  
-**关联规范：** `spec/template_schema.md`（MTS v1.11）、Obsidian Bases syntax
+**关联规范：** `docs/design-docs/legacy/template_schema.md`（MTS v1.11）、Obsidian Bases syntax
 
 ---
 

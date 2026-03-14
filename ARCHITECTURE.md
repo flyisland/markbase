@@ -200,11 +200,11 @@ Markbase is designed around predictable local performance, not distributed compl
 
 When changing one part of the system, inspect the neighboring contracts as well.
 
-- Query semantics: update `src/query/`, `src/renderer/filter.rs`, `README.md`, and query-related specs/tests.
+- Query semantics: update `src/query/`, `src/renderer/filter.rs`, `README.md`, and query-related design docs/tests.
 - Link parsing or rename behavior: update `src/extractor.rs`, `src/renamer.rs`, `src/verifier.rs`, `docs/design-docs/design-001-links-and-embeds.md`, and note-related tests.
 - Index schema or note fields: update `src/db.rs`, `src/scanner.rs`, `README.md`, `AGENTS.md`, and any affected specs.
-- Template behavior: update `src/template.rs`, `src/creator.rs`, `src/describe.rs`, `src/verifier.rs`, and `spec/template_schema.md`.
-- Render pipeline behavior: update `src/renderer/`, `spec/note_render_design.md`, and render tests.
+- Template behavior: update `src/template.rs`, `src/creator.rs`, `src/describe.rs`, `src/verifier.rs`, and `docs/design-docs/legacy/template_schema.md`.
+- Render pipeline behavior: update `src/renderer/`, `docs/design-docs/legacy/note_render_design.md`, and render tests.
 
 ## 11. Documentation Role
 
@@ -212,5 +212,6 @@ This file should stay stable and structural. Put changing implementation details
 
 - `README.md` for user-facing behavior
 - `AGENTS.md` for developer/agent entry guidance
-- `spec/*.md` for feature-level design details
+- `docs/design-docs/` for current feature-level design details
+- `docs/design-docs/legacy/` for older feature-level design details that have not yet been rewritten
 - tests for executable regression coverage

@@ -1,10 +1,10 @@
 # `note verify` 命令实现计划
 
 **面向：** Coding Agent  
-**参考设计：** `spec/note_verify_design.md`  
+**参考设计：** `docs/design-docs/legacy/note_verify_design.md`  
 **影响文件：** `src/main.rs`、`src/verifier.rs`（新增）、`src/lib.rs`、`tests/cli_note.rs`、`tests/common.rs`、`README.md`、`AGENTS.md`
 
-在开始前请先阅读：`AGENTS.md`、`spec/template_schema.md`、`spec/note_verify_design.md`
+在开始前请先阅读：`AGENTS.md`、`docs/design-docs/legacy/template_schema.md`、`docs/design-docs/legacy/note_verify_design.md`
 
 ---
 

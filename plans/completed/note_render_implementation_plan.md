@@ -1,7 +1,7 @@
 # `note render` 命令实现计划
 
 **面向：** Coding Agent  
-**参考设计：** `spec/note_render_design.md`（必须先阅读）  
+**参考设计：** `docs/design-docs/legacy/note_render_design.md`（必须先阅读）  
 **影响文件：**
 - `src/renderer/mod.rs`（新增）— 核心渲染逻辑
 - `src/renderer/filter.rs`（新增）— Filter 翻译、ThisContext、列名翻译、sort 翻译
@@ -14,7 +14,7 @@
 
 **在开始前必须阅读：**
 1. `AGENTS.md` — 项目规范（禁止 `.unwrap()`、输出路由、退出码规则等）
-2. `spec/note_render_design.md` — 所有翻译规则的权威来源
+2. `docs/design-docs/legacy/note_render_design.md` — 所有翻译规则的权威来源
 3. `src/db.rs` — 了解 `db.query()` 接口签名和 `QueryResult` 类型
 4. `src/main.rs` — 了解现有 `NoteCommands` 枚举结构和 match 分支写法，参照 `Verify` 分支
 
@@ -127,7 +127,7 @@ fn test_render_table_empty()          // 空结果含表头
 
 ## Task 2：新增 `src/renderer/filter.rs`
 
-该模块包含所有翻译逻辑。**所有规则以 `spec/note_render_design.md` §Filter 翻译规范为权威，遇到歧义以设计文档为准。**
+该模块包含所有翻译逻辑。**所有规则以 `docs/design-docs/legacy/note_render_design.md` §Filter 翻译规范为权威，遇到歧义以设计文档为准。**
 
 ### 2.1 依赖声明
 

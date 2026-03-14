@@ -11,9 +11,10 @@ This file is the entry index for design documents.
 
 - `design-docs/design-001-links-and-embeds.md`: Obsidian link, embed, and backlink design for markbase
 
-## Related Specs
+## Legacy Design Docs
 
-- `../spec/query_design.md`: query language and translation behavior
-- `../spec/properties_design.md`: file vs note property model
-- `../spec/note_render_design.md`: `.base` rendering pipeline
-- `../spec/template_schema.md`: template schema behavior
+- `design-docs/legacy/index.md`: archived feature-level design docs that predate the current Exec Plan / Task Spec structure
+- `design-docs/legacy/query_design.md`: query language and translation behavior
+- `design-docs/legacy/properties_design.md`: file vs note property model
+- `design-docs/legacy/note_render_design.md`: `.base` rendering pipeline
+- `design-docs/legacy/template_schema.md`: template schema behavior

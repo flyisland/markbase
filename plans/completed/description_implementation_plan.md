@@ -2,7 +2,7 @@
 
 **状态：** 待执行  
 **日期：** 2026-03-08  
-**关联设计：** `spec/description_design.md`
+**关联设计：** `docs/design-docs/legacy/description_design.md`
 
 ---
 
@@ -10,7 +10,7 @@
 
 - 该计划是临时执行文档，服务于一次或少数几次开发会话
 - 完成后可归档或删除
-- 长期保留的信息应回到 `spec/description_design.md`
+- 长期保留的信息应回到 `docs/design-docs/legacy/description_design.md`
 - 本阶段以 **WARN 软落地** 为准，不引入 ERROR 阻断
 - 已确认：无模板 `note new` 需要自动生成默认 `description` 占位值
 - 已确认：不引入更严格的最小有效内容规则，也不提供批量迁移工具
@@ -167,7 +167,7 @@ _schema:
 - `README.md`
 - `skills/markbase/SKILL.md`
 - 必要时 `AGENTS.md`
-- 如有需要，`spec/template_schema.md`
+- 如有需要，`docs/design-docs/legacy/template_schema.md`
 
 需要更新的内容：
 
@@ -283,7 +283,7 @@ cargo clippy -- -D warnings
 - [ ] 增加或更新相关测试
 - [ ] 更新 `README.md`
 - [ ] 更新 `skills/markbase/SKILL.md`
-- [ ] 视需要更新 `spec/template_schema.md`
+- [ ] 视需要更新 `docs/design-docs/legacy/template_schema.md`
 - [ ] 批量补齐模板中的 `description`
 - [ ] 运行 `cargo fmt --check`
 - [ ] 运行 `cargo test`

@@ -2,13 +2,13 @@
 
 **Document Status:** Draft  
 **Target Version:** TBD  
-**Spec Reference:** `spec/properties_design.md`
+**Spec Reference:** `docs/design-docs/legacy/properties_design.md`
 
 ---
 
 ## 1. Overview
 
-This document outlines the implementation plan for migrating from the old "reserved field" system to explicit `file.` and `note.` namespace prefixes, as defined in `spec/properties_design.md`.
+This document outlines the implementation plan for migrating from the old "reserved field" system to explicit `file.` and `note.` namespace prefixes, as defined in `docs/design-docs/legacy/properties_design.md`.
 
 ### 1.1 Migration Summary
 
@@ -43,7 +43,7 @@ This document outlines the implementation plan for migrating from the old "reser
 
 | File | Changes |
 |------|---------|
-| `spec/properties_design.md` | Mark as "Implemented" status |
+| `docs/design-docs/legacy/properties_design.md` | Mark as "Implemented" status |
 | `AGENTS.md` | Update field resolution section (4.2, 5.2) |
 
 ### 2.4 Documentation
@@ -175,7 +175,7 @@ Sections requiring updates:
 | 5.2 Key Design Decisions - translator.rs | "Reserved fields pass through" | "File properties use file. prefix" |
 | 5.2 Key Design Decisions - detector.rs | N/A | Add "file. prefix detection" |
 
-#### 3.3.2 Update `spec/properties_design.md`
+#### 3.3.2 Update `docs/design-docs/legacy/properties_design.md`
 
 Change status header:
 ```diff
@@ -288,7 +288,7 @@ If backward compatibility is needed:
 
 ### 6.4 Documentation
 
-- [ ] Update `spec/properties_design.md` status
+- [ ] Update `docs/design-docs/legacy/properties_design.md` status
 - [ ] Update `AGENTS.md` sections
 - [ ] Update `README.md` with new syntax examples
 
