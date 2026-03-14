@@ -24,14 +24,16 @@ Before making non-trivial changes, read these in order:
 
 1. `ARCHITECTURE.md`
 2. `docs/core-beliefs.md`
-3. Relevant files under `docs/design-docs/` and `docs/design-docs/legacy/`
-4. Relevant files under `docs/exec-plans/active/` and `specs/active/` when the task is covered there
-5. `README.md` if user-visible behavior may change
+3. `docs/DOCUMENTATION.md`
+4. Relevant files under `docs/design-docs/` and `docs/design-docs/legacy/`
+5. Relevant files under `docs/exec-plans/active/` and `specs/active/` when the task is covered there
+6. `README.md` if user-visible behavior may change
 
 ## Core Documents
 
 - `ARCHITECTURE.md`: system map, boundaries, invariants, and shared-logic rules
 - `docs/core-beliefs.md`: project-specific engineering beliefs for choosing between valid implementations
+- `docs/DOCUMENTATION.md`: where docs belong, which layer is authoritative, and how to classify new docs
 - `docs/DESIGN.md`: entry index for design docs
 - `docs/PLANS.md`: entry index for active execution plans
 - `README.md`: user-facing behavior and command contract

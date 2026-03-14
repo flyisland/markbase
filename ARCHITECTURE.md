@@ -212,6 +212,7 @@ When changing one part of the system, inspect the neighboring contracts as well.
 
 This file should stay stable and structural. Put changing implementation details in:
 
+- `docs/DOCUMENTATION.md` for document placement, authority, and lifecycle rules
 - `README.md` for user-facing behavior
 - `AGENTS.md` for developer/agent entry guidance
 - `docs/design-docs/` for current feature-level design details
