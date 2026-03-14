@@ -1,7 +1,7 @@
 ---
 id: task-001
 title: "建立共享 link/embed 解析器"
-status: active
+status: completed
 exec-plan: exec-001
 phase: 1
 boundaries:

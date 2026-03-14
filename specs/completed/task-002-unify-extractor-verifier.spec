@@ -1,7 +1,7 @@
 ---
 id: task-002
 title: "统一 extractor 与 verifier 的 link 语义"
-status: active
+status: completed
 exec-plan: exec-001
 phase: 1
 boundaries:

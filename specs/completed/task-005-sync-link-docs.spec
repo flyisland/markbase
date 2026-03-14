@@ -1,7 +1,7 @@
 ---
 id: task-005
 title: "同步 link 设计文档与回归测试"
-status: active
+status: completed
 exec-plan: exec-001
 phase: 3
 boundaries:

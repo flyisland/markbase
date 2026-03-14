@@ -14,6 +14,7 @@ Markbase currently uses this subset of the larger document-driven workflow:
 - `docs/exec-plans/completed/`: completed execution plans kept for rationale and history
 - `docs/exec-plans/legacy/`: older implementation plans from before the current plan/spec structure
 - `specs/active/`: active task-level specs with intent, boundaries, and completion criteria
+- `specs/completed/`: completed task specs kept for acceptance history and delivery rationale
 - `docs/design-docs/legacy/`: older or superseded design references kept for history, not the default active contract
 
 This repo does not currently rely on a required `specs/project.spec` or PRD layer. Do not invent those as part of routine work unless the repo explicitly adopts them.
@@ -27,8 +28,9 @@ When deciding where a new document belongs, use the first matching rule:
 3. If it defines current feature behavior, data shape, interface semantics, or subsystem boundaries that should remain true after implementation, put it in `docs/design-docs/`.
 4. If it coordinates multiple tasks for one delivery goal, including order, dependencies, and progress, put it in `docs/exec-plans/active/`.
 5. If it is a single task contract with intent, decisions, boundaries, and completion criteria, put it in `specs/active/`.
-6. If it explains current user-visible CLI behavior, examples, or flags, update `README.md`.
-7. If it is only historical background or has been superseded by a newer design or plan, move it to the matching `legacy/` directory instead of treating it as active guidance.
+6. If it is a completed task contract you want to preserve for history, move it to `specs/completed/`.
+7. If it explains current user-visible CLI behavior, examples, or flags, update `README.md`.
+8. If it is only historical background or has been superseded by a newer design or plan, move it to the matching `legacy/` directory instead of treating it as active guidance.
 
 ## 3. Authority And Precedence
 
@@ -39,7 +41,7 @@ When documents overlap, use this order:
 3. `docs/design-docs/` for active feature-level design contracts
 4. `ARCHITECTURE.md` and `docs/core-beliefs.md` for global boundaries and decision rules
 5. `README.md` for user-facing command behavior
-6. `docs/design-docs/legacy/` and `docs/exec-plans/legacy/` for background only
+6. `specs/completed/`, `docs/design-docs/legacy/`, and `docs/exec-plans/legacy/` for background only
 
 If an active task spec or active exec plan conflicts with a legacy document, follow the active spec/plan and update or archive the outdated legacy doc in the same change.
 
@@ -50,6 +52,7 @@ If an active task spec or active exec plan conflicts with a legacy document, fol
 - Completed exec plans move to `docs/exec-plans/completed/` without renaming.
 - Historical pre-migration implementation plans stay in `docs/exec-plans/legacy/`.
 - Task contracts go in `specs/active/` using `task-{id}-{slug}.spec`.
+- Completed task contracts move to `specs/completed/` without renaming.
 - Superseded or background-only design docs move to `docs/design-docs/legacy/`.
 
 Prefer moving a document between lifecycle directories over inventing a second file for the same artifact.

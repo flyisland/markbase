@@ -1,7 +1,7 @@
 ---
 id: task-003
 title: "将 renamer 改为基于 token span 的精确改写"
-status: active
+status: completed
 exec-plan: exec-001
 phase: 2
 boundaries:

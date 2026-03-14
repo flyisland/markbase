@@ -1,7 +1,7 @@
 ---
 id: task-004
 title: "支持 `.base#View` 渲染选择器"
-status: active
+status: completed
 exec-plan: exec-001
 phase: 2
 boundaries:
