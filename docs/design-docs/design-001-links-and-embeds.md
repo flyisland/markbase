@@ -15,13 +15,13 @@ This document is intentionally about current markbase behavior and near-term des
 
 Primary external references:
 
-- Obsidian Help: `Internal links`
-- Obsidian Help: `Embed files`
-- Obsidian Help: `Backlinks`
-- Obsidian Help: `Obsidian Flavored Markdown`
-- Obsidian Help: `Advanced formatting syntax`
-- Obsidian Help: `Create a base`
-- Obsidian Help: `Accepted file formats`
+- [Obsidian Help: Internal links](https://help.obsidian.md/links)
+- [Obsidian Help: Embed files](https://help.obsidian.md/embeds)
+- [Obsidian Help: Backlinks](https://help.obsidian.md/plugins/backlinks)
+- [Obsidian Help: Obsidian Flavored Markdown](https://help.obsidian.md/obsidian-flavored-markdown)
+- [Obsidian Help: Advanced formatting syntax](https://help.obsidian.md/advanced-syntax)
+- [Obsidian Help: Create a base](https://help.obsidian.md/bases/create-base)
+- [Obsidian Help: Accepted file formats](https://help.obsidian.md/file-formats)
 
 These references establish the user-facing syntax that markbase is trying to understand, especially:
 
