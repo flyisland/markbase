@@ -1,509 +1,62 @@
-# Markbase Developer Guide
+# Markbase Agent Guide
 
-This document is intended for markbase developers and development agents, covering architecture design, development standards, and implementation details.
+This file is the entry point for developers and coding agents. It is intentionally brief.
 
-## 1. Project Overview
-
-Markbase is a high-performance CLI tool for scanning, parsing, and indexing Markdown notes into a DuckDB database, enabling instant metadata queries with Obsidian compatibility.
-
-**Core Value**: Provides structured Markdown knowledge base access for AI Agents.
-
-## 2. Tech Stack
-
-- **Language**: Rust 1.85+ (2024 edition)
-- **CLI Framework**: clap v4.5 (derive feature)
-- **Database**: DuckDB (bundled with `duckdb` crate)
-- **File Traversal**: walkdir v2.5
-- **Parsing**: gray_matter (frontmatter), regex (wiki-links/tags), serde_yaml (frontmatter rewrite)
-- **Serialization**: serde, serde_json
-
-**Design Principle**: Minimize dependencies, optimize binary size (`strip = true` in Cargo.toml)
-
-## 3. Design Principles
-
-**Design Principle 1 - Name Uniqueness**: Note names must be unique across the entire vault, regardless of directory location. This enables simple `[[note-name]]` linking without path ambiguity.
-
-**Design Principle 2 - Obsidian Link Format**: Wiki-links use filename only (no path, no extension). Example: `[[my-note]]` not `[[notes/my-note.md]]`. Frontmatter links must be quoted: `related: "[[target]]"`.
-
-## 4. Data Model
-
-### 4.1 Schema
-
-Database location: `{{base-dir}}/.markbase/markbase.duckdb`
-
-```sql
-CREATE TABLE notes (
-    path       TEXT PRIMARY KEY,        -- Path relative to base-dir
-    folder     TEXT,                    -- Directory path
-    name       TEXT,                    -- File name without extension
-    ext        TEXT,                    -- Extension
-    size       INTEGER,                 -- Size in bytes
-    ctime      TIMESTAMPTZ,             -- Creation time
-    mtime      TIMESTAMPTZ,             -- Modification time
-    tags       VARCHAR[],               -- Tag array
-    links      VARCHAR[],               -- Wiki-links array
-    backlinks  VARCHAR[],               -- Backlink array
-    embeds     VARCHAR[],               -- Embed array
-    properties JSON                     -- Frontmatter properties
-);
-```
-
-**Indexes**:
-```sql
-CREATE INDEX idx_mtime ON notes(mtime);
-CREATE INDEX idx_folder ON notes(folder);
-CREATE INDEX idx_name ON notes(name);
-```
-
-### 4.2 Field Resolution
-
-When querying fields, the system uses explicit namespace prefixes:
-
-| Prefix | Namespace | Resolves to |
-|--------|-----------|-------------|
-| `file.` | File properties | Native database columns |
-| `note.` | Note (frontmatter) properties | `properties` JSON column |
-| *(none)* | Shorthand for `note.` | `properties` JSON column |
-
-**Resolution Rules:**
-1. If field starts with `file.` → direct column access (e.g., `file.name` → `name`)
-2. If field starts with `note.` → frontmatter JSON extraction
-3. Bare identifiers → frontmatter JSON extraction (shorthand for `note.*`)
-4. Nested paths: `a.b.c` → `json_extract_string(properties, '$."a"."b"."c"')`
-
-## 5. Core Module Responsibilities
-
-### 5.1 Module Overview
-
-```
-src/
-├── main.rs          # CLI entry point, argument parsing and command dispatch
-├── db.rs            # DuckDB connection management, schema initialization, CRUD
-├── scanner.rs       # index command driver, directory traversal, incremental update, backlink computation
-├── extractor.rs     # Single file parsing: frontmatter, wiki-links, tags
-├── output.rs        # Shared YAML list / Markdown table formatters
-├── creator.rs       # note new command, template rendering
-├── renamer.rs       # note rename command, link updates
-├── verifier.rs      # note verify command, MTS schema validation
-├── renderer/
-│   ├── mod.rs    # note render command, .base embed expansion, Step 0-5 pipeline
-│   ├── filter.rs # Base filter → DuckDB SQL translation; column/sort translation; ThisContext
-│   └── output.rs # list / table output formatting; ColumnMeta definition
-├── describe.rs      # template describe command
-├── lib.rs           # Library exports
-└── query/
-    ├── mod.rs       # Query output orchestration (table/list)
-    ├── detector.rs  # SQL/expression mode detection, security validation
-    ├── translator.rs # Field name translation
-    ├── error_map.rs # DuckDB error mapping
-    └── executor.rs  # Query execution orchestration
-```
-
-### 5.2 Key Design Decisions
-
-**`scanner.rs`**:
-- Uses WalkDir iterator for sequential processing (avoids memory spikes)
-- Incremental update logic: compare `mtime + size`, skip unchanged files
-- Deletion detection: after traversal, compare DB with filesystem, remove deleted entries
-- Conflict handling: skip duplicate files with warning
-- Backlinks: optional second traversal; disabled by default unless explicitly enabled
-
-**`extractor.rs`**:
-- Stateless parser, no database awareness
-- Merges content tags (`#tag`) and frontmatter tags
-- Extracts links from body (`[[...]]`, `![[...]]`) and frontmatter (`[[...]]`)
-- Shared regex patterns (`EMBED_RE`, `WIKILINK_RE`) exposed as public constants
-- Code blocks in body are excluded from link matching
-- Returns `ExtractedContent` with `links`, `embeds`, `tags`, `frontmatter`
-
-**`db.rs`**:
-- Owns DuckDB connection, implements Drop trait to ensure closure
-- Uses `INSERT OR REPLACE` for upsert
-- Row value access via `duckdb::types::Value`, note that column order must match schema
-
-**`query/detector.rs`**:
-- Mode detection: starts with `SELECT` → SQL mode, otherwise → expression mode
-- Security validation: reject non-SELECT statements, multi-statement injection
-- [`is_file_property()`](src/query/detector.rs:148): returns true for `file.*` properties
-- [`note_field_key()`](src/query/detector.rs:160): strips `note.` prefix if present
-
-**`query/translator.rs`**:
-- [`translate_identifier()`](src/query/translator.rs:240): handles three cases:
-  - `file.*` prefix → direct column access
-  - `note.*` prefix → frontmatter JSON extraction
-  - Bare identifiers → frontmatter JSON extraction (shorthand for `note.*`)
-- Preserve type cast syntax (`::INTEGER`, `::TIMESTAMP`)
-
-**`verifier.rs`**:
-- Stateless validator, reads from DB and filesystem but never writes
-- Business-level errors (note not found, template missing) are returned as VerifyIssue, not Err
-- Reuses WIKILINK_RE from extractor.rs for link parsing
-- All output routing (stdout vs stderr) is handled by main.rs, not verifier.rs
-
-**`renderer/`**:
-- Stateless pipeline: reads DB and filesystem, never writes
-- filter.rs: `link(this)` → `'[[name]]'` string literal; bare column names always resolve
-  to note.* (json_extract_string), never direct DB columns
-- .base files indexed as non-md: name column contains full filename including extension
-  (e.g. "opps.base"), query must NOT strip the extension
-- db.query() called with usize::MAX limit, bypassing executor.rs default 1000
-- order field = SELECT columns; sort field = ORDER BY (independent, not related to order)
-
-## 6. Command Internal Logic
-
-For detailed usage, see README.md; this section explains implementation details.
-
-### Automatic indexing
-
-**Flow**:
-1. Traverse directory tree (WalkDir)
-2. For each file:
-   - Compare `mtime + size` in DB, skip if unchanged
-   - For `.md` files: call `extractor.rs` to parse content, extract links/embeds/tags
-   - For non-`.md` files: `name` includes extension (e.g., `image.png`), no content parsing
-   - Insert/update DB
-3. Deletion detection: entries in DB but not in filesystem → delete
-4. Conflict detection: files with same name → warn and skip
-5. Optional backlink computation: when enabled, traverse all notes' `links` and populate target note's `backlinks`
-6. Commit transaction
-
-This flow runs automatically before DB-backed commands such as `query`, `note verify`, `note render`, and `template list`.
-
-### `query`
-
-**Two input modes**:
-- **Expression mode**: `author == 'Tom'` → `SELECT * FROM notes WHERE author == 'Tom'`
-- **SQL mode**: `SELECT path FROM notes WHERE ...` → execute directly (field names only translated)
-
-**Field translation**:
-```sql
--- Expression: author == 'John' (bare = frontmatter)
--- Translates to:
-SELECT * FROM notes WHERE json_extract_string(properties, '$."author"') = 'John'
-
--- Expression: file.name == 'readme' (file.* = direct column)
--- Translates to:
-SELECT * FROM notes WHERE name = 'readme'
-
--- SQL: SELECT file.name, author FROM notes WHERE author = 'John'
--- Translates to:
-SELECT name, json_extract_string(properties, '$."author"') FROM notes WHERE json_extract_string(properties, '$."author"') = 'John'
-```
-
-**Special handling**:
-- `file.*` fields in `list_contains()` use native column access
-- `note.*` or bare fields in `list_contains()` use `(properties->'$."field"')::VARCHAR[]` for frontmatter arrays
-
-**Error mapping**: DuckDB errors converted to user-friendly messages (unknown field, type cast failure, etc.)
-
-### `note rename`
-
-**Flow**:
-1. Find note by name (not path)
-2. Uniqueness check: if file with same name exists → fail
-3. Rename file
-4. Full vault scan: update `[[old-name]]` and `![[old-name]]` in body and frontmatter
-5. Preserve aliases, anchors, and block IDs: `[[old-name#Heading|alias]]` → `[[new-name#Heading|alias]]`
-6. Reindex affected notes
-
-## 7. Performance Targets
-
-| Metric | Target |
-|--------|--------|
-| Cold start index 10,000 notes | < 5s |
-| Complex query latency (10k rows) | < 50ms |
-| Complex expression compilation | < 100ms |
-
-**Optimization strategies**:
-- Incremental updates avoid full scans
-- Index optimization (mtime, folder, name)
-- Binary size optimization (`strip = true`)
-
-## 8. Constraints and Security
-
-- **Single writer**: DuckDB constraint, only one indexing pass can write at a time
-- **Query security**: Only SELECT statements allowed, reject multi-statement injection
-- **Error handling**: Comprehensive use of `Result` and `?` operator
-- **Thread safety**: Use `Mutex<Database>` for multi-threaded scenarios
-- **Graceful shutdown**: `Database` implements Drop trait
-
-## 9. Development Commands
+## Quick Start
 
 ```bash
-# Development build
 cargo build
-
-# Run
-export MARKBASE_BASE_DIR=./notes
-cargo run -- index
-cargo run -- query "name == 'readme'"
-
-# Test
 cargo test
-cargo test -- --nocapture
-
-# Release build
-cargo build --release
-
-# Code checks
 cargo clippy -- -D warnings
 cargo fmt --check
 ```
 
-## 10. Project Structure
-
-```
-markbase/
-├── Cargo.toml           # Dependency configuration
-├── Cargo.lock           # Dependency lock file
-├── README.md            # User documentation
-├── AGENTS.md            # This file
-├── spec/                # Design specifications
-│   ├── index_incremental_design.md  # Index incremental update design
-│   ├── links_design.md              # Links, backlinks, and embeds design
-│   ├── properties_design.md         # Properties and query translation design
-│   ├── query_design.md              # Query command design
-│   └── template_schema.md           # MTS (Markdown Template Schema)
-├── src/
-│   ├── main.rs          # CLI entry point
-│   ├── lib.rs           # Library exports
-│   ├── constants.rs     # Shared constants (DB schema, field names, etc.)
-│   ├── db.rs            # Database operations
-│   ├── scanner.rs       # Index scanning
-│   ├── extractor.rs     # Content extraction
-│   ├── creator.rs       # Note creation
-│   ├── renamer.rs       # Note renaming
-│   ├── verifier.rs      # Note verify command, MTS schema validation
-│   ├── describe.rs      # Template description
-│   ├── renderer/        # Note render system
-│   │   ├── mod.rs       # note render command, .base embed expansion pipeline
-│   │   ├── filter.rs    # Base filter → DuckDB SQL translation; column/sort translation
-│   │   └── output.rs    # list / table output formatting; ColumnMeta definition
-│   └── query/           # Query system
-│       ├── mod.rs       # Output formatting
-│       ├── detector.rs  # Mode detection
-│       ├── translator.rs # Field translation
-│       ├── error_map.rs # Error mapping
-│       └── executor.rs  # Query execution
-└── target/              # Build output
-```
-
-### Design Documents (spec/)
-
-The `spec/` directory contains detailed design specifications that complement AGENTS.md:
-
-| Document | Purpose |
-|----------|---------|
-| `index_incremental_design.md` | Three-phase incremental indexing algorithm, backlinks recomputation, conflict handling |
-| `links_design.md` | Wiki-links, embeds, and backlinks extraction rules, regex patterns, rename rewrite logic |
-| `properties_design.md` | File vs Note property namespaces, query translation rules, SQL generation |
-| `query_design.md` | Query command user interface, expression vs SQL mode, security restrictions |
-| `template_schema.md` | MTS v1.11 specification for template-based knowledge management |
-
-**When to consult spec documents:**
-- Before modifying extraction logic → see `links_design.md`
-- Before changing query behavior → see `properties_design.md` and `query_design.md`
-- Before optimizing indexing → see `index_incremental_design.md`
-- When implementing MTS templates → see `template_schema.md`
-
-## 11. Development Status
-
-### Completed ✅
-
-- Core indexing functionality
-- Index all files (not just .md)
-- Query system (SQL mode + expression mode)
-- Field translation and security validation
-- Multiple output formats (table/list)
-- Backlink tracking
-- Incremental update and deletion detection
-- Note creation (template support)
-- Note renaming (link updates)
-- Template management
-- Note schema verification (note verify)
-- Note rendering with .base embed expansion (note render)
-
-### Technical Debt
-
-- Unit test output content verification (query/mod.rs)
-- Negative stderr assertions in integration tests
-- Performance benchmarking (10k notes target)
-- Parallel index processing
-- Configuration file support
-- Query result caching
-
-### Test Coverage
-
-| Module | Coverage Scope |
-|--------|----------------|
-| `detector.rs` | Mode detection, expression splitting, security validation |
-| `translator.rs` | Field translation, reserved fields, nested paths, type casts, array handling |
-| `error_map.rs` | DuckDB error mapping |
-| `executor.rs` | Query execution, error wrapping |
-| `extractor.rs` | Frontmatter, tags, links, embeds parsing |
-| `db.rs` | CRUD operations, queries |
-| `scanner.rs` | Scanning, indexing, backlinks, deletion detection, conflict handling |
-| `query/mod.rs` | Output formatting |
-| `creator.rs` | Template parsing, note creation |
-| `renamer.rs` | Link updates, renaming |
-| `verifier.rs` | Note not found, no templates, location mismatch, required fields, type/enum/link validation |
-| `renderer/filter.rs` | Filter translation, column/sort translation, ThisContext, merge_filters |
-| `renderer/output.rs` | list/table format, is_name_col, is_list_col, empty results |
-| `renderer/mod.rs` | CLI integration: note render happy path, dry-run, base not found, link(this) |
-| `main.rs` | CLI argument parsing |
-
-## 12. Development Workflow
-
-### 12.1 Branch Strategy
-
-**Never develop directly on `main` branch**
-
-Create feature branches:
-```bash
-git checkout -b feat/<description>
-git checkout -b fix/<description>
-```
-
-Branch prefixes: `feat/`, `fix/`, `refactor/`, `test/`, `docs/`
-
-### 12.2 Pre-commit Checks
-
-**Must pass the following checks**:
+Common local run pattern:
 
 ```bash
-cargo clippy -- -D warnings  # Lint
-cargo test                   # Test
-cargo fmt --check            # Format
+export MARKBASE_BASE_DIR=./notes
+cargo run -- query "author == 'Tom'"
 ```
 
-Do not commit if any check fails.
+## Read First
 
-### 12.3 Documentation Sync
+Before making non-trivial changes, read these in order:
 
-**When to update README.md**:
-- Commands, options, or behavior changes
-- Query operators or function changes
-- Environment variable changes
+1. `ARCHITECTURE.md`
+2. `core-beliefs.md`
+3. Relevant files under `spec/`
+4. `README.md` if user-visible behavior may change
 
-**When to update AGENTS.md**:
-- Dependencies or tech stack changes
-- Data model changes
-- Architecture or algorithm changes
-- Performance targets or constraint changes
-- Development status changes
+## Core Documents
 
-### 12.4 Commit Message Convention
+- `ARCHITECTURE.md`: system map, boundaries, invariants, and shared-logic rules
+- `core-beliefs.md`: project-specific engineering beliefs for choosing between valid implementations
+- `README.md`: user-facing behavior and command contract
+- `spec/links_design.md`: link, embed, backlink, and rename semantics
+- `spec/properties_design.md`: `file.*` vs `note.*` field model
+- `spec/query_design.md`: query mode and translation rules
+- `spec/note_render_design.md`: `.base` rendering pipeline
+- `spec/template_schema.md`: template schema behavior
 
-```
-<type>(<scope>): <summary>
+## Execution Rules
 
-# Examples
-feat(query): add exists() function support
-fix(scanner): handle symlink cycles in walkdir
-refactor(db): simplify upsert_note params
-test(compiler): add coverage for nested JSON paths
-docs(readme): update query operator table
-```
+- Search for an existing implementation before adding new logic.
+- Reuse shared logic instead of creating a second parser or translator.
+- Keep CLI parsing, environment handling, and stdout/stderr routing in `src/main.rs`.
+- Do not hide writes in modules that sound read-only.
+- Treat query translation and renderer filter translation as coupled behavior.
 
-### 12.5 Definition of Done
+## Validation Rules
 
-Task completion requires:
+- Run `cargo test`, `cargo clippy -- -D warnings`, and `cargo fmt --check` before considering a task complete.
+- If behavior changes, update `README.md`.
+- If structure, invariants, or shared-logic boundaries change, update `ARCHITECTURE.md`.
+- If project-level decision principles change, update `core-beliefs.md`.
+- If a repeatable bug is fixed, add or strengthen a test.
 
-- [ ] Branch synced with main
-- [ ] `cargo clippy -- -D warnings` passes
-- [ ] `cargo test` all pass
-- [ ] `cargo fmt --check` passes
-- [ ] User-visible behavior changes updated in README.md
-- [ ] Architecture changes updated in AGENTS.md
+## Notes for This Repo
 
-## 13. Testing Strategy
-
-**Test Value**: Verify meaningful behavior, not just code coverage
-
-**Must write tests**:
-- New feature → core behavior + key boundaries
-- Bug fix → regression test
-- Public API changes → review existing tests
-
-**Good test characteristics**:
-- Verify correct output or side effects
-- Cover edge cases and error paths
-- Breakable by incorrect implementations (naive implementations cannot pass)
-
-**Avoid**:
-- Writing tests solely for coverage
-- Duplicating existing tests
-- Being overly sensitive to unrelated refactors
-
-## 14. Rust Best Practices
-
-### 14.1 Error Handling
-
-- Use `Box<dyn std::error::Error>` for command-level errors propagated to `main()` (consistent with existing modules)
-- Reserve `thiserror` for structured error types that need to be matched by callers (currently none in this codebase)
-- No `.unwrap()` / `.expect()` in non-test code
-- Error messages should explain failure reason: `"failed to open {path}: {source}"` not `"io error"`
-
-### 14.2 Dependency Management
-
-- Check existing dependencies before adding new ones
-- Use `cargo add <crate>` instead of manually editing `Cargo.toml`
-- Use `cargo add <crate> --features <feature>` when features are needed
-
-### 14.3 Code Style
-
-- Keep functions short and focused
-- Consider extracting code blocks that need comments to explain
-- Prioritize correctness, optimize based on measurements
-
-## 15. Code Reuse
-
-**Respect module boundaries**:
-- Each module has clear responsibility
-- Don't put logic in wrong module just to avoid refactoring
-- Explicitly move when boundaries need to change
-
-**Check before adding new functionality**:
-- Does the logic already exist? Search first
-- Does it belong to an existing module?
-- Does the new module have a single clear responsibility?
-
-**New CLI subcommands**:
-- Follow existing `main.rs` patterns
-- Implementation in separate files, not inline in `main.rs`
-
-## 16. CLI UX Principles
-
-### 16.1 Output Structure
-
-- Default output provides structured summary (counts, status, warnings)
-- `--verbose` for process details
-- No uninformative confirmations (e.g., "Done!")
-
-### 16.2 Output Targets
-
-- Query results and structured data → stdout (supports piping)
-- Warnings, errors, diagnostic info → stderr
-
-### 16.3 Exit Codes
-
-- Success → `0`
-- Errors (affecting expected outcome) → non-zero
-- Non-fatal warnings → `0` (but must report to stderr)
-
-### 16.4 Output Examples
-
-```
-# index
-Indexing ./notes...
-  ✓ 142 files indexed  (3 new, 5 updated, 0 errors)  [1.2s]
-  ⚠ Skipped: notes/broken.md — invalid frontmatter (line 4)
-
-# query
-path                      mtime
-────────────────────────  ───────────────────
-./notes/task-a.md         2025-01-10 09:00:00
-./notes/task-b.md         2025-01-12 14:30:00
-
-2 results
-```
+- Note-facing names must be path-free.
+- Markdown note identity is name-based; non-Markdown indexed resources keep their filename including extension.
+- `.base` files are valid render targets and participate in indexed resource behavior.
+- Query defaults are agent-oriented; human-readable tables are opt-in.

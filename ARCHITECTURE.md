@@ -155,7 +155,33 @@ These rules keep the codebase legible to both humans and agents.
 - `verifier.rs` and `renderer/` should not perform hidden writes.
 - Modules should not duplicate CLI parsing, environment handling, or stdout/stderr routing that belongs in `main.rs`.
 
-## 7. Performance Model
+## 7. Shared Logic That Must Not Diverge
+
+Some rules are important enough that they should have one implementation or one clearly mirrored contract across modules.
+
+### 7.1 Wiki-link and embed normalization
+
+- `src/extractor.rs` defines the canonical normalization behavior for Obsidian link targets.
+- `src/renamer.rs`, `src/verifier.rs`, `src/scanner.rs`, and render-related code must follow the same target semantics.
+- Do not introduce a second independent interpretation of path stripping, `.md` stripping, anchor removal, or alias removal.
+
+### 7.2 Query field resolution
+
+- `src/query/translator.rs` is the primary contract for `file.*`, `note.*`, and bare identifier semantics.
+- `src/renderer/filter.rs` must stay behaviorally aligned with those same namespace rules.
+- If one module changes how bare fields or `file.*` behave, the other must be updated in the same change.
+
+### 7.3 Output shape
+
+- `src/query/mod.rs`, `src/output.rs`, and `src/renderer/output.rs` may format different command surfaces, but they should not invent conflicting meanings for the same conceptual fields.
+- In particular, agent-facing structured output and human-facing table output should remain stable enough that callers can rely on them.
+
+### 7.4 Validation of note-facing names
+
+- `src/name_validator.rs` is the shared gate for path-free note, resolve, and render target names.
+- New note-facing commands should reuse these validators rather than reimplementing path and extension checks inline.
+
+## 8. Performance Model
 
 Markbase is designed around predictable local performance, not distributed complexity.
 
@@ -163,14 +189,14 @@ Markbase is designed around predictable local performance, not distributed compl
 - Query latency comes from keeping the vault index current and translating field syntax cleanly into DuckDB-native operations.
 - Dependency count matters because binary size, compile time, and operational surface area all affect a CLI used as tooling infrastructure.
 
-## 8. Security Model
+## 9. Security Model
 
 - `query` accepts only `SELECT` statements.
 - Multi-statement SQL injection is rejected before execution.
 - File-targeting commands validate names so note-oriented APIs cannot be tricked into path traversal behavior.
 - Single-writer DuckDB assumptions still apply: indexing owns write coordination.
 
-## 9. Change Guide
+## 10. Change Guide
 
 When changing one part of the system, inspect the neighboring contracts as well.
 
@@ -180,7 +206,7 @@ When changing one part of the system, inspect the neighboring contracts as well.
 - Template behavior: update `src/template.rs`, `src/creator.rs`, `src/describe.rs`, `src/verifier.rs`, and `spec/template_schema.md`.
 - Render pipeline behavior: update `src/renderer/`, `spec/note_render_design.md`, and render tests.
 
-## 10. Documentation Role
+## 11. Documentation Role
 
 This file should stay stable and structural. Put changing implementation details in:
 
