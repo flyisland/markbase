@@ -1,75 +1,96 @@
 # Core Beliefs
 
-These are markbase's global design beliefs. They are not lint rules. They exist to guide decisions when the codebase does not already dictate a single obvious move.
+These beliefs are decision rules for markbase. They are intentionally fewer and more concrete than coding guidelines.
 
-## 1. Human intent must become repository context
+Use them when multiple implementations are possible and the codebase does not already force one answer.
 
-If a decision only lives in chat, memory, or oral tradition, it does not exist for an agent and is fragile even for humans.
+## 1. Files are the product; DuckDB is the index
 
-Write down stable constraints in docs, encode repeatable checks in tests, and keep user-visible behavior in `README.md`. Prefer improving the harness over repeating the same correction in review.
+**Belief**
+The vault filesystem is the source of truth. DuckDB exists to accelerate reads, not to hold unique business state.
 
-## 2. The job is to maintain a reliable index, not a hidden application state
+**Why**
+Markbase is valuable only if users can trust that their Markdown files remain primary and recoverable. If important state lives only in the database, reindexing becomes dangerous instead of safe.
 
-Markbase is a Markdown-first system. Files remain the product. DuckDB is an acceleration layer.
+**What this means in practice**
+- Prefer designs that can be rebuilt from files.
+- Treat stale or broken index state as something to recompute, not manually repair.
+- Do not introduce features whose true state exists only in `.markbase/markbase.duckdb`.
 
-When forced to choose, preserve filesystem truth and rebuildability over clever database-only state. A corrupted or stale index should be recoverable by reindexing, not by manual surgery.
+## 2. Obsidian compatibility wins when abstraction conflicts with user expectation
 
-## 3. Obsidian compatibility beats internal elegance
+**Belief**
+When internal elegance and Obsidian-compatible behavior conflict, prefer the behavior that matches how users already think about notes, links, embeds, and frontmatter.
 
-The tool exists inside an existing note-taking ecosystem. Users think in note names, wiki-links, frontmatter, and vault structure.
+**Why**
+Markbase is infrastructure around an existing Markdown workflow. If the tool requires users to adopt a different mental model, it becomes harder to trust and harder for agents to use correctly.
 
-Prefer behavior that matches Obsidian mental models, even when a path-aware or schema-heavy internal model would look cleaner from a pure engineering perspective.
+**What this means in practice**
+- Keep wiki-link behavior aligned with Obsidian conventions.
+- Preserve note-name-based linking instead of inventing path-based addressing.
+- Treat frontmatter link values and `.base` embed behavior as compatibility surfaces, not implementation details.
 
-## 4. Name uniqueness is a feature, not a limitation
+## 3. Global note-name uniqueness is a simplifying constraint worth defending
 
-Global note-name uniqueness simplifies linking, renaming, resolving, and agent usage.
+**Belief**
+Unique note names across the vault are not a workaround. They are a core simplification that makes the rest of the system predictable.
 
-Do not patch around duplicate names with hidden heuristics. Ambiguity should surface as an explicit warning or failure because silent disambiguation makes both human and agent behavior less predictable.
+**Why**
+Rename, resolve, backlink computation, and agent automation all become harder once identical names must be disambiguated by path. Hidden disambiguation creates surprising behavior.
 
-## 5. Keep pure transformations separate from orchestration
+**What this means in practice**
+- Fail, warn, or skip when names collide; do not silently choose one.
+- Keep note-facing commands centered on names, not relative paths.
+- Treat proposals that weaken uniqueness as architectural changes, not local tweaks.
 
-Parsing, translation, validation, and formatting logic should stay as stateless as practical. Command orchestration should be explicit about when it reads, writes, indexes, or prints.
+## 4. Friendly syntax is good; hidden translation rules are not
 
-This separation keeps behavior testable and makes it easier for agents to modify one layer without breaking another.
+**Belief**
+Markbase should offer concise user syntax, but every shortcut must translate to a stable and explainable rule.
 
-## 6. Friendly syntax is allowed; hidden semantics are not
+**Why**
+The tool serves both humans and agents. Convenience helps only when the translation is predictable across commands and modules.
 
-Markbase can offer ergonomic user syntax such as bare frontmatter fields, but the internal translation must stay explicit and unsurprising.
+**What this means in practice**
+- Bare query identifiers may be shorthand, but their meaning must stay consistent.
+- If two modules interpret the same syntax differently, the syntax is wrong or underspecified.
+- Avoid adding magic behavior that cannot be explained by a small number of explicit translation rules.
 
-A user-friendly command is good only if its behavior is mechanically explainable. If a shortcut makes translation ambiguous or inconsistent across modules, the shortcut is wrong.
+## 5. Keep pure logic separate from command orchestration
 
-## 7. Default to safe, narrow authority
+**Belief**
+Parsing, translation, normalization, and validation should stay as stateless and local as practical. Command modules should make side effects obvious.
 
-Read-only features should stay read-only. Write paths should be obvious, validated, and easy to audit.
+**Why**
+Markbase changes often at the edges: new query behavior, new render behavior, new validation rules. Those changes are safer when pure transformations can be tested independently from filesystem and database writes.
 
-If a module's name suggests inspection, query, render, verify, or describe, it should not secretly mutate the vault or database. Side effects belong in narrow orchestrators and command modules.
+**What this means in practice**
+- Put CLI flow, indexing triggers, and output routing in orchestrators such as `main.rs`.
+- Keep parser and translator modules focused on input-to-output transformation.
+- Do not hide writes inside modules whose public role sounds read-only.
 
-## 8. Performance comes from incrementalism and restraint
+## 6. Default outputs should favor agents; human views should be explicit
 
-For a local CLI, predictable performance matters more than theoretical sophistication.
+**Belief**
+The default interface should be stable and machine-friendly. Human-readable formatting is important, but it should be an explicit presentation choice.
 
-Prefer incremental scans, bounded parsing, and low dependency overhead before adding concurrency, caches, or abstraction layers. Simpler systems are easier to keep fast and easier for agents to extend safely.
+**Why**
+Markbase is used as tooling infrastructure. Agent workflows and shell pipelines depend on outputs that are easier to parse than terminal-oriented summaries.
 
-## 9. Machine-friendly output is the default; human-friendly views are opt-in
+**What this means in practice**
+- Prefer stable structured output as the default contract.
+- Keep table rendering and other display-oriented formats opt-in.
+- Treat output shape as part of the public interface, not cosmetic formatting.
 
-Markbase is infrastructure for scripts and agents as much as for humans.
+## 7. When a failure mode is repeatable, fix the harness, not just the instance
 
-Default outputs should stay structured and stable. Human-oriented tables and summaries are valuable, but they should be explicit formatting choices rather than accidental coupling to terminal presentation.
+**Belief**
+A bug class is not fully solved until the repo makes it harder to reintroduce.
 
-## 10. Error messages are part of the interface
+**Why**
+Markbase is maintained by both humans and agents. If correctness depends on someone remembering a subtle rule, the rule will be broken again.
 
-A failing command should teach the user what assumption was violated.
-
-Prefer actionable errors that identify the file, field, name, or rule involved. Silent fallback and vague failures create more operational cost than strict rejection.
-
-## 11. Mechanical verification beats subjective confidence
-
-A change is not "done" because it looks plausible. It is done when the intended behavior is documented, exercised, and verified.
-
-When you find a repeatable failure mode, add or strengthen a test, spec, or validation step so the system learns once. Do not rely on future reviewers noticing the same class of mistake again.
-
-## 12. Optimize for agent legibility, not just human cleverness
-
-The best implementation is one whose boundaries, invariants, and failure modes are obvious from the repository.
-
-Prefer direct module responsibilities, explicit contracts, and small surfaces over dense abstractions that require insider knowledge. A legible codebase improves both autonomous execution and human maintenance.
+**What this means in practice**
+- Add or strengthen tests when fixing regressions.
+- Update the relevant spec or README when behavior changes.
+- Prefer repository-level guidance and executable checks over one-off review comments.
