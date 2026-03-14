@@ -1,0 +1,265 @@
+---
+id: design-002
+title: "Render Subsystem"
+status: active
+type: design
+module: renderer
+---
+
+# Render Subsystem
+
+## Purpose
+
+The render subsystem exists to give agents and scripts a read-only way to expand a note into a richer working view without changing vault files.
+
+Its primary job is to render Markdown note bodies to stdout and replace eligible `.base` embeds with database-backed query results derived from the indexed vault. It is not a write path, it does not introduce new durable state, and it must remain rebuildable from the filesystem plus the derived DuckDB index.
+
+## Interface Contract
+
+### CLI Surface
+
+The public command surface is:
+
+```bash
+markbase note render <name> [-o json|table] [--dry-run]
+```
+
+`<name>` must be a note-facing target name, not a path:
+
+- Markdown notes are addressed by note name without extension
+- Base files are addressed by full `.base` filename
+- path-like input is rejected
+- non-`.base` non-Markdown filenames are rejected
+
+### Supported Targets
+
+`note render` only supports indexed `.md` notes and indexed `.base` files.
+
+- Rendering a Markdown note reads its body and expands eligible `.base` embeds in place
+- Rendering a `.base` file skips body scanning and directly renders that Base file's views
+- Other indexed resource types are not valid render targets
+
+### Default Output And Wrappers
+
+The default render format is `json`.
+
+- `-o json` is a first-class supported format
+- default output for each rendered Base view is a fenced JSON block embedded in Markdown
+- `-o table` renders each Base view as a compact Markdown table for human inspection
+
+Each rendered or dry-run Base section uses stable wrappers:
+
+````md
+<!-- start: [markbase] rendered from tasks.base -->
+
+> **Open Tasks**
+
+```json
+[
+  {
+    "name": "[[task-a]]"
+  }
+]
+```
+
+<!-- end: [markbase] rendered from tasks.base -->
+````
+
+Dry-run output keeps the same section structure but replaces query results with a fenced SQL block and uses `dry-run` in the wrapper text.
+
+### `.base` Embed Execution Rule
+
+Within Markdown note bodies, render-time Base expansion only happens when all of the following are true:
+
+- the token is an Obsidian embed token, not a plain link
+- the normalized target ends with `.base`
+- after trimming surrounding whitespace, the entire line is exactly that one embed token
+
+As a consequence:
+
+- `![[tasks.base]]` on its own line is rendered
+- `  ![[tasks.base]]  ` is rendered
+- `> ![[tasks.base]]`, `- ![[tasks.base]]`, numbered-list items, and callout-prefixed lines are not rendered
+- lines that contain additional text besides the embed are not rendered
+
+This contract is based on shared token scanning plus trimmed-line equality, not on a renderer-specific regex.
+
+### `.base#View` Selector Rule
+
+`![[File.base#View Name]]` is supported as a render selector.
+
+- the selector matches the Base view `name` field using case-sensitive exact matching
+- when the selector matches, only that single view is rendered
+- when the selector does not match any view, render writes a warning to stderr and emits an HTML placeholder comment at that output position
+- render must not fall back to other views when a selector is present but unresolved
+
+The current placeholder contract is:
+
+```md
+<!-- [markbase] view 'Missing View' not found in 'tasks.base' -->
+```
+
+### Code-Context Exclusion
+
+Render-time body scanning must consume the shared `ScanContext::MarkdownBody` contract from `src/link_syntax.rs`.
+
+That means:
+
+- fenced code blocks are never treated as live `.base` embeds
+- inline code spans are never treated as live `.base` embeds
+- ordinary Markdown body content is scanned normally
+
+### Non-`.base` Embeds
+
+Non-`.base` embeds remain literal output.
+
+- they may still be indexed as embeds by the indexing pipeline
+- `note render` does not give them special runtime treatment
+- the original line is written through unchanged
+
+### `--dry-run`
+
+`--dry-run` preserves render structure but does not execute Base queries.
+
+- the database must still be available so render can resolve targets and build SQL
+- note/body/Base parsing still occurs
+- each selected view emits the translated SQL instead of query results
+
+### Errors And Warnings
+
+Hard errors terminate the command with non-zero exit status. Current hard-error cases include:
+
+- target note or base file not found as a render target
+- unsupported render target extension
+- top-level render target file read failure
+
+Soft failures stay within the rendered stream and report warnings on stderr. Current soft-failure cases include:
+
+- embedded Base file not found in the index
+- embedded Base file read failure
+- embedded Base YAML parse failure
+- selected Base view not found
+- per-view query translation or execution warnings
+
+For soft failures, render preserves positional context by emitting a placeholder comment or partial section output instead of aborting the entire note render.
+
+## Subsystem Design
+
+### Entry And Orchestration
+
+`src/main.rs` owns the CLI-facing orchestration:
+
+- parse `note render` arguments
+- validate render target naming rules before execution
+- ensure the index is current for normal execution
+- open the existing database directly in `--dry-run` mode
+- map shared CLI output options onto renderer-specific formats
+- route final hard failures to stderr and process exit
+
+### Render Driver
+
+`src/renderer/mod.rs` owns the runtime render flow:
+
+- dispatch between note rendering and direct `.base` rendering
+- fetch the target note record that defines the `this` context
+- read Markdown note content or Base file content from disk
+- scan body tokens using shared link/embed parsing
+- identify standalone `.base` embed lines
+- resolve embedded Base files via indexed `notes` entries
+- select views, build SQL, execute or dry-run them, and print wrapped output
+
+This module is an orchestration layer. It may compose filesystem reads and DB reads, but it must not hide writes.
+
+### Filter Translation
+
+`src/renderer/filter.rs` translates Base filter and sort configuration into DuckDB SQL fragments.
+
+Its responsibilities include:
+
+- translating Base filter objects and string predicates
+- materializing the `this` context used by expressions such as `link(this)`
+- translating column selections and sort clauses
+- preserving shared namespace semantics for bare fields, `file.*`, and `note.*`
+
+This translator is coupled to query semantics by contract. If field resolution changes in query translation, renderer filter translation must be updated in the same change.
+
+### Output Formatting
+
+`src/renderer/output.rs` shapes row-oriented query results into stable renderer output formats.
+
+- JSON output is agent-first and uses shared scalar/list formatting rules
+- table output is an explicit human-facing presentation mode
+- output formatting stays downstream of SQL execution and does not change selection semantics
+
+### Dependency Boundaries
+
+The renderer depends on shared system modules but should not absorb their responsibilities:
+
+- `src/db.rs` provides SQL execution and row retrieval
+- `src/link_syntax.rs` defines body scanning and target normalization
+- `src/name_validator.rs` owns note-facing target validation
+- `src/renderer/filter.rs` and `src/renderer/output.rs` remain renderer-local helpers
+
+The renderer must not:
+
+- reimplement link/embed parsing separately from `src/link_syntax.rs`
+- introduce hidden writes to the vault or database
+- move CLI argument handling out of `src/main.rs`
+
+## Key Decisions
+
+- Render is a read-only, DB-backed expansion path. It consumes the derived index and vault files but does not create durable business state.
+- Embedded Base lookup uses indexed `notes` entries, not filesystem globbing. This keeps lookup aligned with markbase's indexed-name model.
+- Body scanning reuses `ScanContext::MarkdownBody` from `src/link_syntax.rs` so render, indexing, and rename stay aligned on code-context exclusion.
+- Renderer filter translation must preserve the same bare-field, `file.*`, and `note.*` meaning as the query translator.
+- Direct `.base` rendering is a supported mode. In that mode, the `.base` file itself defines the `this` context and its views are rendered directly.
+- Richer Obsidian Base presentation fields that are not part of current execution semantics may be ignored. markbase only executes the subset already implemented as query/filter/output behavior.
+- View title formatting is currently part of the stable render wrapper shape: rendered views use `> **View Name**` between the section wrapper and the rendered content.
+
+## Constraints
+
+These constraints should be inherited by future Task Specs that touch render behavior:
+
+- Do not introduce writes into render paths.
+- Do not fork link/embed parsing away from `src/link_syntax.rs`.
+- Do not change renderer filter namespace semantics without matching query-layer changes.
+- Do not widen standalone embed execution to blockquote, list, numbered-list, or callout-prefixed lines unless the contract, README, and tests change together.
+- Do not regress default output from JSON back to legacy list-style output.
+- Do not treat `.base#View`, code-context exclusion, or non-`.base` passthrough as optional behavior; they are part of the active contract.
+
+## Relationship To Other Docs
+
+- `ARCHITECTURE.md` defines system-level boundaries, ownership, and invariants for rendering as part of the larger markbase architecture.
+- `docs/design-docs/design-001-links-and-embeds.md` defines the shared parsing and normalization contract that render consumes for body scanning and `.base#View` selector handling.
+- `README.md` documents the user-visible command behavior and examples, but does not repeat renderer-internal module boundaries.
+- `docs/design-docs/legacy/note_render_design.md` remains historical context only. When it differs from current implementation, this document is the active contract.
+
+## Test And Acceptance Mapping
+
+The following tests anchor the active render contract and should remain aligned with this document:
+
+- `test_note_render_accepts_base_filename`
+- `test_note_render_base_embed_with_view_selector`
+- `test_note_render_base_embed_missing_view_selector`
+- `test_note_render_non_base_embed_passthrough_after_parser_change`
+- `test_note_render_base_embed_inside_fenced_code_is_not_expanded`
+- `test_note_render_dry_run`
+- `test_note_render_table_format`
+- `test_render_view_selector_matches_documented_behavior`
+
+If this document and executable behavior diverge, resolve the mismatch against current code, tests, and README, then update the stale side explicitly rather than preserving legacy wording.
+
+## Change Log
+
+### 2026-03-14: Replace legacy render design as the active contract
+
+The older `legacy/note_render_design.md` captured an earlier render design centered on list-style output and pre-unification parsing assumptions. Since then, the active implementation has moved to:
+
+- JSON as the default structured output
+- explicit `-o json` and `-o table` support
+- direct `.base` render targets
+- shared link/embed scanning for standalone `.base` detection
+- formal `.base#View` selection behavior
+- code-context exclusion aligned with the shared parser
+
+Because the legacy document no longer matches the shipped implementation and regression tests, `design-002-render.md` is now the active render contract and the legacy document remains historical reference only.
