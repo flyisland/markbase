@@ -7,9 +7,9 @@ This document defines how markbase interprets Obsidian-style internal links, emb
 It has two goals:
 
 - stay compatible with the parts of Obsidian link/embed behavior that matter for vault indexing and note rendering
-- define the exact normalization and storage rules used by markbase today
+- define the exact normalization and storage rules used by markbase
 
-This document is intentionally about current markbase behavior and near-term design intent. If Obsidian supports something that markbase does not currently index, that gap is called out explicitly instead of being implied away.
+This document is the behavioral contract for link/embed parsing. If current implementation differs, the contract in this document wins and the implementation must be updated to match.
 
 ## 2. References
 
@@ -133,17 +133,69 @@ backlinks(target) = { source_name | source.links contains target }
 
 Backlinks are disabled by default at command level unless indexing is run with `--compute-backlinks` or `MARKBASE_COMPUTE_BACKLINKS`.
 
-## 6. Normalization Rules
+## 6. Shared Parser Contract
 
-Normalization is centralized in `Extractor::normalize_link_name()`.
+Link and embed parsing is centralized in a shared module, `src/link_syntax.rs`.
 
-Given a captured target string, markbase applies these rules in order:
+The rest of the system must consume this shared contract rather than reimplementing independent parsing rules.
+
+### 6.1 Required API shape
+
+The shared module must expose at least:
+
+- `scan_link_tokens(input: &str, context: ScanContext) -> Vec<LinkToken>`
+- `parse_link_target(raw_inner: &str) -> ParsedTarget`
+
+Required `ScanContext` values:
+
+- `MarkdownBody`
+- `FrontmatterString`
+
+Required `LinkToken` fields:
+
+- `kind`: `WikiLink` or `Embed`
+- `full_span`: byte range of the complete token including `[[...]]` or `![[...]]`
+- `inner_span`: byte range of the content inside the brackets
+- `raw_inner`: the original bracket contents without outer delimiters
+- `parsed`: the parsed target data
+
+Required `ParsedTarget` fields:
+
+- `normalized_target`: logical target name used by indexing, rename matching, verification, and `.base` lookup
+- `target_text`: target portion before alias and before anchor normalization
+- `anchor`: optional heading / block / view selector text without the leading `#`
+- `alias_or_size`: optional alias or embed size text without the leading `|`
+- `is_markdown_note`: whether the normalized target refers to a Markdown note identity
+
+### 6.2 Body scanning rules
+
+In `MarkdownBody` context:
+
+- ordinary Markdown containers are scanned normally, including paragraphs, list items, blockquotes, and callout bodies
+- fenced code blocks delimited by either ``` or `~~~` are ignored
+- inline code spans delimited by matching backtick runs are ignored
+- unclosed `[[` / `![[` sequences are ignored
+
+In `FrontmatterString` context:
+
+- the full string is scanned
+- there is no code-context suppression
+
+### 6.3 Target parsing rules
+
+Given `raw_inner`, markbase parses it in this order:
 
 1. trim surrounding whitespace
-2. strip a trailing `.md` extension if present
-3. strip any path prefix before the last `/`
-4. strip alias suffix beginning with `|`
-5. strip anchor or block suffix beginning with `#`
+2. split on the first **unescaped** `|` to produce `alias_or_size`
+3. split the pre-alias portion on the first **unescaped** `#` to produce `anchor`
+4. strip any path prefix before the last `/` from the target portion
+5. if the remaining basename ends with `.md`, strip `.md`
+
+Important escape rule:
+
+- `\|` is treated as a Markdown table-cell escape, not as part of the logical target name
+- therefore `[[Note\|Alias]]` is semantically equivalent to `[[Note|Alias]]`
+- and `![[Image.png\|200]]` is semantically equivalent to `![[Image.png|200]]`
 
 Examples:
 
@@ -153,7 +205,10 @@ Examples:
 [[design.md]]                 -> "design"
 [[design#Overview]]           -> "design"
 [[design|Architecture Doc]]   -> "design"
+[[design.md#Overview|Doc]]    -> "design"
+[[Note\|Alias]]               -> "Note"
 ![[diagram.png]]              -> "diagram.png"
+![[Image.png\|200]]           -> "Image.png"
 ![[Document.pdf#page=3]]      -> "Document.pdf"
 ![[customer.base#Table]]      -> "customer.base"
 ```
@@ -166,7 +221,7 @@ Consequences of this normalization:
 
 ## 7. Extraction Algorithm
 
-Extraction happens in `src/extractor.rs` on a single Markdown file.
+Extraction happens in `src/extractor.rs` on a single Markdown file and must consume the shared parser contract from `src/link_syntax.rs`.
 
 ### 7.1 Frontmatter parsing
 
@@ -177,28 +232,18 @@ The file is first parsed with `gray_matter`:
 
 If frontmatter parsing fails, markbase falls back to treating frontmatter as null and the full file as body text.
 
-### 7.2 Code block exclusion
+### 7.2 Scan body tokens
 
-Before link extraction, fenced code blocks in the body are replaced with equal-length whitespace placeholders.
+The Markdown body is scanned once with `ScanContext::MarkdownBody`.
 
-This prevents `[[...]]` or `![[...]]` inside fenced code blocks from being indexed as real references.
+For each returned token:
 
-### 7.3 Embeds first
+- `WikiLink` contributes its `normalized_target` to `links`
+- `Embed` contributes its `normalized_target` to both `links` and `embeds`
 
-Embeds are extracted from the body first using `EMBED_RE`.
+The extractor must not run a second independent wiki-link pass after embed extraction.
 
-This matters because the plain wikilink regex would otherwise also match the `[[...]]` portion inside `![[...]]`.
-
-### 7.4 Remove embeds, then extract plain wiki-links
-
-After embed extraction, markbase removes embed matches from the body text and then runs `WIKILINK_RE` over the remaining body.
-
-This is how current code avoids double-counting embeds as both:
-
-- an embed target
-- a plain body wikilink
-
-### 7.5 Scan frontmatter string values
+### 7.3 Scan frontmatter string values
 
 markbase recursively scans frontmatter values:
 
@@ -206,9 +251,15 @@ markbase recursively scans frontmatter values:
 - arrays are traversed recursively
 - nested objects are traversed recursively
 
-If a string contains `![[`, markbase skips that string for frontmatter link extraction.
+Each frontmatter string is scanned with `ScanContext::FrontmatterString`.
 
-### 7.6 Deduplication
+In frontmatter strings:
+
+- `WikiLink` tokens contribute their `normalized_target` to `links`
+- `Embed` tokens are ignored
+- the presence of `![[` must **not** cause the whole string to be skipped
+
+### 7.4 Deduplication
 
 At the end of extraction:
 
@@ -227,11 +278,15 @@ This means repeated references only appear once in stored arrays.
 | `[[note\|alias]]` | `note` | no |
 | `[[folder/note]]` | `note` | no |
 | `[[note.md]]` | `note` | no |
+| `[[note.md#Heading|alias]]` | `note` | no |
 | `![[note]]` | `note` | `note` |
 | `![[note#Heading]]` | `note` | `note` |
+| `![[Image.png\|200]]` | `Image.png` | `Image.png` |
 | `![[image.png]]` | `image.png` | `image.png` |
 | `![[Document.pdf#page=3]]` | `Document.pdf` | `Document.pdf` |
 | `![[File.base]]` | `File.base` | `File.base` |
+| `![[File.base#View]]` | `File.base` | `File.base` |
+| frontmatter `related: "see [[note]] and ![[ignored]]"` | `note` | no |
 | frontmatter `related: "[[note]]"` | `note` | no |
 | frontmatter `embed: "![[note]]"` | no | no |
 
@@ -256,9 +311,21 @@ Examples from Obsidian syntax guidance:
 ![[Image.png\|200]]
 ```
 
-Current markbase behavior does **not** have special handling for escaped `\|` inside link targets. The normalization logic splits on the first literal `|`, so these table-oriented escaped forms are a known limitation.
+markbase must parse these forms with the same logical meaning as their unescaped variants:
 
-This means the current extractor may store an incorrect normalized target for these forms. Until this is fixed, escaped-pipe table forms should be treated as unsupported indexing edge cases.
+- `[[Note\|Alias]]` is a link to `Note` with alias `Alias`
+- `![[Image.png\|200]]` is an embed of `Image.png` with size `200`
+
+The backslash exists only to survive Markdown table parsing; it does not become part of the logical target.
+
+### 9.3 Inline code and fenced code
+
+Links and embeds inside Markdown body code contexts are ignored:
+
+- fenced code blocks delimited by ``` or `~~~`
+- inline code spans delimited by matching backtick runs
+
+This exclusion applies to indexing and rename scanning. It does not apply to frontmatter string scanning.
 
 ## 10. Backlink Computation
 
@@ -283,7 +350,7 @@ Because backlinks are derived from `links`, embeds also contribute to backlinks.
 
 `src/renamer.rs` rewrites both body links and frontmatter string links across Markdown files.
 
-### 10.1 Files scanned
+### 11.1 Files scanned
 
 Current behavior is a full vault scan over `.md` files only.
 
@@ -292,7 +359,7 @@ This is a deliberate correctness choice:
 - it does not depend on backlink freshness
 - it catches references in files even if the database is stale
 
-### 10.2 What gets rewritten
+### 11.2 What gets rewritten
 
 The rename flow rewrites:
 
@@ -304,16 +371,29 @@ The rename flow rewrites:
 - `![[old#Heading]] -> ![[new#Heading]]`
 - frontmatter string values containing the same `[[...]]` patterns
 
-### 10.3 What is preserved
+### 11.3 What is preserved
 
 When the normalized target matches `old_name`, markbase preserves the rest of the original target syntax after the note name:
 
 - heading suffixes
 - block suffixes
 - display text
-- file extensions already present in the original target string
+- embed size suffixes
 
-### 10.4 Reindexing after rename
+For Markdown note targets, rewritten syntax is normalized to the canonical external form:
+
+- no path prefix
+- no `.md` extension
+
+Examples:
+
+```text
+[[folder/old.md#Section]]     -> [[new#Section]]
+[[old#Heading|Alias]]         -> [[new#Heading|Alias]]
+![[old.base#Open Tasks]]      -> ![[new.base#Open Tasks]]
+```
+
+### 11.4 Reindexing after rename
 
 `renamer.rs` itself performs filesystem rewrite and rename only.
 
@@ -329,8 +409,22 @@ Obsidian bases are relevant here for two reasons:
 markbase behavior:
 
 - extractor stores `.base` embed targets in `links` and `embeds` using the full filename, for example `customer.base`
-- renderer only gives special rendering treatment to body lines that match a standalone `.base` embed line
+- renderer only gives special rendering treatment to body lines whose **trimmed content** is exactly one `.base` embed token
 - non-`.base` embeds are indexed, but `note render` leaves them unchanged in output
+
+For `.base#View` rendering:
+
+- the view selector is the embed anchor text after `#`
+- matching is case-sensitive and exact
+- when a view selector exists, only the selected view is rendered
+- if the selector is missing, markbase must not fall back to rendering all views
+
+Required failure output for missing view:
+
+- stderr:
+  `WARN: view '<view-name>' not found in '<base-name>', skipping.`
+- stdout:
+  `<!-- [markbase] view '<view-name>' not found in '<base-name>' -->`
 
 This means indexing and rendering have different responsibilities:
 
@@ -346,7 +440,8 @@ The following are not current design goals for markbase link/embed indexing:
 - preserving heading or block suffixes in stored `links` / `embeds`
 - resolving duplicate note names by path during indexing
 - extracting frontmatter `![[...]]` embeds
-- correctly parsing escaped `\|` table-cell forms such as `[[Note\|Alias]]` and `![[Image.png\|200]]`
+- rendering `.base` embeds when the line also contains blockquote/list/callout marker prefixes
+- supporting self-relative forms such as `[[#Heading]]` and `[[^blockid]]`
 
 If any of these change, this document, `ARCHITECTURE.md`, and relevant tests should change together.
 
@@ -354,12 +449,13 @@ If any of these change, this document, `ARCHITECTURE.md`, and relevant tests sho
 
 Shared ownership boundaries:
 
-- `src/extractor.rs`: canonical target normalization and single-file extraction
+- `src/link_syntax.rs`: canonical token scanning and target normalization
+- `src/extractor.rs`: single-file extraction using the shared parser
 - `src/scanner.rs`: persistence of extracted `links` and `embeds`, and derived backlink computation
-- `src/renamer.rs`: vault-wide rewrite of link/embed syntax during rename
+- `src/renamer.rs`: vault-wide rewrite of link/embed syntax during rename using token spans
 - `src/renderer/mod.rs`: special runtime handling for `.base` embeds
 
 Architectural rule:
 
-- do not create a second independent definition of link target normalization outside `Extractor::normalize_link_name()`
-- if query/render/name-handling behavior depends on link target semantics, it must stay aligned with this document and the extractor implementation
+- do not create a second independent definition of link target normalization outside `src/link_syntax.rs`
+- if query/render/name-handling behavior depends on link target semantics, it must stay aligned with this document and the shared parser implementation

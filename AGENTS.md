@@ -24,20 +24,22 @@ Before making non-trivial changes, read these in order:
 
 1. `ARCHITECTURE.md`
 2. `docs/core-beliefs.md`
-3. Relevant files under `docs/design-docs/` and `spec/`
-4. `README.md` if user-visible behavior may change
+3. Relevant files under `docs/design-docs/` and `docs/design-docs/legacy/`
+4. Relevant files under `docs/exec-plans/active/` and `specs/active/` when the task is covered there
+5. `README.md` if user-visible behavior may change
 
 ## Core Documents
 
 - `ARCHITECTURE.md`: system map, boundaries, invariants, and shared-logic rules
 - `docs/core-beliefs.md`: project-specific engineering beliefs for choosing between valid implementations
 - `docs/DESIGN.md`: entry index for design docs
+- `docs/PLANS.md`: entry index for active execution plans
 - `README.md`: user-facing behavior and command contract
 - `docs/design-docs/design-001-links-and-embeds.md`: link, embed, backlink, and rename semantics
-- `spec/properties_design.md`: `file.*` vs `note.*` field model
-- `spec/query_design.md`: query mode and translation rules
-- `spec/note_render_design.md`: `.base` rendering pipeline
-- `spec/template_schema.md`: template schema behavior
+- `docs/design-docs/legacy/properties_design.md`: `file.*` vs `note.*` field model
+- `docs/design-docs/legacy/query_design.md`: query mode and translation rules
+- `docs/design-docs/legacy/note_render_design.md`: `.base` rendering pipeline
+- `docs/design-docs/legacy/template_schema.md`: template schema behavior
 
 ## Execution Rules
 
@@ -46,6 +48,7 @@ Before making non-trivial changes, read these in order:
 - Keep CLI parsing, environment handling, and stdout/stderr routing in `src/main.rs`.
 - Do not hide writes in modules that sound read-only.
 - Treat query translation and renderer filter translation as coupled behavior.
+- When an active Exec Plan or Task Spec conflicts with current implementation details or legacy design docs, follow the active plan/spec and update the affected docs and tests in the same change.
 
 ## Validation Rules
 
