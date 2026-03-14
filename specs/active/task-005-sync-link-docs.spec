@@ -21,7 +21,7 @@ completion_criteria:
     scenario: "索引、rename、render 对 escaped pipe 与 `.md#anchor` 语义保持一致"
     test: "test_link_semantics_are_consistent_across_index_rename_and_render"
   - id: "cc-002"
-    scenario: "code context 中的 link 语法不会进入索引，也不会被 rename 改写"
+    scenario: "code context 中的 link/embed 语法不会进入索引，也不会被 rename 或 render 当作真实语义执行"
     test: "test_code_context_links_are_ignored_across_features"
   - id: "cc-003"
     scenario: "`.base#View` 渲染行为在文档与实现之间一致"
@@ -66,11 +66,11 @@ completion_criteria:
 当   执行端到端验证
 那么 三条路径对 target 的识别与保留后缀规则一致
 
-场景: code context 中的 link 语法不会进入索引，也不会被 rename 改写
+场景: code context 中的 link/embed 语法不会进入索引，也不会被 rename 或 render 当作真实语义执行
 测试: test_code_context_links_are_ignored_across_features
 假设 样例文件同时包含正文、fenced code、inline code 三类上下文
-当   执行索引和 rename
-那么 只有正文中的真实链接生效
+当   执行索引、rename 和 render
+那么 只有正文中的真实链接或 `.base` embed 生效
 
 场景: `.base#View` 渲染行为在文档与实现之间一致
 测试: test_render_view_selector_matches_documented_behavior

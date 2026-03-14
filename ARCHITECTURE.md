@@ -28,6 +28,7 @@ CLI (main.rs)
 Filesystem
   -> scanner.rs traverses files
   -> extractor.rs parses markdown notes
+  -> link_syntax.rs parses shared Obsidian link/embed tokens
   -> template.rs loads and normalizes templates
   -> db.rs stores derived note records
 
@@ -64,6 +65,7 @@ Write paths
 
 - `src/scanner.rs` is responsible for vault traversal, incremental indexing, duplicate-name detection, deletion cleanup, and optional backlink recomputation.
 - `src/extractor.rs` is a stateless parser for a single Markdown document.
+- `src/link_syntax.rs` owns shared wiki-link and embed tokenization plus target normalization.
 - `src/template.rs` loads templates and normalizes template frontmatter defaults.
 
 This layer converts raw files into structured note records, but should not know about CLI presentation.

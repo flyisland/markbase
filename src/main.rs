@@ -3,6 +3,7 @@ mod creator;
 mod db;
 mod describe;
 mod extractor;
+mod link_syntax;
 mod name_validator;
 mod output;
 mod query;

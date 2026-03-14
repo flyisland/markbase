@@ -1,9 +1,9 @@
-use crate::extractor::{EMBED_RE, Extractor, WIKILINK_RE};
 use gray_matter::Matter;
 use gray_matter::engine::YAML;
 use std::fs;
 use std::path::Path;
 
+use crate::link_syntax::{LinkKind, ScanContext, rebuild_link_token, scan_link_tokens};
 use crate::name_validator::validate_path_free_name;
 
 pub struct RenameResult {
@@ -138,44 +138,7 @@ fn update_links_in_vault(
 
 fn update_links_in_content(content: &str, old_name: &str, new_name: &str) -> String {
     let (frontmatter, body) = parse_frontmatter(content);
-
-    let body = EMBED_RE.replace_all(&body, |caps: &regex::Captures| {
-        let target = caps.get(1).map_or("", |m| m.as_str());
-        let normalized_target = Extractor::normalize_link_name(target);
-        if normalized_target == old_name {
-            let normalized_suffix = if let Some((_, tail)) = target.rsplit_once('/') {
-                tail
-            } else {
-                target
-            };
-            let suffix = normalized_suffix
-                .strip_prefix(old_name)
-                .unwrap_or(normalized_suffix);
-            format!("![[{}{}]]", new_name, suffix)
-        } else {
-            caps.get(0).map_or("", |m| m.as_str()).to_string()
-        }
-    });
-
-    let body = WIKILINK_RE.replace_all(&body, |caps: &regex::Captures| {
-        let target = caps.get(1).map_or("", |m| m.as_str());
-        let normalized_target = Extractor::normalize_link_name(target);
-        if normalized_target == old_name {
-            let normalized_suffix = if let Some((_, tail)) = target.rsplit_once('/') {
-                tail
-            } else {
-                target
-            };
-            let suffix = normalized_suffix
-                .strip_prefix(old_name)
-                .unwrap_or(normalized_suffix);
-            format!("[[{}{}]]", new_name, suffix)
-        } else {
-            caps.get(0).map_or("", |m| m.as_str()).to_string()
-        }
-    });
-
-    let body_str = body.to_string();
+    let body_str = rewrite_markdown_body_links(&body, old_name, new_name);
 
     if let Some(ref fm) = frontmatter {
         let new_frontmatter = rewrite_frontmatter_links(fm, old_name, new_name);
@@ -233,27 +196,7 @@ fn rewrite_frontmatter_links(
 fn rewrite_value_links(value: &mut serde_json::Value, old_name: &str, new_name: &str) {
     match value {
         serde_json::Value::String(s) => {
-            let new_str = WIKILINK_RE
-                .replace_all(s, |caps: &regex::Captures| {
-                    let original = caps.get(0).map_or("", |m| m.as_str());
-                    let target = caps.get(1).map_or("", |m| m.as_str());
-                    let normalized_target = Extractor::normalize_link_name(target);
-                    if normalized_target == old_name {
-                        let normalized_suffix = if let Some((_, tail)) = target.rsplit_once('/') {
-                            tail
-                        } else {
-                            target
-                        };
-                        let suffix = normalized_suffix
-                            .strip_prefix(old_name)
-                            .unwrap_or(normalized_suffix);
-                        format!("[[{}{}]]", new_name, suffix)
-                    } else {
-                        original.to_string()
-                    }
-                })
-                .to_string();
-            *s = new_str;
+            *s = rewrite_frontmatter_string_links(s, old_name, new_name);
         }
         serde_json::Value::Array(arr) => {
             for item in arr.iter_mut() {
@@ -267,6 +210,117 @@ fn rewrite_value_links(value: &mut serde_json::Value, old_name: &str, new_name: 
         }
         _ => {}
     }
+}
+
+fn rewrite_markdown_body_links(content: &str, old_name: &str, new_name: &str) -> String {
+    rewrite_with_tokens(
+        content,
+        ScanContext::MarkdownBody,
+        old_name,
+        new_name,
+        |kind| matches!(kind, LinkKind::WikiLink | LinkKind::Embed),
+    )
+}
+
+fn rewrite_frontmatter_string_links(content: &str, old_name: &str, new_name: &str) -> String {
+    rewrite_with_tokens(
+        content,
+        ScanContext::FrontmatterString,
+        old_name,
+        new_name,
+        |kind| kind == LinkKind::WikiLink,
+    )
+}
+
+fn rewrite_with_tokens<F>(
+    content: &str,
+    context: ScanContext,
+    old_name: &str,
+    new_name: &str,
+    allow_kind: F,
+) -> String
+where
+    F: Fn(LinkKind) -> bool,
+{
+    let tokens = scan_link_tokens(content, context);
+    let mut out = String::with_capacity(content.len());
+    let mut cursor = 0;
+
+    for token in tokens {
+        if !allow_kind(token.kind) || token.parsed.normalized_target != old_name {
+            continue;
+        }
+
+        out.push_str(&content[cursor..token.full_span.start]);
+        out.push_str(&rewrite_token(&token, new_name));
+        cursor = token.full_span.end;
+    }
+
+    out.push_str(&content[cursor..]);
+    out
+}
+
+fn rewrite_token(token: &crate::link_syntax::LinkToken, new_name: &str) -> String {
+    let target = if token.parsed.is_markdown_note {
+        new_name.strip_suffix(".md").unwrap_or(new_name)
+    } else {
+        new_name
+    };
+    let alias_separator = original_alias_separator(&token.raw_inner);
+
+    if alias_separator == Some("\\|") {
+        rebuild_link_token_with_separator(
+            token.kind,
+            target,
+            token.parsed.anchor.as_deref(),
+            token.parsed.alias_or_size.as_deref(),
+            "\\|",
+        )
+    } else {
+        rebuild_link_token(
+            token.kind,
+            target,
+            token.parsed.anchor.as_deref(),
+            token.parsed.alias_or_size.as_deref(),
+        )
+    }
+}
+
+fn original_alias_separator(raw_inner: &str) -> Option<&'static str> {
+    let bytes = raw_inner.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' if i + 1 < bytes.len() && bytes[i + 1] == b'|' => return Some("\\|"),
+            b'|' => return Some("|"),
+            _ => i += 1,
+        }
+    }
+    None
+}
+
+fn rebuild_link_token_with_separator(
+    kind: LinkKind,
+    target: &str,
+    anchor: Option<&str>,
+    alias: Option<&str>,
+    alias_separator: &str,
+) -> String {
+    let mut out = match kind {
+        LinkKind::WikiLink => String::from("[["),
+        LinkKind::Embed => String::from("![["),
+    };
+    out.push_str(target);
+    if let Some(anchor) = anchor {
+        out.push('#');
+        out.push_str(anchor);
+    }
+    if let Some(alias) = alias {
+        out.push_str(alias_separator);
+        out.push_str(alias);
+    }
+    out.push_str("]]");
+    out
 }
 
 #[cfg(test)]

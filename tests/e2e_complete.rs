@@ -420,3 +420,113 @@ Content here.
     assert_cli_success(&output);
     assert!(stdout_contains(&output, "large"));
 }
+
+#[test]
+fn test_link_semantics_are_consistent_across_index_rename_and_render() {
+    let vault = TestVault::new();
+    vault.create_note(
+        "source",
+        r#"---
+related: "[[folder/old-note.md#Heading|Alias]]"
+---
+
+| view |
+| --- |
+| [[folder/old-note.md\|Alias]] |
+
+![[tasks.base#Open Tasks]]
+"#,
+    );
+    vault.create_note("old-note", "# Old Note");
+    vault.create_note("task-open", "---\nstatus: open\n---\n");
+    vault.create_note("task-closed", "---\nstatus: closed\n---\n");
+    vault.create_file(
+        "tasks.base",
+        "views:\n  - type: table\n    name: Open Tasks\n    filters:\n      and:\n        - status == \"open\"\n    order:\n      - file.name\n  - type: table\n    name: Closed Tasks\n    filters:\n      and:\n        - status == \"closed\"\n    order:\n      - file.name\n",
+    );
+
+    vault.index();
+
+    let before = vault.query(
+        "file.name == 'source' AND list_contains(file.links, 'old-note') AND list_contains(file.embeds, 'tasks.base')",
+    );
+    assert_cli_success(&before);
+    assert!(stdout_contains(&before, "source"));
+
+    let rename = vault.note_rename("old-note", "new-note");
+    assert_cli_success(&rename);
+
+    let content = std::fs::read_to_string(vault.path.join("source.md")).unwrap();
+    assert!(content.contains("[[new-note#Heading|Alias]]"));
+    assert!(content.contains("[[new-note\\|Alias]]"));
+
+    let after = vault.query(
+        "file.name == 'source' AND list_contains(file.links, 'new-note') AND list_contains(file.embeds, 'tasks.base')",
+    );
+    assert_cli_success(&after);
+    assert!(stdout_contains(&after, "source"));
+
+    let render = vault.run_cli(&["note", "render", "source"]);
+    assert_cli_success(&render);
+    assert!(stdout_contains(&render, "Open Tasks"));
+    assert!(stdout_contains(&render, "[[task-open]]"));
+    assert!(!stdout_contains(&render, "Closed Tasks"));
+}
+
+#[test]
+fn test_code_context_links_are_ignored_across_features() {
+    let vault = TestVault::new();
+    vault.create_note(
+        "source",
+        "See [[target]].\n\n`[[target]]`\n\n```md\n![[target]]\n[[target]]\n![[tasks.base#Open Tasks]]\n```\n",
+    );
+    vault.create_note("target", "# Target");
+    vault.create_note("task-open", "---\nstatus: open\n---\n");
+    vault.create_file(
+        "tasks.base",
+        "views:\n  - type: table\n    name: Open Tasks\n    filters:\n      and:\n        - status == \"open\"\n    order:\n      - file.name\n",
+    );
+
+    vault.index();
+
+    let indexed = vault.query("file.name == 'source' AND list_contains(file.links, 'target')");
+    assert_cli_success(&indexed);
+    assert!(stdout_contains(&indexed, "source"));
+
+    let rename = vault.note_rename("target", "renamed-target");
+    assert_cli_success(&rename);
+
+    let content = std::fs::read_to_string(vault.path.join("source.md")).unwrap();
+    assert!(content.contains("See [[renamed-target]]."));
+    assert!(content.contains("`[[target]]`"));
+    assert!(content.contains("```md\n![[target]]\n[[target]]\n![[tasks.base#Open Tasks]]\n```"));
+
+    let render = vault.run_cli(&["note", "render", "source"]);
+    assert_cli_success(&render);
+    assert!(stdout_contains(&render, "```md"));
+    assert!(stdout_contains(&render, "![[tasks.base#Open Tasks]]"));
+    assert!(!stdout_contains(&render, "rendered from tasks.base"));
+    assert!(!stdout_contains(&render, "[[task-open]]"));
+}
+
+#[test]
+fn test_render_view_selector_matches_documented_behavior() {
+    let vault = TestVault::new();
+    vault.create_note("host", "![[tasks.base#Missing View]]");
+    vault.create_file(
+        "tasks.base",
+        "views:\n  - type: table\n    name: Open Tasks\n    order:\n      - file.name\n",
+    );
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "host"]);
+
+    assert_cli_success(&output);
+    assert!(stdout_contains(
+        &output,
+        "<!-- [markbase] view 'Missing View' not found in 'tasks.base' -->"
+    ));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("view 'Missing View' not found in 'tasks.base', skipping."));
+    assert!(!stdout_contains(&output, "Open Tasks"));
+}

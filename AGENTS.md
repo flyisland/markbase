@@ -63,4 +63,5 @@ Before making non-trivial changes, read these in order:
 - Note-facing names must be path-free.
 - Markdown note identity is name-based; non-Markdown indexed resources keep their filename including extension.
 - `.base` files are valid render targets and participate in indexed resource behavior.
+- `src/link_syntax.rs` is the shared link/embed parsing contract; do not reintroduce per-module regex parsing.
 - Query defaults are agent-oriented; human-readable tables are opt-in.

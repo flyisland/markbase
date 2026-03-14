@@ -1,15 +1,13 @@
 use gray_matter::Matter;
 use gray_matter::engine::YAML;
-use regex::Regex;
 use serde_json::Value;
 use std::sync::LazyLock;
 
+use crate::link_syntax::{LinkKind, ScanContext, parse_link_target, scan_link_tokens};
+
+use regex::Regex;
+
 static TAG_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"#[\w\-/]+").unwrap());
-
-pub static EMBED_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"!\[\[([^\]]+)\]\]").unwrap());
-
-pub static WIKILINK_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\[\[([^\]]+)\]\]").unwrap());
 
 /// Validates and normalizes a tag according to Obsidian Tag Format specification.
 ///
@@ -40,15 +38,20 @@ impl Extractor {
         let (frontmatter, content_without_fm) = Self::parse_frontmatter(content);
         let tags = Self::extract_tags(&content_without_fm);
 
-        let body_without_code = Self::strip_code_blocks(&content_without_fm);
-
-        let embeds = Self::extract_embeds(&body_without_code);
-        let body_without_embeds = Self::remove_embeds(&body_without_code);
-        let body_links = Self::extract_wikilinks(&body_without_embeds);
+        let body_tokens = scan_link_tokens(&content_without_fm, ScanContext::MarkdownBody);
+        let embeds: Vec<String> = body_tokens
+            .iter()
+            .filter(|token| token.kind == LinkKind::Embed)
+            .map(|token| token.parsed.normalized_target.clone())
+            .collect();
+        let body_links: Vec<String> = body_tokens
+            .iter()
+            .map(|token| token.parsed.normalized_target.clone())
+            .collect();
         let fm_links = Self::extract_frontmatter_links(&frontmatter);
 
         let mut all_links = body_links;
-        all_links.extend(fm_links.clone());
+        all_links.extend(fm_links);
         all_links.extend(embeds.clone());
         all_links.sort();
         all_links.dedup();
@@ -91,30 +94,6 @@ impl Extractor {
             .collect()
     }
 
-    fn strip_code_blocks(content: &str) -> String {
-        let re = Regex::new(r"```[\s\S]*?```").unwrap();
-        re.replace_all(content, |caps: &regex::Captures| " ".repeat(caps[0].len()))
-            .to_string()
-    }
-
-    fn remove_embeds(content: &str) -> String {
-        EMBED_RE.replace_all(content, " ").to_string()
-    }
-
-    pub fn extract_embeds(body: &str) -> Vec<String> {
-        EMBED_RE
-            .captures_iter(body)
-            .filter_map(|cap| cap.get(1).map(|m| Self::normalize_link_name(m.as_str())))
-            .collect()
-    }
-
-    pub fn extract_wikilinks(body: &str) -> Vec<String> {
-        WIKILINK_RE
-            .captures_iter(body)
-            .filter_map(|cap| cap.get(1).map(|m| Self::normalize_link_name(m.as_str())))
-            .collect()
-    }
-
     pub fn extract_frontmatter_links(frontmatter: &Value) -> Vec<String> {
         let mut links = Vec::new();
 
@@ -128,14 +107,12 @@ impl Extractor {
     fn scan_value_for_links(value: &Value, links: &mut Vec<String>) {
         match value {
             Value::String(s) => {
-                if s.contains("![[") {
-                    return;
-                }
-                let captured: Vec<String> = WIKILINK_RE
-                    .captures_iter(s)
-                    .filter_map(|cap| cap.get(1).map(|m| Self::normalize_link_name(m.as_str())))
-                    .collect();
-                links.extend(captured);
+                links.extend(
+                    scan_link_tokens(s, ScanContext::FrontmatterString)
+                        .into_iter()
+                        .filter(|token| token.kind == LinkKind::WikiLink)
+                        .map(|token| token.parsed.normalized_target),
+                );
             }
             Value::Array(arr) => {
                 for item in arr {
@@ -152,24 +129,7 @@ impl Extractor {
     }
 
     pub fn normalize_link_name(name: &str) -> String {
-        let name = name.trim();
-        let name = name.strip_suffix(".md").unwrap_or(name);
-        let name = if let Some((_, tail)) = name.rsplit_once('/') {
-            tail
-        } else {
-            name
-        };
-        let name = if let Some((base, _)) = name.split_once('|') {
-            base
-        } else {
-            name
-        };
-        let name = if let Some((base, _)) = name.split_once('#') {
-            base
-        } else {
-            name
-        };
-        name.to_string()
+        parse_link_target(name).normalized_target
     }
 }
 
@@ -573,6 +533,28 @@ embed: "![[embedded-note]]"
 Content"#;
         let extracted = Extractor::extract(content);
         assert!(!extracted.links.contains(&"embedded-note".to_string()));
+    }
+
+    #[test]
+    fn test_extract_links_with_escaped_pipe() {
+        let content = "| ref |\n| --- |\n| [[Note\\|Alias]] |\n\n![[Image.png\\|200]]";
+        let extracted = Extractor::extract(content);
+        assert!(extracted.links.contains(&"Note".to_string()));
+        assert!(extracted.links.contains(&"Image.png".to_string()));
+        assert!(extracted.embeds.contains(&"Image.png".to_string()));
+    }
+
+    #[test]
+    fn test_extract_frontmatter_text_with_links_but_not_embeds() {
+        let content = r#"---
+related: "see [[real-note]] and ![[ignored-note]]"
+---
+
+Content"#;
+        let extracted = Extractor::extract(content);
+        assert!(extracted.links.contains(&"real-note".to_string()));
+        assert!(!extracted.links.contains(&"ignored-note".to_string()));
+        assert!(extracted.embeds.is_empty());
     }
 
     #[test]

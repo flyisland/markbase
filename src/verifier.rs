@@ -6,11 +6,9 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use crate::db::Database;
-use crate::extractor::{Extractor, WIKILINK_RE};
+use crate::extractor::Extractor;
+use crate::link_syntax::{LinkKind, LinkToken, ScanContext, scan_link_tokens};
 use crate::name_validator::validate_note_name;
-
-static WIKILINK_BRACKET_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^\[\[(.+)\]\]$").expect("invalid regex: WIKILINK_BRACKET_RE"));
 
 static DATE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2}$").expect("invalid regex: DATE_RE"));
@@ -173,21 +171,8 @@ pub fn verify_note(
             }
         };
 
-        let caps = WIKILINK_BRACKET_RE.captures(link_str);
-        let template_name = match caps {
-            Some(c) => c.get(1).map(|m| m.as_str().to_string()),
-            None => {
-                issues.push(VerifyIssue {
-                    level: IssueLevel::Error,
-                    message: format!(
-                        "'templates' contains invalid link: '{}'. Each element must be an Obsidian wiki-link, e.g. \"[[template-name]]\".",
-                        link_str
-                    ),
-                    field_definition: None,
-                });
-                return Ok(make_result(vec![], issues));
-            }
-        };
+        let template_name =
+            parse_pure_wikilink(link_str).map(|token| token.parsed.normalized_target);
 
         if let Some(tn) = template_name {
             template_file_names.push(tn);
@@ -635,11 +620,12 @@ fn verify_link_field(
     all_schema_fields: &std::collections::HashMap<String, SchemaFieldInfo>,
     issues: &mut Vec<VerifyIssue>,
 ) {
-    if link_val.is_empty() {
+    let trimmed = link_val.trim();
+    if trimmed.is_empty() {
         return;
     }
 
-    if link_val.starts_with("[?") {
+    if trimmed.starts_with("[?") {
         issues.push(VerifyIssue {
             level: IssueLevel::Info,
             message: format!(
@@ -651,34 +637,8 @@ fn verify_link_field(
         return;
     }
 
-    let caps = WIKILINK_RE.captures(link_val);
-    if caps.is_none() {
-        issues.push(VerifyIssue {
-            level: IssueLevel::Warn,
-            message: format!(
-                "field '{}' has invalid link format: '{}'. Expected Obsidian wiki-link, e.g. [[note-name]].",
-                field_name, link_val
-            ),
-            field_definition: None,
-        });
-        return;
-    }
-
-    let target_name = caps.and_then(|c| {
-        c.get(1).map(|m| {
-            let name = m.as_str();
-            if let Some((base, _)) = name.split_once('|') {
-                base
-            } else if let Some((base, _)) = name.split_once('#') {
-                base
-            } else {
-                name
-            }
-        })
-    });
-
-    let target_name = match target_name {
-        Some(n) => n,
+    let target_name = match parse_pure_wikilink(trimmed) {
+        Some(token) => token.parsed.normalized_target,
         None => {
             issues.push(VerifyIssue {
                 level: IssueLevel::Warn,
@@ -692,9 +652,7 @@ fn verify_link_field(
         }
     };
 
-    let target_name = target_name.trim_end_matches(".md");
-
-    let notes = match db.get_notes_by_name(target_name) {
+    let notes = match db.get_notes_by_name(&target_name) {
         Ok(n) => n,
         Err(_) => {
             let field_def = all_schema_fields.get(field_name);
@@ -712,15 +670,15 @@ fn verify_link_field(
     };
 
     if notes.is_empty() {
-        let field_def = all_schema_fields.get(field_name);
-        let field_definition = field_def.map(format_field_definition);
         issues.push(VerifyIssue {
             level: IssueLevel::Warn,
             message: format!(
                 "field '{}' links to '{}' which is not found in the vault.",
                 field_name, target_name
             ),
-            field_definition,
+            field_definition: all_schema_fields
+                .get(field_name)
+                .map(format_field_definition),
         });
         return;
     }
@@ -742,6 +700,30 @@ fn verify_link_field(
             });
         }
     }
+}
+
+fn parse_pure_wikilink(input: &str) -> Option<LinkToken> {
+    let trimmed = input.trim();
+    let leading_ws = input.len().saturating_sub(input.trim_start().len());
+    let trailing_ws = input.len().saturating_sub(input.trim_end().len());
+    let expected_start = leading_ws;
+    let expected_end = input.len().saturating_sub(trailing_ws);
+
+    let mut tokens = scan_link_tokens(input, ScanContext::FrontmatterString).into_iter();
+    let token = tokens.next()?;
+    if tokens.next().is_some() {
+        return None;
+    }
+    if token.kind != LinkKind::WikiLink {
+        return None;
+    }
+    if token.full_span.start != expected_start || token.full_span.end != expected_end {
+        return None;
+    }
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(token)
 }
 
 fn verify_embedded_bases(db: &Database, embeds: &[String], issues: &mut Vec<VerifyIssue>) {

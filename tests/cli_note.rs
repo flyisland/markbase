@@ -1,6 +1,6 @@
 mod common;
 
-use common::{TestVault, assert_cli_error, assert_cli_success, stderr_contains};
+use common::{TestVault, assert_cli_error, assert_cli_success, stderr_contains, stdout_contains};
 use serde_json::Value;
 
 #[test]
@@ -733,6 +733,136 @@ related: "not-a-wikilink"
 }
 
 #[test]
+fn test_note_verify_link_field_accepts_md_anchor_alias_form() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company.md"),
+        r#"---
+type: company
+_schema:
+  properties:
+    related:
+      type: text
+      format: link
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note("target-note", "---\ntype: company\n---\n");
+    vault.create_note(
+        "acme",
+        r#"---
+templates: ["[[company]]"]
+type: company
+related: "[[folder/target-note.md#Heading|Alias]]"
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("acme");
+
+    assert_cli_success(&output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains("invalid link format"));
+    assert!(!stderr.contains("not found in the vault"));
+}
+
+#[test]
+fn test_note_verify_link_field_rejects_non_pure_wikilink_string() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company.md"),
+        r#"---
+type: company
+_schema:
+  properties:
+    related:
+      type: text
+      format: link
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note("target-note", "---\ntype: company\n---\n");
+    vault.create_note(
+        "acme",
+        r#"---
+templates: ["[[company]]"]
+type: company
+related: "prefix [[target-note]] suffix"
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("acme");
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(&output, "invalid link format"));
+}
+
+#[test]
+fn test_note_verify_link_field_accepts_trimmed_pure_wikilink() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company.md"),
+        r#"---
+type: company
+_schema:
+  properties:
+    related:
+      type: text
+      format: link
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note("target-note", "---\ntype: company\n---\n");
+    vault.create_note(
+        "acme",
+        r#"---
+templates: ["[[company]]"]
+type: company
+related: "  [[target-note]]  "
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("acme");
+
+    assert_cli_success(&output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains("invalid link format"));
+    assert!(!stderr.contains("not found in the vault"));
+}
+
+#[test]
 fn test_note_verify_link_to_nonexistent_note() {
     let vault = TestVault::new();
 
@@ -1107,6 +1237,95 @@ fn test_note_rename_preserves_section_and_alias() {
 }
 
 #[test]
+fn test_note_rename_preserves_heading_block_and_alias_suffix() {
+    let vault = TestVault::new();
+    vault.create_note(
+        "source",
+        "See [[old-note#Heading|Alias Text]] and ![[old-note#^block-1]].",
+    );
+    vault.create_note("old-note", "# Old Note");
+    vault.index();
+
+    let output = vault.note_rename("old-note", "new-note");
+
+    assert_cli_success(&output);
+    let content = std::fs::read_to_string(vault.path.join("source.md")).unwrap();
+    assert!(content.contains("[[new-note#Heading|Alias Text]]"));
+    assert!(content.contains("![[new-note#^block-1]]"));
+}
+
+#[test]
+fn test_note_rename_skips_code_context_links() {
+    let vault = TestVault::new();
+    vault.create_note(
+        "source",
+        "See [[old-note]].\n\n`[[old-note]]`\n\n```md\n![[old-note]]\n```\n",
+    );
+    vault.create_note("old-note", "# Old Note");
+    vault.index();
+
+    let output = vault.note_rename("old-note", "new-note");
+
+    assert_cli_success(&output);
+    let content = std::fs::read_to_string(vault.path.join("source.md")).unwrap();
+    assert!(content.contains("See [[new-note]]."));
+    assert!(content.contains("`[[old-note]]`"));
+    assert!(content.contains("```md\n![[old-note]]\n```"));
+}
+
+#[test]
+fn test_note_rename_updates_md_extension_and_path_forms() {
+    let vault = TestVault::new();
+    vault.create_note("source", "See [[folder/old-note.md#Section]] for details.");
+    vault.create_note("old-note", "# Old Note");
+    vault.index();
+
+    let output = vault.note_rename("old-note", "new-note");
+
+    assert_cli_success(&output);
+    let content = std::fs::read_to_string(vault.path.join("source.md")).unwrap();
+    assert!(content.contains("[[new-note#Section]]"));
+    assert!(!content.contains("old-note.md"));
+}
+
+#[test]
+fn test_note_rename_updates_frontmatter_wikilink_strings_with_shared_parser() {
+    let vault = TestVault::new();
+    vault.create_note(
+        "note-a",
+        r#"---
+related: "  [[note-b|Alias]]  "
+---
+
+Content
+"#,
+    );
+    vault.create_note("note-b", "# Note B");
+    vault.index();
+
+    let output = vault.note_rename("note-b", "note-b-new");
+
+    assert_cli_success(&output);
+    let content = std::fs::read_to_string(vault.path.join("note-a.md")).unwrap();
+    assert!(content.contains("[[note-b-new|Alias]]"));
+}
+
+#[test]
+fn test_note_rename_preserves_escaped_pipe_in_table_cells() {
+    let vault = TestVault::new();
+    vault.create_note("source", "| ref |\n| --- |\n| [[old-note\\|Alias]] |\n");
+    vault.create_note("old-note", "# Old Note");
+    vault.index();
+
+    let output = vault.note_rename("old-note", "new-note");
+
+    assert_cli_success(&output);
+    let content = std::fs::read_to_string(vault.path.join("source.md")).unwrap();
+    assert!(content.contains("[[new-note\\|Alias]]"));
+    assert!(!content.contains("[[new-note|Alias]]"));
+}
+
+#[test]
 fn test_note_rename_not_found() {
     let vault = TestVault::new();
     vault.create_note("existing", "# Existing");
@@ -1335,6 +1554,28 @@ fn test_note_render_link_this_filter() {
 }
 
 #[test]
+fn test_note_render_base_embed_with_view_selector() {
+    let vault = TestVault::new();
+    vault.create_note("host", "![[tasks.base#Open Tasks]]");
+    vault.create_note("task-open", "---\nstatus: open\n---\n");
+    vault.create_note("task-done", "---\nstatus: closed\n---\n");
+    vault.create_file(
+        "tasks.base",
+        "views:\n  - type: table\n    name: Open Tasks\n    filters:\n      and:\n        - status == \"open\"\n    order:\n      - file.name\n  - type: table\n    name: Closed Tasks\n    filters:\n      and:\n        - status == \"closed\"\n    order:\n      - file.name\n",
+    );
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "host"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Open Tasks"));
+    assert!(stdout.contains("[[task-open]]"));
+    assert!(!stdout.contains("Closed Tasks"));
+    assert!(!stdout.contains("[[task-done]]"));
+}
+
+#[test]
 fn test_note_render_dry_run() {
     let vault = TestVault::new();
     vault.create_note("acme", "---\ntype: company\n---\n![[opps.base]]\n");
@@ -1357,6 +1598,29 @@ fn test_note_render_dry_run() {
     assert!(stdout.contains("FROM notes"));
     assert!(stdout.contains("[[acme]]"));
     assert!(stderr.is_empty(), "unexpected stderr output: {}", stderr);
+}
+
+#[test]
+fn test_note_render_base_embed_missing_view_selector() {
+    let vault = TestVault::new();
+    vault.create_note("host", "![[tasks.base#Missing View]]");
+    vault.create_file(
+        "tasks.base",
+        "views:\n  - type: table\n    name: Open Tasks\n    order:\n      - file.name\n",
+    );
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "host"]);
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(
+        &output,
+        "view 'Missing View' not found in 'tasks.base', skipping."
+    ));
+    assert!(stdout_contains(
+        &output,
+        "<!-- [markbase] view 'Missing View' not found in 'tasks.base' -->"
+    ));
 }
 
 #[test]
@@ -1437,6 +1701,43 @@ fn test_note_render_sort() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("ORDER BY"));
     assert!(stdout.contains("DESC"));
+}
+
+#[test]
+fn test_note_render_non_base_embed_passthrough_after_parser_change() {
+    let vault = TestVault::new();
+    vault.create_file("image.png", "binary");
+    vault.create_note("test-note", "Before\n![[image.png]]\nAfter");
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "test-note"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Before"));
+    assert!(stdout.contains("![[image.png]]"));
+    assert!(stdout.contains("After"));
+}
+
+#[test]
+fn test_note_render_base_embed_inside_fenced_code_is_not_expanded() {
+    let vault = TestVault::new();
+    vault.create_note("task-open", "---\nstatus: open\n---\n");
+    vault.create_file(
+        "tasks.base",
+        "views:\n  - type: table\n    name: Open Tasks\n    filters:\n      and:\n        - status == \"open\"\n    order:\n      - file.name\n",
+    );
+    vault.create_note("host", "```md\n![[tasks.base#Open Tasks]]\n```\n");
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "host"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("```md"));
+    assert!(stdout.contains("![[tasks.base#Open Tasks]]"));
+    assert!(!stdout.contains("rendered from tasks.base"));
+    assert!(!stdout.contains("[[task-open]]"));
 }
 
 #[test]

@@ -26,6 +26,9 @@ completion_criteria:
   - id: "cc-004"
     scenario: "frontmatter 纯 wikilink 字符串会被正确改写"
     test: "test_note_rename_updates_frontmatter_wikilink_strings_with_shared_parser"
+  - id: "cc-005"
+    scenario: "Markdown 表格中的 escaped pipe 写法在 rename 后仍被保留"
+    test: "test_note_rename_preserves_escaped_pipe_in_table_cells"
 ---
 
 ## Intent
@@ -39,6 +42,7 @@ completion_criteria:
 - 对 Markdown note 目标，rewrite 后的语法必须规范化为**path-free 且不带 `.md` 扩展**的形式
 - 对非 Markdown 资源目标，rewrite 后必须保留扩展名
 - 原语法后缀必须保留：`#Heading`、`#^block`、`|alias` 或 embed size
+- 若原语法使用 `\|` 作为 Markdown 表格场景下的 alias / size 分隔写法，rewrite 后必须保留 `\|`，不能退化成裸 `|`
 - rewrite 的结果必须由 `ParsedTarget` 重建，不再从原始字符串上做局部 `strip_prefix(old_name)` 拼接
 - 若 token 的 `normalized_target` 不等于 `old_name`，该 token 必须原样保留
 
@@ -87,3 +91,10 @@ completion_criteria:
 假设 frontmatter 字段值为 `[[old|Alias]]`
 当   执行 rename
 那么 该值被改写为 `[[new|Alias]]`
+
+场景: Markdown 表格中的 escaped pipe 写法在 rename 后仍被保留
+测试: test_note_rename_preserves_escaped_pipe_in_table_cells
+假设 表格单元格中包含 `[[old-note\|Alias]]`
+当   执行 rename
+那么 结果为 `[[new-note\|Alias]]`
+并且 不会退化成 `[[new-note|Alias]]`

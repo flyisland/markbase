@@ -1,22 +1,19 @@
 pub mod filter;
 pub mod output;
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::sync::LazyLock;
 
 use gray_matter::Matter;
 use gray_matter::engine::YAML;
-use regex::Regex;
 use serde_json::Value;
 
 use crate::db::Database;
+use crate::link_syntax::{LinkKind, LinkToken, ScanContext, scan_link_tokens};
 use crate::name_validator::validate_render_target_name;
 use crate::renderer::filter::{ThisContext, merge_filters, translate_columns, translate_sort};
 use crate::renderer::output::{Row, render_json, render_table};
-
-static BASE_EMBED_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^!\[\[([^\]]+\.base)\]\]\s*$").unwrap());
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum RenderFormat {
@@ -99,7 +96,7 @@ pub fn render_note(
         // For .base files, execute its views directly (as if it's embedded)
         // The base name includes the extension
         let base_name = &this.name;
-        render_base_embed(base_name, base_dir, db, &this, opts);
+        render_base_embed(base_name, None, base_dir, db, &this, opts);
     } else {
         // For .md files, parse frontmatter and render body with base embed expansion
         let matter = Matter::<YAML>::new();
@@ -107,14 +104,17 @@ pub fn render_note(
             .parse::<Value>(&content)
             .map_err(|e| format!("failed to parse frontmatter: {}", e))?;
         let body = parsed.content;
+        let standalone_base_embeds = collect_standalone_base_embed_lines(&body);
+        let mut offset = 0;
 
-        for line in body.lines() {
-            if let Some(caps) = BASE_EMBED_RE.captures(line) {
-                let embed_name = caps.get(1).unwrap().as_str();
-                render_base_embed(embed_name, base_dir, db, &this, opts);
+        for segment in body.split_inclusive('\n') {
+            let line = segment.strip_suffix('\n').unwrap_or(segment);
+            if let Some((embed_name, view_name)) = standalone_base_embeds.get(&offset) {
+                render_base_embed(embed_name, view_name.as_deref(), base_dir, db, &this, opts);
             } else {
                 println!("{}", line);
             }
+            offset += segment.len();
         }
     }
 
@@ -251,6 +251,7 @@ fn execute_and_render(
 /// Main driver for rendering base embeds
 fn render_base_embed(
     embed_name: &str,
+    view_selector: Option<&str>,
     base_dir: &Path,
     db: &Database,
     this: &ThisContext,
@@ -290,7 +291,31 @@ fn render_base_embed(
     };
 
     // Process each view
-    for view in &base_data.views {
+    let selected_views: Vec<&Value> = if let Some(selector) = view_selector {
+        base_data
+            .views
+            .iter()
+            .filter(|view| view.get("name").and_then(|v| v.as_str()) == Some(selector))
+            .collect()
+    } else {
+        base_data.views.iter().collect()
+    };
+
+    if let Some(selector) = view_selector
+        && selected_views.is_empty()
+    {
+        eprintln!(
+            "WARN: view '{}' not found in '{}', skipping.",
+            selector, embed_name
+        );
+        println!(
+            "<!-- [markbase] view '{}' not found in '{}' -->",
+            selector, embed_name
+        );
+        return;
+    }
+
+    for view in selected_views {
         let view_name = view
             .get("name")
             .and_then(|v| v.as_str())
@@ -312,4 +337,46 @@ fn render_base_embed(
 
         execute_and_render(db, &sql, &columns, view_name, embed_name, opts);
     }
+}
+
+fn collect_standalone_base_embed_lines(body: &str) -> HashMap<usize, (String, Option<String>)> {
+    let mut embeds = HashMap::new();
+
+    for token in scan_link_tokens(body, ScanContext::MarkdownBody) {
+        if let Some((line_start, embed)) = standalone_base_embed_at(body, &token) {
+            embeds.insert(line_start, embed);
+        }
+    }
+
+    embeds
+}
+
+fn standalone_base_embed_at(
+    body: &str,
+    token: &LinkToken,
+) -> Option<(usize, (String, Option<String>))> {
+    if token.kind != LinkKind::Embed || !token.parsed.normalized_target.ends_with(".base") {
+        return None;
+    }
+
+    let line_start = body[..token.full_span.start]
+        .rfind('\n')
+        .map_or(0, |idx| idx + 1);
+    let line_end = body[token.full_span.end..]
+        .find('\n')
+        .map_or(body.len(), |idx| token.full_span.end + idx);
+    let line = &body[line_start..line_end];
+    let trimmed = line.trim();
+
+    if trimmed != &body[token.full_span.start..token.full_span.end] {
+        return None;
+    }
+
+    Some((
+        line_start,
+        (
+            token.parsed.normalized_target.clone(),
+            token.parsed.anchor.clone(),
+        ),
+    ))
 }

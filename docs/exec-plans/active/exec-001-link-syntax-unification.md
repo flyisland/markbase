@@ -1,7 +1,7 @@
 ---
 id: exec-001
 title: "Link Syntax Unification"
-status: active
+status: completed
 design-doc: design-001
 parallel_safe_verified: false
 ---
@@ -16,17 +16,17 @@ parallel_safe_verified: false
 
 ### Phase 1: 语义基础层
 
-- [ ] task-001: 建立共享 link/embed 解析器，替代多处直接 regex 解释
-- [ ] task-002: 将 extractor 和 verifier 切换到共享解析语义
+- [x] task-001: 建立共享 link/embed 解析器，替代多处直接 regex 解释
+- [x] task-002: 将 extractor 和 verifier 切换到共享解析语义
 
 ### Phase 2: 写路径与渲染路径
 
-- [ ] task-003: 将 renamer 切换为基于 token span 的精确改写
-- [ ] task-004: 为 renderer 增加 `.base#View` 支持，并与共享解析保持一致
+- [x] task-003: 将 renamer 切换为基于 token span 的精确改写
+- [x] task-004: 为 renderer 增加 `.base#View` 支持，并与共享解析保持一致
 
 ### Phase 3: 合约与回归
 
-- [ ] task-005: 同步设计文档、README、Agent 入口文档，并补齐跨模块回归测试
+- [x] task-005: 同步设计文档、README、Agent 入口文档，并补齐跨模块回归测试
 
 ## Execution Mode
 
@@ -58,6 +58,8 @@ task-001 -> task-004 -> task-005
 
 - 2026-03-14: 建立 `exec-001` 和配套 `task-001` 至 `task-005`，作为后续实现与验收入口
 - 2026-03-14: 归档旧 `spec/*.md` 到 `docs/design-docs/legacy/`，保留历史设计上下文
+- 2026-03-14: 引入 `src/link_syntax.rs` 作为共享语义入口，并将 extractor、verifier、renamer、renderer 全部切换到统一 contract
+- 2026-03-14: 补齐 escaped pipe、`.md#anchor|alias`、code context 排除、`.base#View` 的回归测试与用户文档
 
 ## Definition of Done
 

@@ -113,3 +113,28 @@ fn test_index_command_removed() {
     assert!(!output.status.success());
     assert!(stderr_contains(&output, "unrecognized subcommand 'index'"));
 }
+
+#[test]
+fn test_auto_index_extracts_escaped_pipe_and_mixed_frontmatter_links() {
+    let vault = TestVault::new();
+    vault.create_note(
+        "source",
+        r#"---
+related: "see [[front-note]] and ![[ignored-note]]"
+---
+
+| ref |
+| --- |
+| [[body-note\|Alias]] |
+
+![[diagram.png\|200]]
+"#,
+    );
+    vault.index();
+
+    let output =
+        vault.query("file.name == 'source' AND list_contains(file.links, 'front-note') AND list_contains(file.links, 'body-note') AND list_contains(file.embeds, 'diagram.png')");
+
+    assert_cli_success(&output);
+    assert!(stdout_contains(&output, "source"));
+}

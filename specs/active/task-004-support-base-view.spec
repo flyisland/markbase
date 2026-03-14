@@ -27,6 +27,9 @@ completion_criteria:
   - id: "cc-004"
     scenario: "非 `.base` embed 仍保持原样输出"
     test: "test_note_render_non_base_embed_passthrough_after_parser_change"
+  - id: "cc-005"
+    scenario: "fenced code 中的 `.base` embed 语法示例不会被执行"
+    test: "test_note_render_base_embed_inside_fenced_code_is_not_expanded"
 ---
 
 ## Intent
@@ -37,6 +40,7 @@ completion_criteria:
 
 - 仅支持“单独占一行”的 `.base` embed，与现有渲染范围一致
 - “单独占一行”定义为：去掉行首行尾空白后，整行恰好只包含一个 `.base` embed token；带有 `> `、`- `、列表编号、callout 标记等前缀的行仍不处理
+- render 对 body 的 embed 扫描必须与 `ScanContext::MarkdownBody` 一致，因此 fenced code 与 inline code 中的语法示例不能触发 `.base` 渲染
 - view selector 使用 embed 中 `#` 后的名称做**区分大小写**的精确匹配
 - `.base` embed 上的 alias / size 可以被解析，但渲染时忽略
 - 找不到指定 view 时，stderr 必须输出：
@@ -86,3 +90,10 @@ completion_criteria:
 假设 正文包含 `![[image.png]]`
 当   执行渲染
 那么 该行原样输出，不触发 base 渲染逻辑
+
+场景: fenced code 中的 `.base` embed 语法示例不会被执行
+测试: test_note_render_base_embed_inside_fenced_code_is_not_expanded
+假设 fenced code block 中单独一行包含 `![[tasks.base#Open Tasks]]`
+当   执行渲染
+那么 该代码块内容保持原样输出
+并且 不会执行任何 base view

@@ -258,6 +258,9 @@ Behavior:
 - Fails if name is ambiguous or new name exists
 - Updates all `[[old-name]]` links and `![[old-name]]` embeds across the vault (body and frontmatter)
 - Preserves aliases, section anchors, and block IDs
+- Normalizes rewritten Markdown-note targets to path-free, extension-free form such as `[[folder/old.md#Section]] -> [[new#Section]]`
+- Preserves table-safe escaped separators such as `[[old-note\|Alias]] -> [[new-note\|Alias]]`
+- Skips fenced code blocks and inline code spans when rewriting body links
 - Reindexes the vault immediately after the rename completes
 
 Extensions are allowed when renaming resource-style files such as `aaa.jpeg`; the forbidden part is the path, not the suffix.
@@ -296,6 +299,7 @@ Checks that the note conforms to all constraints defined in its referenced MTS t
 - Directory location matches `_schema.location`
 - Required frontmatter fields are present
 - Field types and enum values are correct
+- Link fields must be a single pure Obsidian wikilink such as `[[note]]` or `[[folder/note.md#Heading|Alias]]`
 - Link fields point to notes of the expected `type`
 
 Warnings are reported to stderr. For issue output, the header includes `file.path`, and each schema-related issue includes a compact `Definition:` line so agents can repair notes with the expected type/constraints. Exit code is non-zero only on errors (e.g. missing note or template file).
@@ -310,9 +314,14 @@ markbase note render <n> --dry-run   # show SQL without executing
 
 `<n>` must be either a note name (no extension) or a `.base` filename, never a path.
 
-Renders the note body to stdout. Each `![[*.base]]` embed is replaced with
-query results from the corresponding Obsidian Base file. Non-`.base` embeds
-are passed through unchanged.
+Renders the note body to stdout. Each `![[*.base]]` embed whose trimmed line is
+exactly one embed token is replaced with query results from the corresponding
+Obsidian Base file. Non-`.base` embeds are passed through unchanged.
+
+`![[tasks.base#Open Tasks]]` renders only the matching view. If the view does
+not exist, markbase warns on stderr and leaves an HTML comment placeholder at
+that line in stdout. Fenced code blocks and inline code spans are never treated
+as live `.base` embeds, even if they contain the same syntax literally.
 
 For `-o table`, each rendered Base view becomes a compact Markdown table:
 

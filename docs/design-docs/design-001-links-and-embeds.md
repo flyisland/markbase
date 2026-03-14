@@ -325,7 +325,7 @@ Links and embeds inside Markdown body code contexts are ignored:
 - fenced code blocks delimited by ``` or `~~~`
 - inline code spans delimited by matching backtick runs
 
-This exclusion applies to indexing and rename scanning. It does not apply to frontmatter string scanning.
+This exclusion applies to indexing, rename scanning, and render-time `.base` embed detection. It does not apply to frontmatter string scanning.
 
 ## 10. Backlink Computation
 
@@ -379,6 +379,7 @@ When the normalized target matches `old_name`, markbase preserves the rest of th
 - block suffixes
 - display text
 - embed size suffixes
+- escaped `\|` alias / size separators when the original token used table-safe escaping
 
 For Markdown note targets, rewritten syntax is normalized to the canonical external form:
 
@@ -388,9 +389,10 @@ For Markdown note targets, rewritten syntax is normalized to the canonical exter
 Examples:
 
 ```text
-[[folder/old.md#Section]]     -> [[new#Section]]
-[[old#Heading|Alias]]         -> [[new#Heading|Alias]]
-![[old.base#Open Tasks]]      -> ![[new.base#Open Tasks]]
+[[folder/old.md#Section]]      -> [[new#Section]]
+[[old#Heading|Alias]]          -> [[new#Heading|Alias]]
+[[old\|Alias]]                 -> [[new\|Alias]]
+![[old.base#Open Tasks]]       -> ![[new.base#Open Tasks]]
 ```
 
 ### 11.4 Reindexing after rename
@@ -410,6 +412,7 @@ markbase behavior:
 
 - extractor stores `.base` embed targets in `links` and `embeds` using the full filename, for example `customer.base`
 - renderer only gives special rendering treatment to body lines whose **trimmed content** is exactly one `.base` embed token
+- renderer determines those candidate lines using the same `MarkdownBody` scanning rules as extractor and rename, so fenced code blocks and inline code spans are excluded
 - non-`.base` embeds are indexed, but `note render` leaves them unchanged in output
 
 For `.base#View` rendering:
