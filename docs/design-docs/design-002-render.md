@@ -73,16 +73,18 @@ Within Markdown note bodies, render-time Base expansion only happens when all of
 
 - the token is an Obsidian embed token, not a plain link
 - the normalized target ends with `.base`
-- after trimming surrounding whitespace, the entire line is exactly that one embed token
 
 As a consequence:
 
 - `![[tasks.base]]` on its own line is rendered
-- `  ![[tasks.base]]  ` is rendered
-- `> ![[tasks.base]]`, `- ![[tasks.base]]`, numbered-list items, and callout-prefixed lines are not rendered
-- lines that contain additional text besides the embed are not rendered
+- `Before ![[tasks.base]] After` is rendered, with the Base output inserted at the embed position
+- blockquotes, list items, and callout bodies are eligible if the embed appears in normal Markdown body content rather than code context
+- surrounding text remains in output; render may split the original line with inserted block output when needed
+- when an embed appears inside a blockquote, list item, or callout body, the rendered Base block does not inherit or preserve that container prefix on each emitted line
+- this means the Base output may visually break out of the original Markdown container; this is accepted behavior, not a render bug
+- callers that need stable Markdown structure should place `.base` embeds on ordinary body lines rather than inside blockquote/list/callout-prefixed lines
 
-This contract is based on shared token scanning plus trimmed-line equality, not on a renderer-specific regex.
+This contract is based on shared token scanning, not on a renderer-specific regex.
 
 ### `.base#View` Selector Rule
 
@@ -164,7 +166,7 @@ For soft failures, render preserves positional context by emitting a placeholder
 - fetch the target note record that defines the `this` context
 - read Markdown note content or Base file content from disk
 - scan body tokens using shared link/embed parsing
-- identify standalone `.base` embed lines
+- identify `.base` embed tokens that should be expanded
 - resolve embedded Base files via indexed `notes` entries
 - select views, build SQL, execute or dry-run them, and print wrapped output
 
@@ -215,6 +217,7 @@ The renderer must not:
 - Direct `.base` rendering is a supported mode. In that mode, the `.base` file itself defines the `this` context and its views are rendered directly.
 - Richer Obsidian Base presentation fields that are not part of current execution semantics may be ignored. markbase only executes the subset already implemented as query/filter/output behavior.
 - View title formatting is currently part of the stable render wrapper shape: rendered views use `> **View Name**` between the section wrapper and the rendered content.
+- Container-prefixed Markdown lines are scanned for `.base` embeds, but render does not attempt container-aware rewrapping of the emitted multi-line Base output. The complexity is not justified for a rare and structurally awkward authoring pattern.
 
 ## Constraints
 
@@ -223,7 +226,7 @@ These constraints should be inherited by future Task Specs that touch render beh
 - Do not introduce writes into render paths.
 - Do not fork link/embed parsing away from `src/link_syntax.rs`.
 - Do not change renderer filter namespace semantics without matching query-layer changes.
-- Do not widen standalone embed execution to blockquote, list, numbered-list, or callout-prefixed lines unless the contract, README, and tests change together.
+- Do not reintroduce a whole-line-only restriction for `.base` embed expansion unless the contract, README, and tests change together.
 - Do not regress default output from JSON back to legacy list-style output.
 - Do not treat `.base#View`, code-context exclusion, or non-`.base` passthrough as optional behavior; they are part of the active contract.
 
@@ -240,6 +243,7 @@ The following tests anchor the active render contract and should remain aligned 
 
 - `test_note_render_accepts_base_filename`
 - `test_note_render_base_embed_with_view_selector`
+- `test_note_render_inline_base_embed_is_expanded`
 - `test_note_render_base_embed_missing_view_selector`
 - `test_note_render_non_base_embed_passthrough_after_parser_change`
 - `test_note_render_base_embed_inside_fenced_code_is_not_expanded`
@@ -258,7 +262,7 @@ The older `legacy/note_render_design.md` captured an earlier render design cente
 - JSON as the default structured output
 - explicit `-o json` and `-o table` support
 - direct `.base` render targets
-- shared link/embed scanning for standalone `.base` detection
+- shared link/embed scanning for token-position `.base` detection
 - formal `.base#View` selection behavior
 - code-context exclusion aligned with the shared parser
 

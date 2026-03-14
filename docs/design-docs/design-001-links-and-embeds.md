@@ -411,8 +411,11 @@ Obsidian bases are relevant here for two reasons:
 markbase behavior:
 
 - extractor stores `.base` embed targets in `links` and `embeds` using the full filename, for example `customer.base`
-- renderer only gives special rendering treatment to body lines whose **trimmed content** is exactly one `.base` embed token
-- renderer determines those candidate lines using the same `MarkdownBody` scanning rules as extractor and rename, so fenced code blocks and inline code spans are excluded
+- renderer gives special runtime treatment to `.base` embed tokens found in normal Markdown body content
+- renderer determines those candidate tokens using the same `MarkdownBody` scanning rules as extractor and rename, so fenced code blocks and inline code spans are excluded
+- when the embed shares a line with surrounding text, render expands the embed at that token position rather than requiring whole-line ownership
+- when the embed appears inside blockquote/list/callout-prefixed body lines, render still expands it, but the emitted Base block does not preserve those container prefixes line-by-line
+- this means rendered Base output may break out of the original Markdown container; users who need stable structure should place `.base` embeds on ordinary body lines
 - non-`.base` embeds are indexed, but `note render` leaves them unchanged in output
 
 For `.base#View` rendering:
@@ -443,7 +446,6 @@ The following are not current design goals for markbase link/embed indexing:
 - preserving heading or block suffixes in stored `links` / `embeds`
 - resolving duplicate note names by path during indexing
 - extracting frontmatter `![[...]]` embeds
-- rendering `.base` embeds when the line also contains blockquote/list/callout marker prefixes
 - supporting self-relative forms such as `[[#Heading]]` and `[[^blockid]]`
 
 If any of these change, this document, `ARCHITECTURE.md`, and relevant tests should change together.

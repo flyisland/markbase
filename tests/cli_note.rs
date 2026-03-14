@@ -1576,6 +1576,30 @@ fn test_note_render_base_embed_with_view_selector() {
 }
 
 #[test]
+fn test_note_render_inline_base_embed_is_expanded() {
+    let vault = TestVault::new();
+    vault.create_note("host", "Before ![[tasks.base#Open Tasks]] After");
+    vault.create_note("task-open", "---\nstatus: open\n---\n");
+    vault.create_note("task-done", "---\nstatus: closed\n---\n");
+    vault.create_file(
+        "tasks.base",
+        "views:\n  - type: table\n    name: Open Tasks\n    filters:\n      and:\n        - status == \"open\"\n    order:\n      - file.name\n  - type: table\n    name: Closed Tasks\n    filters:\n      and:\n        - status == \"closed\"\n    order:\n      - file.name\n",
+    );
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "host"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Before "));
+    assert!(stdout.contains(" After"));
+    assert!(stdout.contains("Open Tasks"));
+    assert!(stdout.contains("[[task-open]]"));
+    assert!(!stdout.contains("Closed Tasks"));
+    assert!(!stdout.contains("[[task-done]]"));
+}
+
+#[test]
 fn test_note_render_dry_run() {
     let vault = TestVault::new();
     vault.create_note("acme", "---\ntype: company\n---\n![[opps.base]]\n");

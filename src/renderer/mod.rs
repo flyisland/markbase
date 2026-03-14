@@ -1,7 +1,6 @@
 pub mod filter;
 pub mod output;
 
-use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
@@ -104,18 +103,8 @@ pub fn render_note(
             .parse::<Value>(&content)
             .map_err(|e| format!("failed to parse frontmatter: {}", e))?;
         let body = parsed.content;
-        let standalone_base_embeds = collect_standalone_base_embed_lines(&body);
-        let mut offset = 0;
-
-        for segment in body.split_inclusive('\n') {
-            let line = segment.strip_suffix('\n').unwrap_or(segment);
-            if let Some((embed_name, view_name)) = standalone_base_embeds.get(&offset) {
-                render_base_embed(embed_name, view_name.as_deref(), base_dir, db, &this, opts);
-            } else {
-                println!("{}", line);
-            }
-            offset += segment.len();
-        }
+        let rendered_body = render_body_with_base_embeds(&body, base_dir, db, &this, opts);
+        print!("{}", rendered_body);
     }
 
     Ok(())
@@ -129,29 +118,28 @@ struct BaseFileData {
 }
 
 /// Parse .base file content and extract components
-fn parse_base_file(content: &str, embed_name: &str) -> Option<BaseFileData> {
+fn parse_base_file(content: &str, embed_name: &str) -> Result<Option<BaseFileData>, String> {
     let base_yaml: Value = match serde_yaml::from_str(content) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("WARN: failed to parse '{}': {}", embed_name, e);
-            println!(
+            return Err(format!(
                 "<!-- [markbase] failed to parse '{}': {} -->",
                 embed_name, e
-            );
-            return None;
+            ));
         }
     };
 
     let views = match base_yaml.get("views").and_then(|v| v.as_array()) {
         Some(v) if !v.is_empty() => v.clone(),
-        _ => return None,
+        _ => return Ok(None),
     };
 
-    Some(BaseFileData {
+    Ok(Some(BaseFileData {
         global_filter: base_yaml.get("filters").cloned(),
         properties: base_yaml.get("properties").cloned(),
         views,
-    })
+    }))
 }
 
 /// Build SQL query for a single view
@@ -202,49 +190,54 @@ fn execute_and_render(
     view_name: &str,
     embed_name: &str,
     opts: &RenderOptions,
-) {
+) -> String {
     if opts.dry_run {
-        println!("<!-- start: [markbase] dry-run from {} -->\n", embed_name);
-        println!("> **{}**\n", view_name);
-        println!("```sql\n{}\n```", sql);
-        println!("<!-- end: [markbase] dry-run from {} -->\n", embed_name);
-    } else {
-        println!("<!-- start: [markbase] rendered from {} -->\n", embed_name);
-        println!("> **{}**\n", view_name);
+        return format!("<!-- start: [markbase] dry-run from {} -->\n\n", embed_name)
+            + &format!(
+                "> **{}**\n\n```sql\n{}\n```\n<!-- end: [markbase] dry-run from {} -->\n\n",
+                view_name, sql, embed_name
+            );
+    }
 
-        match db.query(sql, "", usize::MAX) {
-            Ok((_, raw_rows)) => {
-                let rows: Vec<Row> = raw_rows
-                    .iter()
-                    .map(|raw| {
-                        columns
-                            .iter()
-                            .enumerate()
-                            .map(|(i, col)| {
-                                let val = raw.get(i).cloned().filter(|s| !s.is_empty());
-                                (col.display_name.clone(), val)
-                            })
-                            .collect()
-                    })
-                    .collect();
+    match db.query(sql, "", usize::MAX) {
+        Ok((_, raw_rows)) => {
+            let rows: Vec<Row> = raw_rows
+                .iter()
+                .map(|raw| {
+                    columns
+                        .iter()
+                        .enumerate()
+                        .map(|(i, col)| {
+                            let val = raw.get(i).cloned().filter(|s| !s.is_empty());
+                            (col.display_name.clone(), val)
+                        })
+                        .collect()
+                })
+                .collect();
 
-                let output = match opts.format {
-                    RenderFormat::Table => render_table(&rows, columns),
-                    RenderFormat::Json => {
-                        let json_output = render_json(&rows, columns);
-                        format!("```json\n{}\n```", json_output)
-                    }
-                };
-                println!("{}", output);
-            }
-            Err(e) => {
-                eprintln!(
-                    "WARN: query failed for view '{}' in '{}': {}",
-                    view_name, embed_name, e
-                );
-            }
+            let rendered = match opts.format {
+                RenderFormat::Table => render_table(&rows, columns),
+                RenderFormat::Json => {
+                    let json_output = render_json(&rows, columns);
+                    format!("```json\n{}\n```", json_output)
+                }
+            };
+
+            format!(
+                "<!-- start: [markbase] rendered from {} -->\n\n> **{}**\n\n{}\n<!-- end: [markbase] rendered from {} -->\n\n",
+                embed_name, view_name, rendered, embed_name
+            )
         }
-        println!("<!-- end: [markbase] rendered from {} -->\n", embed_name);
+        Err(e) => {
+            eprintln!(
+                "WARN: query failed for view '{}' in '{}': {}",
+                view_name, embed_name, e
+            );
+            format!(
+                "<!-- start: [markbase] rendered from {} -->\n\n> **{}**\n\n<!-- end: [markbase] rendered from {} -->\n\n",
+                embed_name, view_name, embed_name
+            )
+        }
     }
 }
 
@@ -257,6 +250,20 @@ fn render_base_embed(
     this: &ThisContext,
     opts: &RenderOptions,
 ) {
+    print!(
+        "{}",
+        render_base_embed_to_string(embed_name, view_selector, base_dir, db, this, opts)
+    );
+}
+
+fn render_base_embed_to_string(
+    embed_name: &str,
+    view_selector: Option<&str>,
+    base_dir: &Path,
+    db: &Database,
+    this: &ThisContext,
+    opts: &RenderOptions,
+) -> String {
     // Look up base file in database
     let embed_escaped = embed_name.replace('\'', "''");
     let sql = format!("SELECT path FROM notes WHERE name = '{}'", embed_escaped);
@@ -269,8 +276,7 @@ fn render_base_embed(
                 "WARN: base file '{}' not found in index, skipping.",
                 embed_name
             );
-            println!("<!-- [markbase] base '{}' not found -->", embed_name);
-            return;
+            return format!("<!-- [markbase] base '{}' not found -->", embed_name);
         }
     };
 
@@ -280,14 +286,14 @@ fn render_base_embed(
         Ok(c) => c,
         Err(e) => {
             eprintln!("WARN: failed to read '{}': {}", embed_name, e);
-            println!("<!-- [markbase] failed to read '{}' -->", embed_name);
-            return;
+            return format!("<!-- [markbase] failed to read '{}' -->", embed_name);
         }
     };
 
     let base_data = match parse_base_file(&base_content, embed_name) {
-        Some(d) => d,
-        None => return,
+        Ok(Some(d)) => d,
+        Ok(None) => return String::new(),
+        Err(comment) => return comment,
     };
 
     // Process each view
@@ -308,12 +314,13 @@ fn render_base_embed(
             "WARN: view '{}' not found in '{}', skipping.",
             selector, embed_name
         );
-        println!(
+        return format!(
             "<!-- [markbase] view '{}' not found in '{}' -->",
             selector, embed_name
         );
-        return;
     }
+
+    let mut output = String::new();
 
     for view in selected_views {
         let view_name = view
@@ -335,30 +342,66 @@ fn render_base_embed(
             eprintln!("{}", w);
         }
 
-        execute_and_render(db, &sql, &columns, view_name, embed_name, opts);
+        output.push_str(&execute_and_render(
+            db, &sql, &columns, view_name, embed_name, opts,
+        ));
     }
+
+    output
 }
 
-fn collect_standalone_base_embed_lines(body: &str) -> HashMap<usize, (String, Option<String>)> {
-    let mut embeds = HashMap::new();
+fn render_body_with_base_embeds(
+    body: &str,
+    base_dir: &Path,
+    db: &Database,
+    this: &ThisContext,
+    opts: &RenderOptions,
+) -> String {
+    let mut output = String::new();
+    let mut cursor = 0;
 
     for token in scan_link_tokens(body, ScanContext::MarkdownBody) {
-        if let Some((line_start, embed)) = standalone_base_embed_at(body, &token) {
-            embeds.insert(line_start, embed);
+        if token.kind != LinkKind::Embed || !token.parsed.normalized_target.ends_with(".base") {
+            continue;
         }
+
+        let (replace_start, replace_end) = replacement_span(body, &token);
+        output.push_str(&body[cursor..replace_start]);
+
+        let replacement = render_base_embed_to_string(
+            &token.parsed.normalized_target,
+            token.parsed.anchor.as_deref(),
+            base_dir,
+            db,
+            this,
+            opts,
+        );
+
+        if replace_start == token.full_span.start
+            && replace_start > 0
+            && !body[..replace_start].ends_with('\n')
+        {
+            output.push('\n');
+        }
+
+        output.push_str(&replacement);
+
+        if replace_end == token.full_span.end
+            && replace_end < body.len()
+            && !body[replace_end..].starts_with('\n')
+            && !output.ends_with('\n')
+        {
+            output.push('\n');
+        }
+
+        cursor = replace_end;
     }
 
-    embeds
+    output.push_str(&body[cursor..]);
+    output
 }
 
-fn standalone_base_embed_at(
-    body: &str,
-    token: &LinkToken,
-) -> Option<(usize, (String, Option<String>))> {
-    if token.kind != LinkKind::Embed || !token.parsed.normalized_target.ends_with(".base") {
-        return None;
-    }
-
+fn replacement_span(body: &str, token: &LinkToken) -> (usize, usize) {
     let line_start = body[..token.full_span.start]
         .rfind('\n')
         .map_or(0, |idx| idx + 1);
@@ -369,14 +412,12 @@ fn standalone_base_embed_at(
     let trimmed = line.trim();
 
     if trimmed != &body[token.full_span.start..token.full_span.end] {
-        return None;
+        return (token.full_span.start, token.full_span.end);
     }
 
-    Some((
-        line_start,
-        (
-            token.parsed.normalized_target.clone(),
-            token.parsed.anchor.clone(),
-        ),
-    ))
+    let line_end = body[line_end..]
+        .strip_prefix('\n')
+        .map_or(line_end, |_| line_end + 1);
+
+    (line_start, line_end)
 }

@@ -314,14 +314,25 @@ markbase note render <n> --dry-run   # show SQL without executing
 
 `<n>` must be either a note name (no extension) or a `.base` filename, never a path.
 
-Renders the note body to stdout. Each `![[*.base]]` embed whose trimmed line is
-exactly one embed token is replaced with query results from the corresponding
-Obsidian Base file. Non-`.base` embeds are passed through unchanged.
+Renders the note body to stdout. Each `![[*.base]]` embed in normal Markdown
+body content is replaced with query results from the corresponding Obsidian
+Base file at that token position. Non-`.base` embeds are passed through
+unchanged.
 
 `![[tasks.base#Open Tasks]]` renders only the matching view. If the view does
 not exist, markbase warns on stderr and leaves an HTML comment placeholder at
 that line in stdout. Fenced code blocks and inline code spans are never treated
 as live `.base` embeds, even if they contain the same syntax literally.
+
+If a `.base` embed appears inline with surrounding text, markbase expands the
+embed and keeps the surrounding text in output rather than requiring the embed
+to occupy the entire line by itself.
+
+If the embed appears inside a blockquote, list item, or callout body, markbase
+still expands it, but the emitted Base block does not preserve that container
+prefix on every output line. In practice, the rendered block may break out of
+the original container structure. If you need predictable Markdown structure,
+keep `.base` embeds on ordinary body lines.
 
 For `-o table`, each rendered Base view becomes a compact Markdown table:
 
