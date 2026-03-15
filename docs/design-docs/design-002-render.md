@@ -67,6 +67,16 @@ Each rendered or dry-run Base section uses stable wrappers:
 
 Dry-run output keeps the same section structure but replaces query results with a fenced SQL block and uses `dry-run` in the wrapper text.
 
+### Intentional Difference From Obsidian UI
+
+`note render` is intentionally not a pixel-faithful reproduction of how Obsidian visually presents embeds.
+
+- Obsidian's reader UI visually frames embedded content as an embedded or quoted region using application-side presentation components
+- markbase render treats eligible embeds closer to an `include`: the expanded content becomes part of the rendered note stream seen by the caller
+- this is intentional because the render contract is about exposing expanded note content to agents and scripts, not reproducing Obsidian's interface chrome
+- as a consequence, when expanded content originates from inside blockquotes, list items, or callout bodies, markbase does not try to synthesize an Obsidian-like visual container in plain Markdown output
+- this tradeoff also keeps render behavior implementable at the file-content layer without depending on non-Markdown UI widgets
+
 ### Markdown Note Embed Execution Rule
 
 Within Markdown note bodies, render-time note expansion only happens when all of the following are true:
@@ -94,6 +104,7 @@ After
 - recursive note rendering rebinds the render-note context at each note boundary; when a nested `.base` embed executes inside an embedded note body, `this` refers to that embedded note rather than the original top-level render target
 - when a note embed appears inside a blockquote, list item, or callout body, the emitted multi-line note body does not preserve that container prefix on each line
 - this means embedded note output may break out of the original Markdown container; callers that need stable Markdown structure should place note embeds on ordinary body lines
+- unlike Obsidian's UI, this is not rewrapped into a visual embed container; the output remains plain expanded Markdown content
 
 This contract is based on shared token scanning plus render-time target classification, not on a renderer-specific regex.
 
@@ -161,6 +172,7 @@ As a consequence:
 - when an embed appears inside a blockquote, list item, or callout body, the rendered Base block does not inherit or preserve that container prefix on each emitted line
 - this means the Base output may visually break out of the original Markdown container; this is accepted behavior, not a render bug
 - callers that need stable Markdown structure should place `.base` embeds on ordinary body lines rather than inside blockquote/list/callout-prefixed lines
+- unlike Obsidian's UI, render does not add a special visual embed frame around the expanded Base output
 
 This contract is based on shared token scanning, not on a renderer-specific regex.
 

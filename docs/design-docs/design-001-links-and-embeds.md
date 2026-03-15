@@ -426,6 +426,7 @@ markbase behavior:
 - when a `.base` embed shares a line with surrounding text, render expands the embed at that token position rather than requiring whole-line ownership
 - when a `.base` embed appears inside blockquote/list/callout-prefixed body lines, render still expands it, but the emitted Base block does not preserve those container prefixes line-by-line
 - this means rendered Base output may break out of the original Markdown container; users who need stable structure should place `.base` embeds on ordinary body lines
+- this is an intentional difference from Obsidian's UI presentation: markbase render models embeds as include-like content expansion in plain Markdown output, not as a special framed embed widget
 - note embeds with heading or block selectors, and non-Markdown non-`.base` embeds, are indexed but remain literal output in `note render`
 
 For `.base#View` rendering:
