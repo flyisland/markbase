@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-03-15
+
+### Added
+
+- **Recursive note embed rendering** - `markbase note render` now expands Markdown note embeds like `![[note]]` inline, strips embedded note frontmatter, keeps rendering through nested note and `.base` embeds, and soft-fails with warnings plus HTML comment placeholders for missing notes, read failures, and recursion cycles.
+- **Scoped `.base` view selection** - Base embeds can now target a single view with selectors like `![[tasks.base#Open Tasks]]`, and inline `.base` embeds no longer need to occupy an entire line by themselves.
+- **Shared link syntax parser** - Link extraction, rename rewrites, render embed scanning, and link-field verification now share a single parser that distinguishes wikilinks from embeds, skips fenced and inline code contexts, and preserves escaped pipe forms.
+
+### Changed
+
+- **Rename rewrite fidelity** - `markbase note rename` now normalizes Markdown-note targets to path-free, extension-free names, preserves anchors, block IDs, aliases, and escaped separators, and avoids rewriting fenced code blocks or inline code spans.
+- **Link field verification** - `note verify` now accepts pure wikilink strings with optional paths, `.md` suffixes, headings, and aliases, while still rejecting surrounding prose that is not a single standalone wikilink.
+- **Documentation structure** - Architecture, documentation, design, and execution-plan docs were reorganized so the current design contracts and completed plans live under the new docs indexes.
+
 ## [0.5.3] - 2026-03-13
 
 ### Fixed
@@ -148,5 +162,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.3.0]: https://github.com/flyisland/markbase/compare/0.2.0...0.3.0
 [0.2.0]: https://github.com/flyisland/markbase/compare/0.1.0...0.2.0
 [0.1.0]: https://github.com/flyisland/markbase/releases/tag/0.1.0
+[0.6.0]: https://github.com/flyisland/markbase/compare/0.5.3...0.6.0
 [0.5.3]: https://github.com/flyisland/markbase/compare/0.5.1...0.5.3
 [0.5.1]: https://github.com/flyisland/markbase/compare/0.5.0...0.5.1
