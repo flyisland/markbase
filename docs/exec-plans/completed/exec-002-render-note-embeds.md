@@ -1,7 +1,7 @@
 ---
 id: exec-002
 title: "Render Note Embeds"
-status: active
+status: completed
 design-doc: design-002
 parallel_safe_verified: false
 ---
@@ -22,15 +22,15 @@ parallel_safe_verified: false
 
 ### Phase 1: 基础 note embed 语义
 
-- [ ] task-006: 为 renderer 增加 whole-note embed 展开，明确只输出 body 且 inline 按块拆行
+- [x] task-006: 为 renderer 增加 whole-note embed 展开，明确只输出 body 且 inline 按块拆行
 
 ### Phase 2: 递归与循环保护
 
-- [ ] task-007: 为 note embed render 增加递归展开和 cycle guard
+- [x] task-007: 为 note embed render 增加递归展开和 cycle guard
 
 ### Phase 3: 对外合约与回归
 
-- [ ] task-008: 同步 README 与 render 回归测试，使实现、文档和验收保持一致
+- [x] task-008: 同步 README 与 render 回归测试，使实现、文档和验收保持一致
 
 ## Execution Mode
 
@@ -65,6 +65,7 @@ task-006 -> task-007 -> task-008
 
 - 2026-03-14: 建立 `exec-002` 与配套 `task-006` 至 `task-008`，作为 note embed render 功能的实现入口
 - 2026-03-14: active 设计文档 `design-002-render.md` 与 `design-001-links-and-embeds.md` 已先行补齐 note embed render 合同，后续实现应以此为准
+- 2026-03-15: `note render` 已支持 body-only note embed 展开、递归 note/`.base` 渲染、cycle guard、README 合同和回归测试，并通过 `cargo test`、`cargo clippy -- -D warnings`、`cargo fmt --check`
 
 ## Definition of Done
 

@@ -1,7 +1,7 @@
 ---
 id: task-008
 title: "同步 note embed render 文档与回归测试"
-status: active
+status: completed
 exec-plan: exec-002
 phase: 3
 boundaries:

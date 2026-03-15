@@ -1,7 +1,7 @@
 ---
 id: task-007
 title: "实现 note embed 的递归展开与循环保护"
-status: active
+status: completed
 exec-plan: exec-002
 phase: 2
 boundaries:

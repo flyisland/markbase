@@ -304,7 +304,7 @@ Checks that the note conforms to all constraints defined in its referenced MTS t
 
 Warnings are reported to stderr. For issue output, the header includes `file.path`, and each schema-related issue includes a compact `Definition:` line so agents can repair notes with the expected type/constraints. Exit code is non-zero only on errors (e.g. missing note or template file).
 
-**Render a note (expand .base embeds):**
+**Render a note (expand note and `.base` embeds):**
 
 ```bash
 markbase note render <n>            # Markdown with embedded JSON blocks (default)
@@ -314,10 +314,31 @@ markbase note render <n> --dry-run   # show SQL without executing
 
 `<n>` must be either a note name (no extension) or a `.base` filename, never a path.
 
-Renders the note body to stdout. Each `![[*.base]]` embed in normal Markdown
-body content is replaced with query results from the corresponding Obsidian
-Base file at that token position. Non-`.base` embeds are passed through
-unchanged.
+Rendering a Markdown note prints its body to stdout and scans normal Markdown
+body content for live embed tokens:
+
+- `![[note]]` and `![[note|Alias]]` expand to the embedded note's rendered body
+- embedded note frontmatter is stripped; only the body is emitted
+- note embeds with heading or block selectors such as `![[note#Heading]]` stay
+  literal output for now
+- `![[tasks.base]]` and `![[tasks.base#Open Tasks]]` render Base views at that
+  token position
+- non-Markdown, non-`.base` embeds are passed through unchanged
+
+Inline note embeds are block-oriented. `Before![[note]]After` renders as
+`Before`, then the embedded note body, then `After` on separate lines. The same
+recursive render rules apply inside embedded note bodies, so nested note embeds
+and nested `.base` embeds continue to expand.
+
+Recursive note rendering is cycle-safe. If an embed would revisit a note that
+is already on the active render stack, markbase warns on stderr and leaves a
+placeholder comment in stdout instead of recursing forever. Missing embedded
+notes are also soft failures: render continues after emitting a warning and a
+placeholder comment. Unreadable embedded notes behave the same way and emit a
+read-failure warning plus placeholder instead of aborting the whole render.
+
+When a nested `.base` embed runs inside an embedded note body, `this` is bound
+to the embedded note currently being rendered, not the original top-level note.
 
 `![[tasks.base#Open Tasks]]` renders only the matching view. If the view does
 not exist, markbase warns on stderr and leaves an HTML comment placeholder at
@@ -374,7 +395,7 @@ By default, the same view is wrapped in a JSON code fence so agents can parse it
 Supported filters: `link(this)`, `link("name")`, `file.hasLink(this.file)`,
 `file.hasTag()`, `file.inFolder()`, date comparisons, `isEmpty()`, `contains()`.
 
-Warnings (unsupported filters, missing base files) go to stderr.
+Warnings (unsupported filters, missing embedded notes, missing base files) go to stderr.
 Exit code is non-zero only on hard errors (e.g. note not found).
 
 ### `template`

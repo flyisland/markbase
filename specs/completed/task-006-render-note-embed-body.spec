@@ -1,7 +1,7 @@
 ---
 id: task-006
 title: "实现 note embed 的 body 展开"
-status: active
+status: completed
 exec-plan: exec-002
 phase: 1
 boundaries:

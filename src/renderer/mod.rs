@@ -25,6 +25,12 @@ pub struct RenderOptions {
     pub dry_run: bool,
 }
 
+#[derive(Debug, Clone)]
+struct IndexedRenderTarget {
+    path: String,
+    this: ThisContext,
+}
+
 pub fn render_note(
     base_dir: &Path,
     db: &Database,
@@ -33,6 +39,41 @@ pub fn render_note(
 ) -> Result<(), Box<dyn std::error::Error>> {
     validate_render_target_name(name)?;
 
+    let target = lookup_render_target(db, name)?
+        .ok_or_else(|| format!("ERROR: note '{}' not found in the vault.", name))?;
+
+    let ext = target.this.ext.as_str();
+    if ext != "md" && ext != "base" {
+        return Err(format!(
+            "ERROR: note '{}' has unsupported extension '{}'. Only .md and .base files are supported.",
+            name, ext
+        )
+        .into());
+    }
+
+    let note_path = base_dir.join(&target.path);
+    let content = fs::read_to_string(&note_path)?;
+
+    if ext == "base" {
+        // For .base files, execute its views directly (as if it's embedded)
+        // The base name includes the extension
+        let base_name = &target.this.name;
+        render_base_embed(base_name, None, base_dir, db, &target.this, opts);
+    } else {
+        let body = parse_markdown_body(&content)?;
+        let mut note_stack = vec![target.this.name.clone()];
+        let rendered_body =
+            render_markdown_body(&body, base_dir, db, &target.this, opts, &mut note_stack);
+        print!("{}", rendered_body);
+    }
+
+    Ok(())
+}
+
+fn lookup_render_target(
+    db: &Database,
+    name: &str,
+) -> Result<Option<IndexedRenderTarget>, Box<dyn std::error::Error>> {
     let name_escaped = name.replace('\'', "''");
     let sql = format!(
         "SELECT path, folder, name, ext, size, \
@@ -47,7 +88,7 @@ pub fn render_note(
         .map_err(|e| format!("database query failed: {}", e))?;
 
     if rows.is_empty() {
-        return Err(format!("ERROR: note '{}' not found in the vault.", name).into());
+        return Ok(None);
     }
 
     if rows.len() > 1 {
@@ -55,59 +96,38 @@ pub fn render_note(
     }
 
     let row = &rows[0];
-    let ext = &row[3];
+    let is_base_file = row[3] == "base";
 
-    // Check if the file type is supported
-    if ext != "md" && ext != "base" {
-        return Err(format!(
-            "ERROR: note '{}' has unsupported extension '{}'. Only .md and .base files are supported.",
-            name, ext
-        )
-        .into());
-    }
-
-    let is_base_file = ext == "base";
-    let this = ThisContext {
+    Ok(Some(IndexedRenderTarget {
         path: row[0].clone(),
-        folder: row[1].clone(),
-        name: row[2].clone(),
-        ext: ext.clone(),
-        size: row[4].parse().unwrap_or(0),
-        ctime: row[5].clone(),
-        mtime: row[6].clone(),
-        // For .base files, only use basic file properties (no tags, links, frontmatter)
-        tags: if is_base_file {
-            vec![]
-        } else {
-            serde_json::from_str(&row[7]).unwrap_or_default()
+        this: ThisContext {
+            path: row[0].clone(),
+            folder: row[1].clone(),
+            name: row[2].clone(),
+            ext: row[3].clone(),
+            size: row[4].parse().unwrap_or(0),
+            ctime: row[5].clone(),
+            mtime: row[6].clone(),
+            tags: if is_base_file {
+                vec![]
+            } else {
+                serde_json::from_str(&row[7]).unwrap_or_default()
+            },
+            links: if is_base_file {
+                vec![]
+            } else {
+                serde_json::from_str(&row[8]).unwrap_or_default()
+            },
         },
-        links: if is_base_file {
-            vec![]
-        } else {
-            serde_json::from_str(&row[8]).unwrap_or_default()
-        },
-    };
+    }))
+}
 
-    let note_path = base_dir.join(&this.path);
-    let content = fs::read_to_string(&note_path)?;
-
-    if is_base_file {
-        // For .base files, execute its views directly (as if it's embedded)
-        // The base name includes the extension
-        let base_name = &this.name;
-        render_base_embed(base_name, None, base_dir, db, &this, opts);
-    } else {
-        // For .md files, parse frontmatter and render body with base embed expansion
-        let matter = Matter::<YAML>::new();
-        let parsed = matter
-            .parse::<Value>(&content)
-            .map_err(|e| format!("failed to parse frontmatter: {}", e))?;
-        let body = parsed.content;
-        let rendered_body = render_body_with_base_embeds(&body, base_dir, db, &this, opts);
-        print!("{}", rendered_body);
-    }
-
-    Ok(())
+fn parse_markdown_body(content: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let matter = Matter::<YAML>::new();
+    let parsed = matter
+        .parse::<Value>(content)
+        .map_err(|e| format!("failed to parse frontmatter: {}", e))?;
+    Ok(parsed.content)
 }
 
 /// Result of parsing a .base file
@@ -350,55 +370,165 @@ fn render_base_embed_to_string(
     output
 }
 
-fn render_body_with_base_embeds(
+fn render_markdown_body(
     body: &str,
     base_dir: &Path,
     db: &Database,
     this: &ThisContext,
     opts: &RenderOptions,
+    note_stack: &mut Vec<String>,
 ) -> String {
     let mut output = String::new();
     let mut cursor = 0;
 
     for token in scan_link_tokens(body, ScanContext::MarkdownBody) {
-        if token.kind != LinkKind::Embed || !token.parsed.normalized_target.ends_with(".base") {
-            continue;
-        }
+        let replacement = match classify_embed(&token) {
+            Some(RenderableEmbed::Base) => render_base_embed_to_string(
+                &token.parsed.normalized_target,
+                token.parsed.anchor.as_deref(),
+                base_dir,
+                db,
+                this,
+                opts,
+            ),
+            Some(RenderableEmbed::MarkdownNote) => render_note_embed_to_string(
+                &token.parsed.normalized_target,
+                base_dir,
+                db,
+                opts,
+                note_stack,
+            ),
+            None => continue,
+        };
 
         let (replace_start, replace_end) = replacement_span(body, &token);
         output.push_str(&body[cursor..replace_start]);
-
-        let replacement = render_base_embed_to_string(
-            &token.parsed.normalized_target,
-            token.parsed.anchor.as_deref(),
-            base_dir,
-            db,
-            this,
-            opts,
+        append_replacement(
+            body,
+            &mut output,
+            &token,
+            replace_start,
+            replace_end,
+            &replacement,
         );
-
-        if replace_start == token.full_span.start
-            && replace_start > 0
-            && !body[..replace_start].ends_with('\n')
-        {
-            output.push('\n');
-        }
-
-        output.push_str(&replacement);
-
-        if replace_end == token.full_span.end
-            && replace_end < body.len()
-            && !body[replace_end..].starts_with('\n')
-            && !output.ends_with('\n')
-        {
-            output.push('\n');
-        }
-
         cursor = replace_end;
     }
 
     output.push_str(&body[cursor..]);
     output
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RenderableEmbed {
+    Base,
+    MarkdownNote,
+}
+
+fn classify_embed(token: &LinkToken) -> Option<RenderableEmbed> {
+    if token.kind != LinkKind::Embed {
+        return None;
+    }
+
+    if token.parsed.normalized_target.ends_with(".base") {
+        return Some(RenderableEmbed::Base);
+    }
+
+    if token.parsed.is_markdown_note && token.parsed.anchor.is_none() {
+        return Some(RenderableEmbed::MarkdownNote);
+    }
+
+    None
+}
+
+fn append_replacement(
+    body: &str,
+    output: &mut String,
+    token: &LinkToken,
+    replace_start: usize,
+    replace_end: usize,
+    replacement: &str,
+) {
+    if replace_start == token.full_span.start
+        && replace_start > 0
+        && !body[..replace_start].ends_with('\n')
+    {
+        output.push('\n');
+    }
+
+    output.push_str(replacement);
+
+    if replace_end == token.full_span.end
+        && replace_end < body.len()
+        && !body[replace_end..].starts_with('\n')
+        && !output.ends_with('\n')
+    {
+        output.push('\n');
+    }
+}
+
+fn render_note_embed_to_string(
+    note_name: &str,
+    base_dir: &Path,
+    db: &Database,
+    opts: &RenderOptions,
+    note_stack: &mut Vec<String>,
+) -> String {
+    if note_stack.iter().any(|active| active == note_name) {
+        eprintln!(
+            "WARN: recursive note embed skipped for '{}' to avoid cycle.",
+            note_name
+        );
+        return format!(
+            "<!-- [markbase] recursive note embed skipped for '{}' -->",
+            note_name
+        );
+    }
+
+    let target = match lookup_render_target(db, note_name) {
+        Ok(Some(target)) => target,
+        Ok(None) => {
+            eprintln!(
+                "WARN: embedded note '{}' not found in index, skipping.",
+                note_name
+            );
+            return format!("<!-- [markbase] note '{}' not found -->", note_name);
+        }
+        Err(err) => {
+            eprintln!(
+                "WARN: failed to resolve embedded note '{}': {}",
+                note_name, err
+            );
+            return format!("<!-- [markbase] failed to resolve '{}' -->", note_name);
+        }
+    };
+
+    if target.this.ext != "md" {
+        return format!("![[{}]]", note_name);
+    }
+
+    let content = match fs::read_to_string(base_dir.join(&target.path)) {
+        Ok(content) => content,
+        Err(err) => {
+            eprintln!("WARN: failed to read '{}': {}", note_name, err);
+            return format!("<!-- [markbase] failed to read '{}' -->", note_name);
+        }
+    };
+
+    let body = match parse_markdown_body(&content) {
+        Ok(body) => body,
+        Err(err) => {
+            eprintln!(
+                "WARN: failed to parse embedded note '{}': {}",
+                note_name, err
+            );
+            return format!("<!-- [markbase] failed to parse '{}' -->", note_name);
+        }
+    };
+
+    note_stack.push(target.this.name.clone());
+    let rendered = render_markdown_body(&body, base_dir, db, &target.this, opts, note_stack);
+    note_stack.pop();
+    rendered
 }
 
 fn replacement_span(body: &str, token: &LinkToken) -> (usize, usize) {

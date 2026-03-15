@@ -120,6 +120,30 @@ The current cycle placeholder contract is:
 <!-- [markbase] recursive note embed skipped for 'note1' -->
 ```
 
+The current missing embedded-note warning contract is:
+
+```text
+WARN: embedded note 'note1' not found in index, skipping.
+```
+
+The current missing embedded-note placeholder contract is:
+
+```md
+<!-- [markbase] note 'note1' not found -->
+```
+
+The current embedded-note read-failure warning contract is:
+
+```text
+WARN: failed to read 'note1': <os error text>
+```
+
+The current embedded-note read-failure placeholder contract is:
+
+```md
+<!-- [markbase] failed to read 'note1' -->
+```
+
 ### `.base` Embed Execution Rule
 
 Within Markdown note bodies, render-time Base expansion only happens when all of the following are true:

@@ -449,6 +449,20 @@ Required failure output for recursive note cycles:
 - stdout:
   `<!-- [markbase] recursive note embed skipped for '<note-name>' -->`
 
+Required failure output for missing embedded notes:
+
+- stderr:
+  `WARN: embedded note '<note-name>' not found in index, skipping.`
+- stdout:
+  `<!-- [markbase] note '<note-name>' not found -->`
+
+Required failure output for embedded-note read failures:
+
+- stderr:
+  `WARN: failed to read '<note-name>': <os error text>`
+- stdout:
+  `<!-- [markbase] failed to read '<note-name>' -->`
+
 This means indexing and rendering have different responsibilities:
 
 - indexing records all embeds uniformly

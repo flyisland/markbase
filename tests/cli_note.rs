@@ -1600,6 +1600,200 @@ fn test_note_render_inline_base_embed_is_expanded() {
 }
 
 #[test]
+fn test_note_render_embedded_note_uses_body_without_frontmatter() {
+    let vault = TestVault::new();
+    vault.create_note(
+        "note-a",
+        r#"---
+status: active
+tags: [alpha]
+---
+Embedded body line 1
+Embedded body line 2
+"#,
+    );
+    vault.create_note("host", "Before\n![[note-a]]\nAfter\n");
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "host"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Before"));
+    assert!(stdout.contains("Embedded body line 1"));
+    assert!(stdout.contains("Embedded body line 2"));
+    assert!(stdout.contains("After"));
+    assert!(!stdout.contains("status: active"));
+    assert!(!stdout.contains("tags: [alpha]"));
+    assert!(!stdout.contains("---"));
+}
+
+#[test]
+fn test_note_render_inline_note_embed_splits_surrounding_text() {
+    let vault = TestVault::new();
+    vault.create_note("note-a", "Embedded line 1\nEmbedded line 2\n");
+    vault.create_note("host", "Before![[note-a]]After");
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "host"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let before_idx = stdout.find("Before").unwrap();
+    let embed_idx = stdout.find("Embedded line 1").unwrap();
+    let after_idx = stdout.find("After").unwrap();
+    assert!(before_idx < embed_idx);
+    assert!(embed_idx < after_idx);
+    assert!(stdout.contains("Before\nEmbedded line 1"));
+    assert!(stdout.contains("Embedded line 2\nAfter"));
+}
+
+#[test]
+fn test_note_render_note_embed_alias_does_not_change_body_expansion() {
+    let vault = TestVault::new();
+    vault.create_note("note-a", "Shared embedded body\n");
+    vault.create_note("host", "![[note-a]]\n![[note-a|Shown Name]]\n");
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "host"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(stdout.matches("Shared embedded body").count(), 2);
+    assert!(!stdout.contains("Shown Name"));
+}
+
+#[test]
+fn test_note_render_note_embed_with_selector_is_passthrough() {
+    let vault = TestVault::new();
+    vault.create_note("note-a", "Rendered body should stay hidden\n");
+    vault.create_note("host", "![[note-a#Heading]]\n![[note-a#^blockid]]\n");
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "host"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("![[note-a#Heading]]"));
+    assert!(stdout.contains("![[note-a#^blockid]]"));
+    assert!(!stdout.contains("Rendered body should stay hidden"));
+}
+
+#[test]
+fn test_note_render_missing_embedded_note_is_soft_failure() {
+    let vault = TestVault::new();
+    vault.create_note("host", "Before\n![[missing-note]]\nAfter\n");
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "host"]);
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(
+        &output,
+        "embedded note 'missing-note' not found in index, skipping."
+    ));
+    assert!(stdout_contains(
+        &output,
+        "<!-- [markbase] note 'missing-note' not found -->"
+    ));
+    assert!(stdout_contains(&output, "After"));
+}
+
+#[test]
+fn test_note_render_embedded_note_read_failure_is_soft_failure() {
+    let vault = TestVault::new();
+    let embedded = vault.create_note("note-a", "Hidden body\n");
+    vault.create_note("host", "Before\n![[note-a]]\nAfter\n");
+    vault.index();
+    std::fs::remove_file(embedded).unwrap();
+
+    let output = vault.run_cli(&["note", "render", "host", "--dry-run"]);
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(&output, "failed to read 'note-a'"));
+    assert!(stdout_contains(
+        &output,
+        "<!-- [markbase] failed to read 'note-a' -->"
+    ));
+    assert!(stdout_contains(&output, "After"));
+}
+
+#[test]
+fn test_note_render_recursive_note_embeds_are_expanded() {
+    let vault = TestVault::new();
+    vault.create_note("note-c", "Line from C\n");
+    vault.create_note("note-b", "Line from B\n![[note-c]]\nTail B\n");
+    vault.create_note("note-a", "Line from A\n![[note-b]]\nTail A\n");
+    vault.create_note("host", "Top\n![[note-a]]\nBottom\n");
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "host"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let a_idx = stdout.find("Line from A").unwrap();
+    let b_idx = stdout.find("Line from B").unwrap();
+    let c_idx = stdout.find("Line from C").unwrap();
+    assert!(a_idx < b_idx);
+    assert!(b_idx < c_idx);
+    assert!(stdout.contains("Tail B"));
+    assert!(stdout.contains("Tail A"));
+    assert!(stdout.contains("Bottom"));
+}
+
+#[test]
+fn test_note_render_recursive_note_embed_expands_nested_base_embed() {
+    let vault = TestVault::new();
+    vault.create_note("customer", "---\ntype: company\n---\n![[opps.base]]\n");
+    vault.create_note("host", "![[customer]]\n");
+    vault.create_note(
+        "deal-for-customer",
+        "---\ntype: opportunity\nrelated_customer: \"[[customer]]\"\n---\n",
+    );
+    vault.create_note(
+        "deal-for-host",
+        "---\ntype: opportunity\nrelated_customer: \"[[host]]\"\n---\n",
+    );
+    vault.create_file(
+        "opps.base",
+        "views:\n  - type: table\n    name: Opportunities\n    filters:\n      and:\n        - related_customer == link(this)\n    order:\n      - file.name\n",
+    );
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "host"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("rendered from opps.base"));
+    assert!(stdout.contains("[[deal-for-customer]]"));
+    assert!(!stdout.contains("[[deal-for-host]]"));
+}
+
+#[test]
+fn test_note_render_recursive_note_embed_cycle_is_soft_failure() {
+    let vault = TestVault::new();
+    vault.create_note("note-a", "A-start\n![[note-b]]\nA-end\n");
+    vault.create_note("note-b", "B-start\n![[note-a]]\nB-end\n");
+    vault.create_note("host", "Top\n![[note-a]]\nBottom\n");
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "host"]);
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(
+        &output,
+        "WARN: recursive note embed skipped for 'note-a' to avoid cycle."
+    ));
+    assert!(stdout_contains(
+        &output,
+        "<!-- [markbase] recursive note embed skipped for 'note-a' -->"
+    ));
+    assert!(stdout_contains(&output, "B-end"));
+    assert!(stdout_contains(&output, "A-end"));
+    assert!(stdout_contains(&output, "Bottom"));
+}
+
+#[test]
 fn test_note_render_dry_run() {
     let vault = TestVault::new();
     vault.create_note("acme", "---\ntype: company\n---\n![[opps.base]]\n");
@@ -1762,6 +1956,71 @@ fn test_note_render_base_embed_inside_fenced_code_is_not_expanded() {
     assert!(stdout.contains("![[tasks.base#Open Tasks]]"));
     assert!(!stdout.contains("rendered from tasks.base"));
     assert!(!stdout.contains("[[task-open]]"));
+}
+
+#[test]
+fn test_note_render_note_embed_inside_code_context_is_not_expanded() {
+    let vault = TestVault::new();
+    vault.create_note("note-a", "Expanded note body\n");
+    vault.create_note(
+        "host",
+        "Outside\n![[note-a]]\n\nInline `![[note-a]]`\n\n```md\n![[note-a]]\n```\n",
+    );
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "host"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Outside\nExpanded note body"));
+    assert!(stdout.contains("Inline `![[note-a]]`"));
+    assert!(stdout.contains("```md\n![[note-a]]\n```"));
+    assert_eq!(stdout.matches("Expanded note body").count(), 1);
+}
+
+#[test]
+fn test_render_note_embed_behavior_matches_readme_examples() {
+    let vault = TestVault::new();
+    vault.create_note("snippet", "Snippet body\n");
+    vault.create_note("note-a", "A start\n![[note-b]]\nA end\n");
+    vault.create_note("note-b", "B start\n![[note-a]]\nB end\n");
+    vault.create_note("host", "Before![[snippet]]After\n\nLoop:\n![[note-a]]\n");
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "host"]);
+
+    assert_cli_success(&output);
+    assert!(stdout_contains(&output, "Before\nSnippet body\nAfter"));
+    assert!(stderr_contains(
+        &output,
+        "WARN: recursive note embed skipped for 'note-a' to avoid cycle."
+    ));
+    assert!(stdout_contains(
+        &output,
+        "<!-- [markbase] recursive note embed skipped for 'note-a' -->"
+    ));
+}
+
+#[test]
+fn test_render_note_embed_behavior_matches_design_contract() {
+    let vault = TestVault::new();
+    vault.create_note("note-c", "Inner body\n");
+    vault.create_note("note-b", "Middle body\n![[note-c]]\n");
+    vault.create_note(
+        "note-a",
+        "---\nstatus: active\n---\nOuter body\n![[note-b]]\n",
+    );
+    vault.create_note("host", "Before![[note-a]]After\n");
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "host"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Before\nOuter body"));
+    assert!(stdout.contains("Middle body"));
+    assert!(stdout.contains("Inner body\nAfter"));
+    assert!(!stdout.contains("status: active"));
 }
 
 #[test]
