@@ -62,18 +62,18 @@ fn check_global_description(name: &str, properties: &Value, issues: &mut Vec<Ver
 
     match properties.get("description") {
         None => issues.push(VerifyIssue {
-            level: IssueLevel::Warn,
+            level: IssueLevel::Error,
             message: format!("note '{}' is missing global field 'description'.", name),
             field_definition: field_definition.clone(),
         }),
         Some(Value::String(value)) if value.trim().is_empty() => issues.push(VerifyIssue {
-            level: IssueLevel::Warn,
+            level: IssueLevel::Error,
             message: format!("note '{}' has empty global field 'description'.", name),
             field_definition: field_definition.clone(),
         }),
         Some(Value::String(_)) => {}
         Some(_) => issues.push(VerifyIssue {
-            level: IssueLevel::Warn,
+            level: IssueLevel::Error,
             message: format!(
                 "note '{}' has invalid global field 'description'. Expected non-empty text, got '{}'.",
                 name,
@@ -237,8 +237,17 @@ pub fn verify_note(
         let matter = Matter::<YAML>::new();
         let parsed = match matter.parse::<Value>(&content) {
             Ok(p) => p,
-            Err(_) => {
-                continue;
+            Err(e) => {
+                issues.push(VerifyIssue {
+                    level: IssueLevel::Error,
+                    message: format!(
+                        "failed to parse template frontmatter '{}': {}",
+                        tmpl_path.display(),
+                        e
+                    ),
+                    field_definition: None,
+                });
+                return Ok(make_result(templates_with_schema, issues));
             }
         };
 
@@ -258,7 +267,7 @@ pub fn verify_note(
                     if let Some(existing) = all_schema_fields.get(field_name) {
                         if existing.field_type != field_type {
                             issues.push(VerifyIssue {
-                                level: IssueLevel::Warn,
+                                level: IssueLevel::Error,
                                 message: format!(
                                     "field '{}' has conflicting type definitions across templates ('{}': '{}', '{}': '{}'). Using '{}' definition.",
                                     field_name,
@@ -315,7 +324,7 @@ pub fn verify_note(
                 let normalized_location = loc.trim_end_matches('/').to_string();
                 if normalized_folder != normalized_location {
                     issues.push(VerifyIssue {
-                        level: IssueLevel::Warn,
+                        level: IssueLevel::Error,
                         message: format!(
                             "note '{}' is located at '{}/', but template '{}' requires location '{}'.",
                             name,
@@ -339,7 +348,7 @@ pub fn verify_note(
 
                 if note_val.is_none() {
                     issues.push(VerifyIssue {
-                        level: IssueLevel::Warn,
+                        level: IssueLevel::Error,
                         message: format!(
                             "missing field '{}' (defined in template '{}').",
                             key, template_name
@@ -361,7 +370,7 @@ pub fn verify_note(
                             .collect();
                         if !missing.is_empty() {
                             issues.push(VerifyIssue {
-                                level: IssueLevel::Warn,
+                                level: IssueLevel::Error,
                                 message: format!(
                                     "list field '{}' is missing values required by template '{}'. Missing: [{}]",
                                     key,
@@ -378,7 +387,7 @@ pub fn verify_note(
                     && note_str != tmpl_str
                 {
                     issues.push(VerifyIssue {
-                        level: IssueLevel::Warn,
+                        level: IssueLevel::Error,
                         message: format!(
                             "field '{}' value mismatch. Expected: '{}' (from template '{}'), got: '{}'.",
                             key, tmpl_str, template_name, note_str
@@ -409,7 +418,7 @@ pub fn verify_note(
                     let field_def = all_schema_fields.get(field_name);
                     let field_definition = field_def.map(format_field_definition);
                     issues.push(VerifyIssue {
-                        level: IssueLevel::Warn,
+                        level: IssueLevel::Error,
                         message: format!(
                             "required field '{}' is missing or empty (defined in _schema.required of '{}').",
                             field_name, template_name
@@ -440,7 +449,7 @@ pub fn verify_note(
                         let field_def = all_schema_fields.get(field_name);
                         let field_definition = field_def.map(format_field_definition);
                         issues.push(VerifyIssue {
-                            level: IssueLevel::Warn,
+                            level: IssueLevel::Error,
                             message: format!(
                                 "field '{}' type mismatch. Expected '{}' (from template '{}'), got '{}'.",
                                 field_name, field_type, template_name, actual_type
@@ -464,7 +473,7 @@ pub fn verify_note(
                                         let field_definition =
                                             field_def.map(format_field_definition);
                                         issues.push(VerifyIssue {
-                                            level: IssueLevel::Warn,
+                                            level: IssueLevel::Error,
                                             message: format!(
                                                 "field '{}' has invalid value '{}'. Allowed values (from template '{}'): [{}]",
                                                 field_name, s, template_name, allowed.join(", ")
@@ -480,7 +489,7 @@ pub fn verify_note(
                             let field_def = all_schema_fields.get(field_name);
                             let field_definition = field_def.map(format_field_definition);
                             issues.push(VerifyIssue {
-                                level: IssueLevel::Warn,
+                                level: IssueLevel::Error,
                                 message: format!(
                                     "field '{}' has invalid value '{}'. Allowed values (from template '{}'): [{}]",
                                     field_name, s, template_name, allowed.join(", ")
@@ -641,7 +650,7 @@ fn verify_link_field(
         Some(token) => token.parsed.normalized_target,
         None => {
             issues.push(VerifyIssue {
-                level: IssueLevel::Warn,
+                level: IssueLevel::Error,
                 message: format!(
                     "field '{}' has invalid link format: '{}'. Expected Obsidian wiki-link, e.g. [[note-name]].",
                     field_name, link_val
@@ -658,7 +667,7 @@ fn verify_link_field(
             let field_def = all_schema_fields.get(field_name);
             let field_definition = field_def.map(format_field_definition);
             issues.push(VerifyIssue {
-                level: IssueLevel::Warn,
+                level: IssueLevel::Error,
                 message: format!(
                     "field '{}' links to '{}' which is not found in the vault.",
                     field_name, target_name
@@ -671,7 +680,7 @@ fn verify_link_field(
 
     if notes.is_empty() {
         issues.push(VerifyIssue {
-            level: IssueLevel::Warn,
+            level: IssueLevel::Error,
             message: format!(
                 "field '{}' links to '{}' which is not found in the vault.",
                 field_name, target_name
@@ -691,7 +700,7 @@ fn verify_link_field(
             let field_def = all_schema_fields.get(field_name);
             let field_definition = field_def.map(format_field_definition);
             issues.push(VerifyIssue {
-                level: IssueLevel::Warn,
+                level: IssueLevel::Error,
                 message: format!(
                     "field '{}' links to '{}' (type: '{}'), but template '{}' requires target type '{}'.",
                     field_name, target_name, actual_type, template_name, expected_type
@@ -735,14 +744,14 @@ fn verify_embedded_bases(db: &Database, embeds: &[String], issues: &mut Vec<Veri
         match db.get_notes_by_name(embed) {
             Ok(notes) if notes.is_empty() => {
                 issues.push(VerifyIssue {
-                    level: IssueLevel::Warn,
+                    level: IssueLevel::Error,
                     message: format!("embedded base file '{}' is not found in the vault", embed),
                     field_definition: None,
                 });
             }
             Err(e) => {
                 issues.push(VerifyIssue {
-                    level: IssueLevel::Warn,
+                    level: IssueLevel::Error,
                     message: format!("failed to check embedded base file '{}': {}", embed, e),
                     field_definition: None,
                 });

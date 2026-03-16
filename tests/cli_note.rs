@@ -124,7 +124,7 @@ type: company
 
     let output = vault.note_verify("acme");
 
-    assert_cli_success(&output);
+    assert_cli_error(&output);
     assert!(stderr_contains(&output, "requires location"));
 }
 
@@ -162,7 +162,7 @@ type: company
 
     let output = vault.note_verify("acme");
 
-    assert_cli_success(&output);
+    assert_cli_error(&output);
     assert!(stderr_contains(&output, "required field 'industry'"));
 }
 
@@ -202,7 +202,7 @@ count: "not-a-number"
 
     let output = vault.note_verify("acme");
 
-    assert_cli_success(&output);
+    assert_cli_error(&output);
     assert!(stderr_contains(&output, "type mismatch"));
 }
 
@@ -243,7 +243,7 @@ size: invalid
 
     let output = vault.note_verify("acme");
 
-    assert_cli_success(&output);
+    assert_cli_error(&output);
     assert!(stderr_contains(&output, "invalid value"));
     assert!(stderr_contains(&output, "startup"));
 }
@@ -295,7 +295,7 @@ related: "[[david-chen]]"
 
     let output = vault.note_verify("acme");
 
-    assert_cli_success(&output);
+    assert_cli_error(&output);
     assert!(stderr_contains(&output, "requires target type 'person'"));
 }
 
@@ -334,6 +334,46 @@ description: Test note
     assert_cli_success(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("passed all checks"));
+}
+
+#[test]
+fn test_note_verify_template_invalid_frontmatter() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("broken_template.md"),
+        r#"---
+type: broken
+invalid: yaml: [
+---
+
+# Broken Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "test-note",
+        r#"---
+templates: ["[[broken_template]]"]
+type: broken
+description: Test note
+---
+
+# Test
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("test-note");
+
+    assert_cli_error(&output);
+    assert!(stderr_contains(
+        &output,
+        "failed to parse template frontmatter"
+    ));
 }
 
 #[test]
@@ -405,7 +445,7 @@ type: test
 
     let output = vault.note_verify("test-note");
 
-    assert_cli_success(&output);
+    assert_cli_error(&output);
     assert!(stderr_contains(&output, "conflicting type definitions"));
 }
 
@@ -444,7 +484,7 @@ industry: ""
 
     let output = vault.note_verify("acme");
 
-    assert_cli_success(&output);
+    assert_cli_error(&output);
     assert!(stderr_contains(&output, "required field 'industry'"));
 }
 
@@ -484,7 +524,7 @@ completed: "not-a-boolean"
 
     let output = vault.note_verify("my-task");
 
-    assert_cli_success(&output);
+    assert_cli_error(&output);
     assert!(stderr_contains(&output, "type mismatch"));
 }
 
@@ -524,7 +564,7 @@ date: "not-a-date"
 
     let output = vault.note_verify("my-event");
 
-    assert_cli_success(&output);
+    assert_cli_error(&output);
     assert!(stderr_contains(&output, "type mismatch"));
 }
 
@@ -606,7 +646,7 @@ scheduled_at: "not-a-datetime"
 
     let output = vault.note_verify("my-meeting");
 
-    assert_cli_success(&output);
+    assert_cli_error(&output);
     assert!(stderr_contains(&output, "type mismatch"));
 }
 
@@ -646,7 +686,7 @@ tags: "not-a-list"
 
     let output = vault.note_verify("my-project");
 
-    assert_cli_success(&output);
+    assert_cli_error(&output);
     assert!(stderr_contains(&output, "type mismatch"));
 }
 
@@ -687,7 +727,7 @@ priorities: [high, invalid-priority, low]
 
     let output = vault.note_verify("my-project");
 
-    assert_cli_success(&output);
+    assert_cli_error(&output);
     assert!(stderr_contains(&output, "invalid value"));
 }
 
@@ -728,7 +768,7 @@ related: "not-a-wikilink"
 
     let output = vault.note_verify("acme");
 
-    assert_cli_success(&output);
+    assert_cli_error(&output);
     assert!(stderr_contains(&output, "invalid link format"));
 }
 
@@ -760,6 +800,7 @@ _schema:
         r#"---
 templates: ["[[company]]"]
 type: company
+description: ACME
 related: "[[folder/target-note.md#Heading|Alias]]"
 ---
 
@@ -814,7 +855,7 @@ related: "prefix [[target-note]] suffix"
 
     let output = vault.note_verify("acme");
 
-    assert_cli_success(&output);
+    assert_cli_error(&output);
     assert!(stderr_contains(&output, "invalid link format"));
 }
 
@@ -846,6 +887,7 @@ _schema:
         r#"---
 templates: ["[[company]]"]
 type: company
+description: ACME
 related: "  [[target-note]]  "
 ---
 
@@ -899,7 +941,7 @@ related: "[[nonexistent-note]]"
 
     let output = vault.note_verify("acme");
 
-    assert_cli_success(&output);
+    assert_cli_error(&output);
     assert!(stderr_contains(&output, "not found in the vault"));
 }
 
@@ -930,6 +972,7 @@ _schema:
         r#"---
 templates: ["[[company]]"]
 type: company
+description: ACME
 related: "[?[[some-note]]]"
 ---
 
@@ -1000,7 +1043,7 @@ contacts: ["[[person-a]]", "[[person-b]]"]
 
     let output = vault.note_verify("acme");
 
-    assert_cli_success(&output);
+    assert_cli_error(&output);
     assert!(stderr_contains(&output, "requires target type 'person'"));
 }
 
@@ -2090,7 +2133,7 @@ type: activity
 
     let output = vault.note_verify("meeting-2026-01-01");
 
-    assert_cli_success(&output);
+    assert_cli_error(&output);
     assert!(stderr_contains(&output, "required field 'description'"));
     assert!(stderr_contains(&output, "→ Definition:"));
     assert!(stderr_contains(&output, "type=text"));
@@ -2137,7 +2180,7 @@ employee_count: "not-a-number"
 
     let output = vault.note_verify("acme");
 
-    assert_cli_success(&output);
+    assert_cli_error(&output);
     assert!(stderr_contains(&output, "type mismatch"));
     assert!(stderr_contains(&output, "→ Definition:"));
     assert!(stderr_contains(&output, "type=number"));
@@ -2182,7 +2225,7 @@ size: giant
 
     let output = vault.note_verify("acme");
 
-    assert_cli_success(&output);
+    assert_cli_error(&output);
     assert!(stderr_contains(&output, "invalid value"));
     assert!(stderr_contains(&output, "→ Definition:"));
     assert!(stderr_contains(&output, "enum=[startup, smb, enterprise]"));
@@ -2228,7 +2271,7 @@ related_person: "[[nonexistent-person]]"
 
     let output = vault.note_verify("acme");
 
-    assert_cli_success(&output);
+    assert_cli_error(&output);
     assert!(stderr_contains(&output, "not found in the vault"));
     assert!(stderr_contains(&output, "→ Definition:"));
     assert!(stderr_contains(&output, "format=link"));
@@ -2406,7 +2449,7 @@ aliases: ["阿里"]
 }
 
 #[test]
-fn test_note_verify_no_templates_reports_description_warning_first() {
+fn test_note_verify_no_templates_reports_description_error_first() {
     let vault = TestVault::new();
     vault.create_note("test-note", "# Test Note");
     vault.index();
@@ -2435,7 +2478,7 @@ fn test_note_verify_no_templates_reports_description_warning_first() {
 }
 
 #[test]
-fn test_note_verify_empty_description_warns() {
+fn test_note_verify_empty_description_errors() {
     let vault = TestVault::new();
     let templates_dir = vault.path.join("templates");
     std::fs::create_dir_all(&templates_dir).unwrap();
@@ -2467,12 +2510,12 @@ description: ""
 
     let output = vault.note_verify("acme");
 
-    assert_cli_success(&output);
+    assert_cli_error(&output);
     assert!(stderr_contains(&output, "empty global field 'description'"));
 }
 
 #[test]
-fn test_note_verify_non_string_description_warns() {
+fn test_note_verify_non_string_description_errors() {
     let vault = TestVault::new();
     let templates_dir = vault.path.join("templates");
     std::fs::create_dir_all(&templates_dir).unwrap();
@@ -2503,7 +2546,7 @@ description:
 
     let output = vault.note_verify("acme");
 
-    assert_cli_success(&output);
+    assert_cli_error(&output);
     assert!(stderr_contains(
         &output,
         "invalid global field 'description'. Expected non-empty text, got 'unknown'"
@@ -2513,6 +2556,95 @@ description:
     assert!(stderr_contains(
         &output,
         "description=\"一句话说明这个 note 是什么\""
+    ));
+}
+
+#[test]
+fn test_note_verify_missing_embedded_base_is_error() {
+    let vault = TestVault::new();
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company.md"),
+        r#"---
+type: company
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "acme",
+        r#"---
+templates: ["[[company]]"]
+type: company
+description: ACME
+---
+
+![[missing.base]]
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("acme");
+
+    assert_cli_error(&output);
+    assert!(stderr_contains(
+        &output,
+        "embedded base file 'missing.base' is not found in the vault"
+    ));
+    assert!(stderr_contains(
+        &output,
+        "Verification failed: 1 error(s), 0 warning(s)."
+    ));
+}
+
+#[test]
+fn test_note_verify_missing_embedded_bases_continue_collecting_errors() {
+    let vault = TestVault::new();
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company.md"),
+        r#"---
+type: company
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "acme",
+        r#"---
+templates: ["[[company]]"]
+type: company
+description: ACME
+---
+
+![[missing-a.base]]
+![[missing-b.base]]
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("acme");
+
+    assert_cli_error(&output);
+    assert!(stderr_contains(
+        &output,
+        "embedded base file 'missing-a.base' is not found in the vault"
+    ));
+    assert!(stderr_contains(
+        &output,
+        "embedded base file 'missing-b.base' is not found in the vault"
+    ));
+    assert!(stderr_contains(
+        &output,
+        "Verification failed: 2 error(s), 0 warning(s)."
     ));
 }
 

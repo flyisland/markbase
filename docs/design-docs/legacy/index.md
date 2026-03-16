@@ -9,7 +9,6 @@ They remain useful as historical context and implementation references, but they
 - `description_design.md`
 - `index_incremental_design.md`
 - `note_render_design.md`
-- `note_verify_design.md`
 - `properties_design.md`
 - `query_design.md`
 - `template_schema.md`

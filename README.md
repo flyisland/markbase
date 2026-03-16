@@ -295,14 +295,16 @@ markbase note verify <name>
 `<name>` must be a note name only: no path and no file extension.
 
 Checks that the note conforms to all constraints defined in its referenced MTS template(s), and also runs a global `description` check before template validation:
-- Global frontmatter `description` exists, is a string, and is not blank (reported as WARN)
+- Global frontmatter `description` exists, is a string, and is not blank (reported as ERROR)
+- Referenced template frontmatter must parse successfully as YAML, or verification fails
 - Directory location matches `_schema.location`
 - Required frontmatter fields are present
 - Field types and enum values are correct
 - Link fields must be a single pure Obsidian wikilink such as `[[note]]` or `[[folder/note.md#Heading|Alias]]`
 - Link fields point to notes of the expected `type`
+- Embedded `.base` targets in the Markdown body must exist in the indexed vault; missing or unreadable `.base` targets are reported as errors after the rest of verification continues
 
-Warnings are reported to stderr. For issue output, the header includes `file.path`, and each schema-related issue includes a compact `Definition:` line so agents can repair notes with the expected type/constraints. Exit code is non-zero only on errors (e.g. missing note or template file).
+Verification issues are reported to stderr. For issue output, the header includes `file.path`, and each schema-related issue includes a compact `Definition:` line so agents can repair notes with the expected type/constraints. Exit code is non-zero whenever verification produces any `ERROR`; dangling link references remain `INFO` and do not fail the command by themselves.
 
 **Render a note (expand note and `.base` embeds):**
 
