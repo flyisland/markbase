@@ -380,9 +380,18 @@ fn render_markdown_body(
 ) -> String {
     let mut output = String::new();
     let mut cursor = 0;
+    let tokens = scan_link_tokens(body, ScanContext::MarkdownBody);
+    let mut idx = 0;
 
-    for token in scan_link_tokens(body, ScanContext::MarkdownBody) {
-        let replacement = match classify_embed(&token) {
+    while idx < tokens.len() {
+        let token = &tokens[idx];
+        let line_context = token_line_context(body, token);
+        if line_context.is_list_item {
+            idx += 1;
+            continue;
+        }
+
+        let replacement = match classify_embed(token) {
             Some(RenderableEmbed::Base) => render_base_embed_to_string(
                 &token.parsed.normalized_target,
                 token.parsed.anchor.as_deref(),
@@ -398,19 +407,81 @@ fn render_markdown_body(
                 opts,
                 note_stack,
             ),
-            None => continue,
+            None => {
+                idx += 1;
+                continue;
+            }
         };
 
-        let (replace_start, replace_end) = replacement_span(body, &token);
+        let (replace_start, replace_end) = if line_context.quote_prefix.is_some() {
+            (line_context.line_start, line_context.line_end_with_newline)
+        } else {
+            replacement_span(body, token)
+        };
+
+        if replace_start < cursor {
+            idx += 1;
+            continue;
+        }
+
         output.push_str(&body[cursor..replace_start]);
-        append_replacement(
-            body,
-            &mut output,
-            &token,
-            replace_start,
-            replace_end,
-            &replacement,
-        );
+        if let Some(quote_prefix) = &line_context.quote_prefix {
+            let mut replacements = vec![(token, replacement)];
+            let mut next_idx = idx + 1;
+
+            while next_idx < tokens.len() {
+                let next_token = &tokens[next_idx];
+                let next_context = token_line_context(body, next_token);
+                if next_context.line_start != line_context.line_start
+                    || next_context.line_end != line_context.line_end
+                {
+                    break;
+                }
+
+                if !next_context.is_list_item
+                    && let Some(embed_type) = classify_embed(next_token)
+                {
+                    let replacement = match embed_type {
+                        RenderableEmbed::Base => render_base_embed_to_string(
+                            &next_token.parsed.normalized_target,
+                            next_token.parsed.anchor.as_deref(),
+                            base_dir,
+                            db,
+                            this,
+                            opts,
+                        ),
+                        RenderableEmbed::MarkdownNote => render_note_embed_to_string(
+                            &next_token.parsed.normalized_target,
+                            base_dir,
+                            db,
+                            opts,
+                            note_stack,
+                        ),
+                    };
+                    replacements.push((next_token, replacement));
+                }
+
+                next_idx += 1;
+            }
+
+            output.push_str(&render_quote_container_line(
+                body,
+                &line_context,
+                quote_prefix,
+                &replacements,
+            ));
+            idx = next_idx;
+        } else {
+            append_replacement(
+                body,
+                &mut output,
+                token,
+                replace_start,
+                replace_end,
+                &replacement,
+            );
+            idx += 1;
+        }
         cursor = replace_end;
     }
 
@@ -464,6 +535,142 @@ fn append_replacement(
     {
         output.push('\n');
     }
+}
+
+#[derive(Debug, Clone)]
+struct TokenLineContext {
+    line_start: usize,
+    line_end: usize,
+    line_end_with_newline: usize,
+    quote_prefix: Option<String>,
+    is_list_item: bool,
+}
+
+fn token_line_context(body: &str, token: &LinkToken) -> TokenLineContext {
+    let line_start = body[..token.full_span.start]
+        .rfind('\n')
+        .map_or(0, |idx| idx + 1);
+    let line_end = body[token.full_span.end..]
+        .find('\n')
+        .map_or(body.len(), |idx| token.full_span.end + idx);
+    let line_end_with_newline = if line_end < body.len() && body[line_end..].starts_with('\n') {
+        line_end + 1
+    } else {
+        line_end
+    };
+    let line = &body[line_start..line_end];
+    let quote_prefix = detect_quote_prefix(line).map(str::to_owned);
+    let content_after_quote = &line[quote_prefix.as_ref().map_or(0, |prefix| prefix.len())..];
+
+    TokenLineContext {
+        line_start,
+        line_end,
+        line_end_with_newline,
+        quote_prefix,
+        is_list_item: is_list_item_line(content_after_quote),
+    }
+}
+
+fn detect_quote_prefix(line: &str) -> Option<&str> {
+    let bytes = line.as_bytes();
+    let mut idx = 0;
+    let mut prefix_end = 0;
+
+    loop {
+        let mut cursor = idx;
+        while cursor < bytes.len() && matches!(bytes[cursor], b' ' | b'\t') {
+            cursor += 1;
+        }
+
+        if cursor >= bytes.len() || bytes[cursor] != b'>' {
+            break;
+        }
+
+        cursor += 1;
+        if cursor < bytes.len() && bytes[cursor] == b' ' {
+            cursor += 1;
+        }
+
+        prefix_end = cursor;
+        idx = cursor;
+    }
+
+    if prefix_end == 0 {
+        None
+    } else {
+        Some(&line[..prefix_end])
+    }
+}
+
+fn is_list_item_line(line: &str) -> bool {
+    let trimmed = line.trim_start_matches([' ', '\t']);
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    if trimmed.starts_with("- ") || trimmed.starts_with("* ") || trimmed.starts_with("+ ") {
+        return true;
+    }
+
+    let digit_count = trimmed.bytes().take_while(|b| b.is_ascii_digit()).count();
+    if digit_count == 0 || digit_count >= trimmed.len() {
+        return false;
+    }
+
+    matches!(trimmed.as_bytes()[digit_count], b'.' | b')')
+        && trimmed
+            .as_bytes()
+            .get(digit_count + 1)
+            .is_some_and(|b| matches!(b, b' ' | b'\t'))
+}
+
+fn render_quote_container_line(
+    body: &str,
+    line_context: &TokenLineContext,
+    quote_prefix: &str,
+    replacements: &[(&LinkToken, String)],
+) -> String {
+    let line = &body[line_context.line_start..line_context.line_end];
+    let content_start = quote_prefix.len();
+    let mut output_lines = Vec::new();
+    let mut segment_start = line_context.line_start + content_start;
+
+    for (token, replacement) in replacements {
+        if token.full_span.start > segment_start {
+            output_lines.push(format!(
+                "{}{}",
+                quote_prefix,
+                &body[segment_start..token.full_span.start]
+            ));
+        }
+
+        let trimmed_replacement = replacement.trim_end_matches('\n');
+        if !trimmed_replacement.is_empty() {
+            output_lines.extend(
+                trimmed_replacement
+                    .split('\n')
+                    .map(|line| format!("{}{}", quote_prefix, line)),
+            );
+        }
+
+        segment_start = token.full_span.end;
+    }
+
+    let line_end = line_context.line_start + line.len();
+    if segment_start < line_end {
+        output_lines.push(format!(
+            "{}{}",
+            quote_prefix,
+            &body[segment_start..line_end]
+        ));
+    }
+
+    let mut rendered = output_lines.join("\n");
+    if line_context.line_end_with_newline > line_context.line_end {
+        rendered.push('\n');
+    }
+
+    rendered
 }
 
 fn render_note_embed_to_string(

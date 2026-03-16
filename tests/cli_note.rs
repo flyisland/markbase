@@ -2214,6 +2214,136 @@ fn test_note_render_recursive_note_embed_cycle_is_soft_failure() {
 }
 
 #[test]
+fn test_note_render_blockquote_note_embed_preserves_quote_prefix() {
+    let vault = TestVault::new();
+    vault.create_note("note-a", "Embedded line 1\nEmbedded line 2\n");
+    vault.create_note("host", "> ![[note-a]]\n");
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "host"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("> Embedded line 1"));
+    assert!(stdout.contains("> Embedded line 2"));
+    assert!(!stdout.contains("> ![[note-a]]"));
+}
+
+#[test]
+fn test_note_render_callout_base_embed_preserves_container() {
+    let vault = TestVault::new();
+    vault.create_note("task-open", "---\nstatus: open\n---\n");
+    vault.create_file(
+        "tasks.base",
+        "views:\n  - type: table\n    name: Open Tasks\n    filters:\n      and:\n        - status == \"open\"\n    order:\n      - file.name\n",
+    );
+    vault.create_note("host", "> [!info]\n> ![[tasks.base#Open Tasks]]\n");
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "host", "-o", "table"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("> [!info]"));
+    assert!(stdout.contains("> <!-- start: [markbase] rendered from tasks.base -->"));
+    assert!(stdout.contains("> |"));
+    assert!(stdout.contains("> | [[task-open]] |"));
+}
+
+#[test]
+fn test_note_render_quote_container_preserves_blank_lines_and_nested_depth() {
+    let vault = TestVault::new();
+    vault.create_note("note-a", "Embedded line 1\n\nEmbedded line 2\n");
+    vault.create_note("host", ">> ![[note-a]]\n");
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "host"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains(">> Embedded line 1"));
+    assert!(stdout.contains(">> \n>> Embedded line 2"));
+}
+
+#[test]
+fn test_note_render_list_item_embed_remains_literal() {
+    let vault = TestVault::new();
+    vault.create_note("note-a", "Hidden embedded body\n");
+    vault.create_note("task-open", "---\nstatus: open\n---\n");
+    vault.create_file(
+        "tasks.base",
+        "views:\n  - type: table\n    name: Open Tasks\n    filters:\n      and:\n        - status == \"open\"\n    order:\n      - file.name\n",
+    );
+    vault.create_note(
+        "host",
+        "- ![[note-a]]\n> - ![[note-a]]\n- ![[tasks.base#Open Tasks]]\n",
+    );
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "host", "-o", "table"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("- ![[note-a]]"));
+    assert!(stdout.contains("> - ![[note-a]]"));
+    assert!(stdout.contains("- ![[tasks.base#Open Tasks]]"));
+    assert!(!stdout.contains("Hidden embedded body"));
+    assert!(!stdout.contains("rendered from tasks.base"));
+}
+
+#[test]
+fn test_note_render_quote_container_placeholder_preserves_prefix() {
+    let vault = TestVault::new();
+    vault.create_note("host", "> ![[missing-note]]\n");
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "host"]);
+
+    assert_cli_success(&output);
+    assert!(stderr_contains(
+        &output,
+        "embedded note 'missing-note' not found in index, skipping."
+    ));
+    assert!(stdout_contains(
+        &output,
+        "> <!-- [markbase] note 'missing-note' not found -->"
+    ));
+}
+
+#[test]
+fn test_note_render_quote_container_multiple_embeds_on_same_line() {
+    let vault = TestVault::new();
+    vault.create_note("note-a", "A body\n");
+    vault.create_note("note-b", "B body\n");
+    vault.create_note("host", "> ![[note-a]] and ![[note-b]]\n");
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "host"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("> A body"));
+    assert!(stdout.contains(">  and "));
+    assert!(stdout.contains("> B body"));
+    assert!(!stdout.contains("![[note-b]]"));
+}
+
+#[test]
+fn test_note_render_quote_container_preserves_surrounding_whitespace() {
+    let vault = TestVault::new();
+    vault.create_note("note-a", "A body\n");
+    vault.create_note("host", "> ![[note-a]]  indented tail\n");
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "host"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("> A body"));
+    assert!(stdout.contains(">   indented tail"));
+}
+
+#[test]
 fn test_note_render_dry_run() {
     let vault = TestVault::new();
     vault.create_note("acme", "---\ntype: company\n---\n![[opps.base]]\n");
