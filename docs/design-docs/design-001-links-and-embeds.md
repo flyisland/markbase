@@ -424,8 +424,10 @@ markbase behavior:
 - when a nested `.base` embed is expanded from inside an embedded Markdown note, its `this` context is the embedded note currently being rendered, not the original top-level render target
 - recursion must be cycle-safe: if a note embed would revisit a note already on the active render stack, render emits a warning plus a placeholder comment and skips descending into that note again
 - when a `.base` embed shares a line with surrounding text, render expands the embed at that token position rather than requiring whole-line ownership
-- when a `.base` embed appears inside blockquote/list/callout-prefixed body lines, render still expands it, but the emitted Base block does not preserve those container prefixes line-by-line
-- this means rendered Base output may break out of the original Markdown container; users who need stable structure should place `.base` embeds on ordinary body lines
+- when a `.base` embed appears inside blockquote-prefixed or callout-prefixed body lines, render expands it and preserves that quote container prefix line-by-line in the emitted output
+- list items are not part of the supported live-render container contract; note and `.base` embeds inside list items remain literal output
+- list-item exclusion takes precedence even if nested quote syntax appears on the same logical line
+- placeholder comments emitted for soft render failures inside blockquote-prefixed or callout-prefixed body lines preserve the same quote container prefix
 - this is an intentional difference from Obsidian's UI presentation: markbase render models embeds as include-like content expansion in plain Markdown output, not as a special framed embed widget
 - note embeds with heading or block selectors, and non-Markdown non-`.base` embeds, are indexed but remain literal output in `note render`
 
@@ -480,6 +482,7 @@ The following are not current design goals for markbase link/embed indexing:
 - extracting frontmatter `![[...]]` embeds
 - supporting self-relative forms such as `[[#Heading]]` and `[[^blockid]]`
 - rendering heading-target or block-target note embeds such as `![[note#Heading]]` and `![[note#^blockid]]`
+- treating list-item live embeds as supported render containers
 
 If any of these change, this document, `ARCHITECTURE.md`, and relevant tests should change together.
 

@@ -74,7 +74,8 @@ Dry-run output keeps the same section structure but replaces query results with 
 - Obsidian's reader UI visually frames embedded content as an embedded or quoted region using application-side presentation components
 - markbase render treats eligible embeds closer to an `include`: the expanded content becomes part of the rendered note stream seen by the caller
 - this is intentional because the render contract is about exposing expanded note content to agents and scripts, not reproducing Obsidian's interface chrome
-- as a consequence, when expanded content originates from inside blockquotes, list items, or callout bodies, markbase does not try to synthesize an Obsidian-like visual container in plain Markdown output
+- when expanded content originates from inside blockquotes or callout bodies, render preserves that quote container in plain Markdown output
+- list items are intentionally excluded from the supported live-embed container contract and remain literal output
 - this tradeoff also keeps render behavior implementable at the file-content layer without depending on non-Markdown UI widgets
 
 ### Markdown Note Embed Execution Rule
@@ -102,9 +103,19 @@ After
 - the expanded note body is emitted without an extra wrapper, title, or provenance comment
 - embedded note rendering reuses the same Markdown-body scan rules as top-level note rendering, so nested note embeds and `.base` embeds inside the embedded note body are expanded recursively
 - recursive note rendering rebinds the render-note context at each note boundary; when a nested `.base` embed executes inside an embedded note body, `this` refers to that embedded note rather than the original top-level render target
-- when a note embed appears inside a blockquote, list item, or callout body, the emitted multi-line note body does not preserve that container prefix on each line
-- this means embedded note output may break out of the original Markdown container; callers that need stable Markdown structure should place note embeds on ordinary body lines
-- unlike Obsidian's UI, this is not rewrapped into a visual embed container; the output remains plain expanded Markdown content
+- when a note embed appears inside a blockquote or callout body, the emitted multi-line note body preserves that quote container prefix on each line
+- note embeds inside list items are not live render targets and remain literal output
+- list-item exclusion takes precedence even if the same logical line also contains blockquote or callout marker text
+- unlike Obsidian's UI, this is not rewrapped into a visual embed container widget; the output remains plain Markdown content inside the surrounding quote container
+
+Quote-container preservation follows these rules:
+
+- each emitted output line inherits the quote prefix depth of the embed-bearing source line
+- blank lines inside the expanded output remain inside the quote container rather than breaking it
+- if the source line is nested, such as `>> ![[note]]`, the emitted output preserves the same nested quote depth
+- for callouts, the first callout marker line remains unchanged; the expanded output inherits the surrounding quote container prefix rather than synthesizing a new callout marker
+- inline note embeds inside quote containers still use block-oriented insertion before prefix preservation is applied
+- placeholder output produced at the embed position follows the same rule, so missing-target and cycle placeholders remain inside the quote container
 
 This contract is based on shared token scanning plus render-time target classification, not on a renderer-specific regex.
 
@@ -131,6 +142,8 @@ The current cycle placeholder contract is:
 <!-- [markbase] recursive note embed skipped for 'note1' -->
 ```
 
+Inside blockquotes and callouts, this placeholder remains inside the same quote container.
+
 The current missing embedded-note warning contract is:
 
 ```text
@@ -142,6 +155,8 @@ The current missing embedded-note placeholder contract is:
 ```md
 <!-- [markbase] note 'note1' not found -->
 ```
+
+Inside blockquotes and callouts, this placeholder remains inside the same quote container.
 
 The current embedded-note read-failure warning contract is:
 
@@ -155,6 +170,8 @@ The current embedded-note read-failure placeholder contract is:
 <!-- [markbase] failed to read 'note1' -->
 ```
 
+Inside blockquotes and callouts, this placeholder remains inside the same quote container.
+
 ### `.base` Embed Execution Rule
 
 Within Markdown note bodies, render-time Base expansion only happens when all of the following are true:
@@ -166,13 +183,23 @@ As a consequence:
 
 - `![[tasks.base]]` on its own line is rendered
 - `Before ![[tasks.base]] After` is rendered, with the Base output inserted at the embed position
-- blockquotes, list items, and callout bodies are eligible if the embed appears in normal Markdown body content rather than code context
+- blockquotes and callout bodies are eligible if the embed appears in normal Markdown body content rather than code context
+- list items are not eligible live-render containers for `.base` embeds
 - surrounding text remains in output; render may split the original line with inserted block output when needed
 - `.base` embeds found inside recursively expanded note bodies are rendered using the same rules as `.base` embeds in the top-level note body
-- when an embed appears inside a blockquote, list item, or callout body, the rendered Base block does not inherit or preserve that container prefix on each emitted line
-- this means the Base output may visually break out of the original Markdown container; this is accepted behavior, not a render bug
-- callers that need stable Markdown structure should place `.base` embeds on ordinary body lines rather than inside blockquote/list/callout-prefixed lines
-- unlike Obsidian's UI, render does not add a special visual embed frame around the expanded Base output
+- when an embed appears inside a blockquote or callout body, the rendered Base block preserves that quote container prefix on each emitted line
+- `.base` embeds inside list items remain literal output
+- list-item exclusion takes precedence even if the same logical line also contains blockquote or callout marker text
+- unlike Obsidian's UI, render does not add a special visual embed frame around the expanded Base output; it preserves the surrounding quote structure in plain Markdown
+
+Quote-container preservation follows the same rules as Markdown note embeds:
+
+- each emitted output line inherits the quote prefix depth of the embed-bearing source line
+- blank lines inside the expanded output remain inside the quote container rather than breaking it
+- nested quote depth is preserved
+- for callouts, the existing callout marker line remains unchanged and the expanded output inherits only the surrounding quote prefix
+- inline `.base` embeds inside quote containers still use block-oriented insertion before prefix preservation is applied
+- placeholder output produced at the embed position follows the same rule, so missing-base and missing-view placeholders remain inside the quote container
 
 This contract is based on shared token scanning, not on a renderer-specific regex.
 
@@ -191,6 +218,8 @@ The current placeholder contract is:
 <!-- [markbase] view 'Missing View' not found in 'tasks.base' -->
 ```
 
+Inside blockquotes and callouts, this placeholder remains inside the same quote container.
+
 ### Code-Context Exclusion
 
 Render-time body scanning for Markdown note embeds and `.base` embeds must consume the shared `ScanContext::MarkdownBody` contract from `src/link_syntax.rs`.
@@ -207,6 +236,7 @@ Embeds that are not eligible Markdown note embeds or eligible `.base` embeds rem
 
 - non-Markdown, non-`.base` embeds may still be indexed as embeds by the indexing pipeline, but `note render` does not give them special runtime treatment
 - note embeds with a heading or block selector, such as `![[note#Heading]]` and `![[note#^blockid]]`, are not part of the current render contract and remain literal output
+- embeds that appear inside list items are not part of the supported live render contract and remain literal output
 - the original token text is preserved in output for these pass-through cases
 
 ### `--dry-run`

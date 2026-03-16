@@ -11,6 +11,7 @@ This file is the entry index for design documents.
 
 - `design-docs/design-001-links-and-embeds.md`: Obsidian link, embed, and backlink design for markbase
 - `design-docs/design-002-render.md`: active render subsystem contract for `note render`, `.base` expansion, and renderer module boundaries
+- `design-docs/design-003-web-note-view.md`: web delivery design for serving rendered Obsidian-compatible notes through docsify
 
 ## Legacy Design Docs
 
