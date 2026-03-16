@@ -377,6 +377,96 @@ description: Test note
 }
 
 #[test]
+fn test_note_verify_missing_template_base_embed() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company.md"),
+        r#"---
+type: company
+---
+
+![[opps.base]]
+"#,
+    )
+    .unwrap();
+    vault.create_file(
+        "opps.base",
+        r#"views:
+  - type: table
+    name: Opportunities
+"#,
+    );
+
+    vault.create_note(
+        "acme",
+        r#"---
+templates: ["[[company]]"]
+type: company
+description: ACME
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("acme");
+
+    assert_cli_error(&output);
+    assert!(stderr_contains(
+        &output,
+        "missing embedded base file '![[opps.base]]' required by template 'company'"
+    ));
+}
+
+#[test]
+fn test_note_verify_template_base_embed_present_in_note() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company.md"),
+        r#"---
+type: company
+---
+
+![[opps.base]]
+"#,
+    )
+    .unwrap();
+    vault.create_file(
+        "opps.base",
+        r#"views:
+  - type: table
+    name: Opportunities
+"#,
+    );
+
+    vault.create_note(
+        "acme",
+        r#"---
+templates: ["[[company]]"]
+type: company
+description: ACME
+---
+
+![[opps.base]]
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("acme");
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("passed all checks"));
+}
+
+#[test]
 fn test_note_verify_templates_field_not_array() {
     let vault = TestVault::new();
     vault.create_note(

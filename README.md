@@ -302,6 +302,7 @@ Checks that the note conforms to all constraints defined in its referenced MTS t
 - Field types and enum values are correct
 - Link fields must be a single pure Obsidian wikilink such as `[[note]]` or `[[folder/note.md#Heading|Alias]]`
 - Link fields point to notes of the expected `type`
+- Template Markdown body `.base` embeds must also appear in the note body, so required embedded views are not dropped from instances
 - Embedded `.base` targets in the Markdown body must exist in the indexed vault; missing or unreadable `.base` targets are reported as errors after the rest of verification continues
 
 Verification issues are reported to stderr. For issue output, the header includes `file.path`, and each schema-related issue includes a compact `Definition:` line so agents can repair notes with the expected type/constraints. Exit code is non-zero whenever verification produces any `ERROR`; dangling link references remain `INFO` and do not fail the command by themselves.

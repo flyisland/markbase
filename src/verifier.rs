@@ -2,6 +2,7 @@ use gray_matter::Matter;
 use gray_matter::engine::YAML;
 use regex::Regex;
 use serde_json::Value;
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::LazyLock;
 
@@ -136,6 +137,7 @@ pub fn verify_note(
     let note_content = std::fs::read_to_string(&note_path)
         .map_err(|e| format!("failed to read note file '{}': {}", note_path.display(), e))?;
     let extracted = Extractor::extract(&note_content);
+    let note_embeds: HashSet<String> = extracted.embeds.iter().cloned().collect();
     check_global_description(name, &properties, &mut issues);
 
     let templates_val = properties.get("templates");
@@ -255,6 +257,14 @@ pub fn verify_note(
             .data
             .map(|v| serde_json::to_value(v).unwrap_or(Value::Null))
             .unwrap_or(Value::Null);
+        let template_extracted = Extractor::extract(&content);
+
+        verify_template_embedded_bases(
+            template_name,
+            &note_embeds,
+            &template_extracted.embeds,
+            &mut issues,
+        );
 
         if let Some(schema_obj) = fm.get("_schema") {
             if let Some(props) = schema_obj.get("properties").and_then(|v| v.as_object()) {
@@ -757,6 +767,30 @@ fn verify_embedded_bases(db: &Database, embeds: &[String], issues: &mut Vec<Veri
                 });
             }
             _ => {}
+        }
+    }
+}
+
+fn verify_template_embedded_bases(
+    template_name: &str,
+    note_embeds: &HashSet<String>,
+    template_embeds: &[String],
+    issues: &mut Vec<VerifyIssue>,
+) {
+    for embed in template_embeds {
+        if !embed.ends_with(".base") {
+            continue;
+        }
+
+        if !note_embeds.contains(embed) {
+            issues.push(VerifyIssue {
+                level: IssueLevel::Error,
+                message: format!(
+                    "note is missing embedded base file '![[{}]]' required by template '{}'.",
+                    embed, template_name
+                ),
+                field_definition: None,
+            });
         }
     }
 }

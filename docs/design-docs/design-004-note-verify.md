@@ -14,6 +14,7 @@
 - template frontmatter inheritance rules
 - `_schema.required` and `_schema.properties`
 - link-field target checks
+- template-required `.base` embeds in Markdown body content
 - embedded `.base` existence checks in the Markdown body
 
 The command is read-only. It does not mutate the vault or the index.
@@ -121,6 +122,12 @@ For each loaded template frontmatter object:
 - list-valued template field not fully contained by note list: `ERROR`
 - scalar template field value mismatch: `ERROR`
 
+Verifier also checks template Markdown body embeds:
+
+- if the template body contains an embedded `.base` target, the note body must contain the same normalized `.base` embed target
+- missing required template `.base` embed: `ERROR`
+- this comparison uses the shared extractor normalization, so `![[folder/opps.base#Open Tasks]]` and `![[opps.base]]` both normalize to `opps.base`
+
 For `_schema.required` and `_schema.properties`:
 
 - required field missing or empty: `ERROR`
@@ -177,6 +184,7 @@ This table reflects the current implementation, not the historical draft behavio
 | Missing non-`_schema` template field | `ERROR` | yes |
 | List-valued template field not fully contained by note list | `ERROR` | yes |
 | Scalar template field value mismatch | `ERROR` | yes |
+| Template body `.base` embed is missing from note body | `ERROR` | yes |
 | `_schema.required` field missing or empty | `ERROR` | yes |
 | `_schema.properties` type mismatch | `ERROR` | yes |
 | `_schema.properties.enum` violation | `ERROR` | yes |
