@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-03-16
+
+### Fixed
+
+- **Rename update scope** - `markbase note rename` now reports and rewrites only files containing real wiki-link or embed targets that match the renamed note, instead of reserializing frontmatter in unrelated Markdown files that merely mention the old name in plain text.
+
 ## [0.6.0] - 2026-03-15
 
 ### Added
@@ -155,6 +161,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Note renaming with link updates
 - Multiple output formats (table, json, list)
 
+[0.6.1]: https://github.com/flyisland/markbase/compare/0.6.0...0.6.1
 [0.5.0]: https://github.com/flyisland/markbase/compare/0.4.0...0.5.0
 [0.4.0]: https://github.com/flyisland/markbase/compare/0.3.2...0.4.0
 [0.3.2]: https://github.com/flyisland/markbase/compare/0.3.1...0.3.2

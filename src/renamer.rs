@@ -137,34 +137,108 @@ fn update_links_in_vault(
 }
 
 fn update_links_in_content(content: &str, old_name: &str, new_name: &str) -> String {
-    let (frontmatter, body) = parse_frontmatter(content);
-    let body_str = rewrite_markdown_body_links(&body, old_name, new_name);
+    let parsed = parse_frontmatter(content);
+    let body_str = rewrite_markdown_body_links(&parsed.body, old_name, new_name);
+    let body_changed = body_str != parsed.body;
 
-    if let Some(ref fm) = frontmatter {
-        let new_frontmatter = rewrite_frontmatter_links(fm, old_name, new_name);
-        if let Some(fm) = new_frontmatter {
-            reconstruct_file(&fm, &body_str)
-        } else {
+    let Some(frontmatter_json) = parsed.frontmatter_json.as_deref() else {
+        return if body_changed {
             body_str
-        }
-    } else {
-        body_str
+        } else {
+            content.to_string()
+        };
+    };
+
+    let Some(new_frontmatter) = rewrite_frontmatter_links(frontmatter_json, old_name, new_name)
+    else {
+        return if body_changed {
+            body_str
+        } else {
+            content.to_string()
+        };
+    };
+
+    let frontmatter_changed = new_frontmatter != frontmatter_json;
+
+    if !body_changed && !frontmatter_changed {
+        return content.to_string();
     }
+
+    if !frontmatter_changed {
+        if let Some(prefix) = parsed.raw_frontmatter_prefix {
+            return format!("{}{}", prefix, body_str);
+        }
+        if body_changed {
+            return body_str;
+        }
+    }
+
+    reconstruct_file(&new_frontmatter, &body_str)
 }
 
-fn parse_frontmatter(content: &str) -> (Option<String>, String) {
+struct ParsedFrontmatter<'a> {
+    raw_frontmatter_prefix: Option<&'a str>,
+    frontmatter_json: Option<String>,
+    body: String,
+}
+
+fn parse_frontmatter(content: &str) -> ParsedFrontmatter<'_> {
     let matter = Matter::<YAML>::new();
     match matter.parse::<serde_json::Value>(content) {
         Ok(result) => {
             if let Some(data) = result.data {
-                let fm_json = serde_json::to_string(&data).ok();
-                (fm_json, result.content)
+                let raw_frontmatter = split_raw_frontmatter_prefix(content);
+                ParsedFrontmatter {
+                    raw_frontmatter_prefix: raw_frontmatter.map(|(prefix, _)| prefix),
+                    frontmatter_json: serde_json::to_string(&data).ok(),
+                    body: raw_frontmatter
+                        .map(|(_, body)| body.to_string())
+                        .unwrap_or(result.content),
+                }
             } else {
-                (None, content.to_string())
+                ParsedFrontmatter {
+                    raw_frontmatter_prefix: None,
+                    frontmatter_json: None,
+                    body: content.to_string(),
+                }
             }
         }
-        Err(_) => (None, content.to_string()),
+        Err(_) => ParsedFrontmatter {
+            raw_frontmatter_prefix: None,
+            frontmatter_json: None,
+            body: content.to_string(),
+        },
     }
+}
+
+fn split_raw_frontmatter_prefix(content: &str) -> Option<(&str, &str)> {
+    let mut line_start = 0;
+    let first_line_end = next_line_end(content, line_start);
+    if trim_line_breaks(&content[line_start..first_line_end]) != "---" {
+        return None;
+    }
+
+    line_start = first_line_end;
+    while line_start < content.len() {
+        let line_end = next_line_end(content, line_start);
+        if trim_line_breaks(&content[line_start..line_end]) == "---" {
+            return Some((&content[..line_end], &content[line_end..]));
+        }
+        line_start = line_end;
+    }
+
+    None
+}
+
+fn next_line_end(content: &str, start: usize) -> usize {
+    content[start..]
+        .find('\n')
+        .map(|offset| start + offset + 1)
+        .unwrap_or(content.len())
+}
+
+fn trim_line_breaks(line: &str) -> &str {
+    line.trim_end_matches(['\r', '\n'])
 }
 
 fn reconstruct_file(frontmatter_json: &str, body: &str) -> String {
@@ -447,6 +521,20 @@ Content"#;
         let result = update_links_in_content(content, "old-note", "new-note");
         assert!(result.contains("[[new-note]]"));
         assert!(result.contains("[[another-old]]"));
+    }
+
+    #[test]
+    fn test_plain_old_name_text_does_not_rewrite_or_reformat_frontmatter() {
+        let content = r#"---
+title: Old Note Mention
+tags:
+  - old-note
+---
+
+This mentions old-note in plain text only.
+"#;
+        let result = update_links_in_content(content, "old-note", "new-note");
+        assert_eq!(result, content);
     }
 
     #[test]

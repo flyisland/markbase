@@ -1326,6 +1326,35 @@ fn test_note_rename_preserves_escaped_pipe_in_table_cells() {
 }
 
 #[test]
+fn test_note_rename_only_reports_real_link_updates() {
+    let vault = TestVault::new();
+    vault.create_note("source", "See [[old-note]].");
+    vault.create_note(
+        "context",
+        r#"---
+title: plain old-note mention
+tags:
+  - old-note
+---
+
+This file mentions old-note in plain text only.
+"#,
+    );
+    vault.create_note("old-note", "# Old Note");
+    let context_before = std::fs::read_to_string(vault.path.join("context.md")).unwrap();
+    vault.index();
+
+    let output = vault.note_rename("old-note", "new-note");
+
+    assert_cli_success(&output);
+    assert!(stdout_contains(&output, "Updated links in 1 file(s):"));
+    assert!(stdout_contains(&output, "source.md"));
+    assert!(!stdout_contains(&output, "context.md"));
+    let context_after = std::fs::read_to_string(vault.path.join("context.md")).unwrap();
+    assert_eq!(context_after, context_before);
+}
+
+#[test]
 fn test_note_rename_not_found() {
     let vault = TestVault::new();
     vault.create_note("existing", "# Existing");
