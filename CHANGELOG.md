@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2] - 2026-03-16
+
+### Changed
+
+- **Stricter note verification** - `markbase note verify` now promotes template/body `.base` embed validation and template-frontmatter parse failures to `ERROR`, continues collecting later verification issues instead of stopping at the first such failure, and requires instance notes to preserve `.base` embeds declared in their template Markdown body.
+
 ## [0.6.1] - 2026-03-16
 
 ### Fixed
@@ -161,6 +167,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Note renaming with link updates
 - Multiple output formats (table, json, list)
 
+[0.6.2]: https://github.com/flyisland/markbase/compare/0.6.1...0.6.2
 [0.6.1]: https://github.com/flyisland/markbase/compare/0.6.0...0.6.1
 [0.5.0]: https://github.com/flyisland/markbase/compare/0.4.0...0.5.0
 [0.4.0]: https://github.com/flyisland/markbase/compare/0.3.2...0.4.0
