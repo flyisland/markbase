@@ -64,6 +64,8 @@ Write paths
 ### 4.3 Filesystem indexing and extraction
 
 - `src/scanner.rs` is responsible for vault traversal, incremental indexing, duplicate-name detection, deletion cleanup, and optional backlink recomputation.
+- Index traversal is recursive under `MARKBASE_BASE_DIR`, skips dot-prefixed hidden paths by default, applies ignore-file filtering, and only indexes files with an extension.
+- `src/scanner.rs` parses Markdown note contents for structured fields and stores non-Markdown resources as indexed records without Markdown-derived fields.
 - `src/extractor.rs` is a stateless parser for a single Markdown document.
 - `src/link_syntax.rs` owns shared wiki-link and embed tokenization plus target normalization.
 - `src/template.rs` loads templates and normalizes template frontmatter defaults.
@@ -205,6 +207,7 @@ When changing one part of the system, inspect the neighboring contracts as well.
 - Query semantics: update `src/query/`, `src/renderer/filter.rs`, `README.md`, and query-related design docs/tests.
 - Link parsing or rename behavior: update `src/extractor.rs`, `src/renamer.rs`, `src/verifier.rs`, `docs/design-docs/design-001-links-and-embeds.md`, and note-related tests.
 - Index schema or note fields: update `src/db.rs`, `src/scanner.rs`, `README.md`, `AGENTS.md`, and any affected specs.
+- Index traversal or ignore semantics: update `README.md`, `ARCHITECTURE.md`, `docs/design-docs/design-005-indexing.md`, and scanner tests.
 - Template behavior: update `src/template.rs`, `src/creator.rs`, `src/describe.rs`, `src/verifier.rs`, and `docs/design-docs/legacy/template_schema.md`.
 - Render pipeline behavior: update `src/renderer/`, `docs/design-docs/legacy/note_render_design.md`, and render tests.
 

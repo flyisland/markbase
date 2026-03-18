@@ -120,6 +120,17 @@ Note names must be unique across the entire vault, regardless of their directory
 - **Create**: Creating a note fails if a note with that name already exists
 - **Rename**: Renaming a note fails if a note with the target name already exists
 
+### Indexing Scope
+
+Indexing walks the vault recursively under `MARKBASE_BASE_DIR`.
+
+- Only files with an extension are indexed
+- Markdown files (`.md`) are parsed for frontmatter, tags, links, and embeds
+- Non-Markdown files with an extension, including `.base`, are still indexed as resources, but they do not contribute parsed Markdown fields
+- Dot-prefixed hidden files and directories are skipped by default
+- Root `.gitignore` and `.markbaseignore` patterns are applied during indexing
+- When both ignore files match the same path, `.markbaseignore` is applied after `.gitignore`
+
 ### Link Format (Obsidian Style)
 
 Always use the **filename only** — no path, no extension:

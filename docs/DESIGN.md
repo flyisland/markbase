@@ -13,6 +13,7 @@ This file is the entry index for design documents.
 - `design-docs/design-002-render.md`: active render subsystem contract for `note render`, `.base` expansion, and renderer module boundaries
 - `design-docs/design-003-web-note-view.md`: web delivery design for serving rendered Obsidian-compatible notes through docsify
 - `design-docs/design-004-note-verify.md`: active verification contract for `note verify`, template/schema checks, issue levels, and exit behavior
+- `design-docs/design-005-indexing.md`: active indexing contract for traversal scope, ignore behavior, resource treatment, and incremental updates
 
 ## Legacy Design Docs
 
