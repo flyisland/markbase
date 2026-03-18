@@ -14,6 +14,7 @@ This file is the entry index for design documents.
 - `design-docs/design-003-web-note-view.md`: web delivery design for serving rendered Obsidian-compatible notes through docsify
 - `design-docs/design-004-note-verify.md`: active verification contract for `note verify`, template/schema checks, issue levels, and exit behavior
 - `design-docs/design-005-indexing.md`: active indexing contract for traversal scope, ignore behavior, resource treatment, and incremental updates
+- `design-docs/design-006-template-system.md`: active template subsystem contract for normalization, instance creation, and ownership boundaries with `note verify`
 
 ## Legacy Design Docs
 
@@ -21,4 +22,4 @@ This file is the entry index for design documents.
 - `design-docs/legacy/query_design.md`: query language and translation behavior
 - `design-docs/legacy/properties_design.md`: file vs note property model
 - `design-docs/legacy/note_render_design.md`: historical render design retained for background context; superseded by `design-docs/design-002-render.md` for active behavior
-- `design-docs/legacy/template_schema.md`: template schema behavior
+- `design-docs/legacy/template_schema.md`: deprecated redirect to `design-docs/design-006-template-system.md`

@@ -11,4 +11,4 @@ They remain useful as historical context and implementation references, but they
 - `note_render_design.md`
 - `properties_design.md`
 - `query_design.md`
-- `template_schema.md`
+- `template_schema.md` (deprecated redirect to `../design-006-template-system.md`)

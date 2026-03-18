@@ -2,7 +2,7 @@
 
 **Status:** Active  
 **Target:** markbase CLI  
-**Related docs:** `docs/design-docs/legacy/template_schema.md`, `ARCHITECTURE.md`, `README.md`
+**Related docs:** `docs/design-docs/design-006-template-system.md`, `ARCHITECTURE.md`, `README.md`
 
 ## Scope
 
@@ -18,6 +18,8 @@
 - embedded `.base` existence checks in the Markdown body
 
 The command is read-only. It does not mutate the vault or the index.
+
+This document owns the verification command contract only. Template storage, normalization, and `note new --template` instance-creation semantics are defined in `docs/design-docs/design-006-template-system.md`.
 
 ## Command Contract
 

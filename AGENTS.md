@@ -41,7 +41,7 @@ Before making non-trivial changes, read these in order:
 - `docs/design-docs/legacy/properties_design.md`: `file.*` vs `note.*` field model
 - `docs/design-docs/legacy/query_design.md`: query mode and translation rules
 - `docs/design-docs/legacy/note_render_design.md`: `.base` rendering pipeline
-- `docs/design-docs/legacy/template_schema.md`: template schema behavior
+- `docs/design-docs/design-006-template-system.md`: active template subsystem behavior
 
 ## Execution Rules
 

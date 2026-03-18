@@ -208,7 +208,7 @@ When changing one part of the system, inspect the neighboring contracts as well.
 - Link parsing or rename behavior: update `src/extractor.rs`, `src/renamer.rs`, `src/verifier.rs`, `docs/design-docs/design-001-links-and-embeds.md`, and note-related tests.
 - Index schema or note fields: update `src/db.rs`, `src/scanner.rs`, `README.md`, `AGENTS.md`, and any affected specs.
 - Index traversal or ignore semantics: update `README.md`, `ARCHITECTURE.md`, `docs/design-docs/design-005-indexing.md`, and scanner tests.
-- Template behavior: update `src/template.rs`, `src/creator.rs`, `src/describe.rs`, `src/verifier.rs`, and `docs/design-docs/legacy/template_schema.md`.
+- Template behavior: update `src/template.rs`, `src/creator.rs`, `src/describe.rs`, `src/verifier.rs`, and `docs/design-docs/design-006-template-system.md`.
 - Render pipeline behavior: update `src/renderer/`, `docs/design-docs/legacy/note_render_design.md`, and render tests.
 
 ## 11. Documentation Role
