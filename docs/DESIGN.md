@@ -15,6 +15,7 @@ This file is the entry index for design documents.
 - `design-docs/design-004-note-verify.md`: active verification contract for `note verify`, template/schema checks, issue levels, and exit behavior
 - `design-docs/design-005-indexing.md`: active indexing contract for traversal scope, ignore behavior, resource treatment, and incremental updates
 - `design-docs/design-006-template-system.md`: active template subsystem contract for normalization, instance creation, and ownership boundaries with `note verify`
+- `design-docs/design-007-template-instance-metadata-patch.md`: active patch for moving template-authored instance defaults under `_schema.instance` and making `templates` system-derived
 
 ## Legacy Design Docs
 
