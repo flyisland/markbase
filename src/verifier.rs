@@ -132,6 +132,17 @@ pub fn verify_note(
         issues,
     };
     let folder = note.folder.clone();
+    if folder.trim_end_matches('/') == "templates" {
+        issues.push(VerifyIssue {
+            level: IssueLevel::Error,
+            message: format!(
+                "note '{}' resolves to template file '{}', which cannot be verified as a note instance.",
+                name, note.path
+            ),
+            field_definition: None,
+        });
+        return Ok(make_result(vec![], issues));
+    }
     let properties = note.properties.clone();
     let note_path = base_dir.join(&note.path);
     let note_content = std::fs::read_to_string(&note_path)
@@ -341,66 +352,6 @@ pub fn verify_note(
                             folder,
                             template_name,
                             loc
-                        ),
-                        field_definition: None,
-                    });
-                }
-            }
-        }
-
-        if let Some(obj) = fm.as_object() {
-            for (key, tmpl_val) in obj {
-                if key == "_schema" {
-                    continue;
-                }
-
-                let note_val = properties.get(key);
-
-                if note_val.is_none() {
-                    issues.push(VerifyIssue {
-                        level: IssueLevel::Error,
-                        message: format!(
-                            "missing field '{}' (defined in template '{}').",
-                            key, template_name
-                        ),
-                        field_definition: None,
-                    });
-                    continue;
-                }
-
-                let note_val = note_val.unwrap();
-
-                if let Value::Array(tmpl_arr) = tmpl_val {
-                    if let Value::Array(note_arr) = note_val {
-                        let missing: Vec<String> = tmpl_arr
-                            .iter()
-                            .filter_map(|v| v.as_str())
-                            .filter(|v| !note_arr.iter().any(|nv| nv.as_str() == Some(*v)))
-                            .map(String::from)
-                            .collect();
-                        if !missing.is_empty() {
-                            issues.push(VerifyIssue {
-                                level: IssueLevel::Error,
-                                message: format!(
-                                    "list field '{}' is missing values required by template '{}'. Missing: [{}]",
-                                    key,
-                                    template_name,
-                                    missing.join(", ")
-                                ),
-                                field_definition: None,
-                            });
-                        }
-                    }
-                } else if let Some(tmpl_str) = tmpl_val.as_str()
-                    && !tmpl_str.is_empty()
-                    && let Some(note_str) = note_val.as_str()
-                    && note_str != tmpl_str
-                {
-                    issues.push(VerifyIssue {
-                        level: IssueLevel::Error,
-                        message: format!(
-                            "field '{}' value mismatch. Expected: '{}' (from template '{}'), got: '{}'.",
-                            key, tmpl_str, template_name, note_str
                         ),
                         field_definition: None,
                     });

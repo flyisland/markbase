@@ -48,10 +48,11 @@ Templates have two distinct layers:
 1. Outer frontmatter
 2. Markdown body
 
-The outer frontmatter serves two different purposes:
+The active frontmatter model is split three ways:
 
-- instance skeleton fields that may be copied into created notes
-- `_schema` metadata that describes routing, constraints, and template-only behavior
+- outer frontmatter stores metadata on the template file itself
+- `_schema` stores template-owned routing and validation metadata
+- `_schema.instance` stores the instance defaults to materialize during `note new --template`
 
 The Markdown body is copied into created notes after variable substitution. Template callouts remain in the instance body unchanged.
 
@@ -61,7 +62,7 @@ Templates use the word `description` in three different places. They are related
 
 1. `_schema.description`: template-level routing prompt
 2. `_schema.properties.description`: schema definition for the instance field named `description`
-3. outer frontmatter `description`: the actual one-line semantic summary stored on the instance note
+3. `_schema.instance.description`: the actual one-line semantic summary stored on the instance note
 
 These three layers must stay distinct. `_schema.description` does not replace `_schema.properties.description`, and neither of them replaces the instance frontmatter field.
 
@@ -85,6 +86,7 @@ The active template vocabulary uses these `_schema` keys:
 | `filename.description` | Natural-language filename guidance | Declared vocabulary only; not executed by current CLI |
 | `location` | Relative directory for created notes | Used by `note new --template`; checked by `note verify` |
 | `properties` | Field constraint definitions | Used partly by normalization and verification |
+| `instance` | Literal frontmatter defaults for created notes | Used by `note new --template`; not treated by `note verify` as exact-match constraints |
 
 ### `_schema.properties.<field>` Keys
 
@@ -119,15 +121,17 @@ Current template field types:
 Current normalization rules:
 
 1. Parse frontmatter as YAML when possible; on parse failure, treat the file as body-only content with empty frontmatter.
-2. Ensure outer `description` exists and is a string. If absent or non-string, normalize it to the empty string.
-3. Ensure `_schema` exists and is an object. If absent or non-object, normalize it to an empty object.
-4. Preserve `_schema.location` separately as the template-selected creation directory.
-5. Ensure `_schema.required` exists and is an array.
-6. Ensure `_schema.required` contains `description`.
-7. Ensure `_schema.properties` exists and is an object.
-8. Ensure `_schema.properties.description` exists and is an object.
-9. Ensure `_schema.properties.description.type` defaults to `text`.
-10. Ensure `_schema.properties.description.description` defaults to `一句话说明这个 note 是什么`.
+2. Ensure `_schema` exists and is an object. If absent or non-object, normalize it to an empty object.
+3. Preserve `_schema.location` separately as the template-selected creation directory.
+4. Ensure `_schema.required` exists and is an array.
+5. Ensure `_schema.required` contains `description`.
+6. Ensure `_schema.properties` exists and is an object.
+7. Ensure `_schema.properties.description` exists and is an object.
+8. Ensure `_schema.properties.description.type` defaults to `text`.
+9. Ensure `_schema.properties.description.description` defaults to `一句话说明这个 note 是什么`.
+10. Ensure `_schema.instance` exists and is an object.
+11. Ensure the instance materialization path produces a string `description` field even when `_schema.instance.description` is absent or non-string.
+12. During the current compatibility window, selected legacy outer-frontmatter instance-like fields may be absorbed into `_schema.instance`, but arbitrary outer frontmatter is not treated as the active instance skeleton.
 
 This normalized view is shared by:
 
@@ -142,7 +146,7 @@ This normalized view is shared by:
 
 `template describe <name>` shows the normalized template view.
 
-This command exists so users and agents can inspect the exact template content that markbase uses for template-backed creation flows, including auto-normalized `description` schema fields for older templates.
+This command exists so users and agents can inspect the exact template content that markbase uses for template-backed creation flows, including the normalized `_schema.instance` block and auto-normalized `description` schema fields for older templates.
 
 ### `note new --template`
 
@@ -152,9 +156,10 @@ Current creation flow:
 
 1. Load and normalize the template.
 2. Compute the output directory from `_schema.location` when present; otherwise fall back to `inbox/`.
-3. Render the instance frontmatter and body.
+3. Render the instance frontmatter from `_schema.instance`.
 4. Remove `_schema` from the instance frontmatter before writing the file.
-5. Replace supported body/frontmatter variables such as `{{name}}`, `{{date}}`, `{{time}}`, and `{{datetime}}`.
+5. Auto-inject `templates: ["[[<template-name>]]"]`.
+6. Replace supported body/frontmatter variables such as `{{name}}`, `{{date}}`, `{{time}}`, and `{{datetime}}`.
 
 ### `note verify`
 
@@ -164,15 +169,16 @@ This document only defines the template-side semantics that verification depends
 
 - templates live in `templates/`
 - `_schema` is template-only metadata
-- outer frontmatter non-`_schema` fields are instance-facing template requirements
-- `_schema.properties` is a constraint definition surface, not an instance field surface
+- `_schema.instance` is a creation blueprint, not an exact-match verification surface
+- continuing invariants come from `_schema.required` and `_schema.properties`
 
 ## Instance Creation Contract
 
 When markbase creates a note from a template:
 
-- outer frontmatter fields are copied into the instance, subject to template normalization
+- `_schema.instance` fields are copied into the instance
 - `_schema` is stripped and never written into the instance
+- `templates: ["[[<template-name>]]"]` is injected by the system
 - body content is copied into the instance
 - template variables are substituted
 - template callouts are preserved in the instance body
@@ -186,6 +192,7 @@ The current implementation does not treat every `_schema` key as executable crea
 ### Keys used by `note new --template`
 
 - `_schema.location`
+- `_schema.instance`
 - `_schema.required`, only indirectly through normalization that forces `description` into the list
 - `_schema.properties.description`, only indirectly through normalization that ensures a default schema entry exists
 
@@ -204,15 +211,23 @@ In particular, schema `default` values are not materialized into instance frontm
 
 ## Outer Frontmatter Versus `_schema`
 
-markbase currently uses a strict split:
+markbase currently uses this split:
 
-- outer frontmatter describes instance content that can be copied into created notes
-- `_schema` describes template-only metadata and constraints
+- outer frontmatter describes the template file itself
+- `_schema` describes template-owned metadata and constraints
+- `_schema.instance` describes the created instance frontmatter
 
 This split matters for both creation and verification:
 
-- `note new` strips `_schema` entirely from instances
-- `note verify` checks both outer frontmatter invariants and `_schema` constraints, but those checks are documented in the verify design doc
+- `note new` materializes `_schema.instance` and strips `_schema` entirely from instances
+- `note new` auto-injects `templates` instead of requiring template authors to hand-write it
+- `note verify` ignores outer-frontmatter seed literals and checks schema-driven constraints instead
+
+Compatibility note:
+
+- current normalization may still absorb selected legacy outer-frontmatter instance fields into `_schema.instance`
+- `_schema.instance` wins when both old and new forms are present
+- legacy outer-frontmatter `templates` is never copied into created instances
 
 ## Body Directives
 
@@ -253,18 +268,24 @@ This is not a confirmed wikilink. The current markbase verification contract for
 
 ## Reference Template
 
-This example shows the active shape of a template that uses `_schema`, outer frontmatter, and body directives together:
+This example shows the active shape of a template that uses `_schema`, `_schema.instance`, and body directives together:
 
 ```markdown
 ---
 _schema:
   description: 标准客户档案模版。用于建立新客户的基本信息库，记录组织架构、技术栈和关键活动。
   strict: false
-  required: [industry, size]
+  required: [description, type, industry, size]
   filename:
     description: 使用客户的常用简称作为文件名，如"绿米"而非"绿米联合创新科技有限公司"。
   location: company/
   properties:
+    description:
+      type: text
+      description: 一句话说明这个 note 是什么
+    type:
+      type: text
+      enum: [company]
     industry:
       type: text
       description: 客户所在行业，如"智能家居"、"金融科技"。
@@ -280,16 +301,15 @@ _schema:
       format: link
       target: person
       description: 该客户的已知联系人，每人一个双链。
-
-type: company
-templates: ["[[company_customer]]"]
-description: ""
-industry: ""
-size: ""
-website: ""
-related_contacts: []
-tags: []
-aliases: []
+  instance:
+    type: company
+    description: ""
+    industry: ""
+    size: ""
+    website: ""
+    related_contacts: []
+    tags: []
+    aliases: []
 ---
 
 ## 1. 公司简介
@@ -307,7 +327,7 @@ aliases: []
 
 These are current active behavior notes, not proposals:
 
-- Template normalization is currently centered on `description`; there is no generalized schema-default materialization path.
+- There is no generalized schema-default materialization path; `_schema.properties.<field>.default` remains distinct from `_schema.instance.<field>`.
 - `note verify` does not currently reuse `TemplateDocument` normalization, so creation and verification do not share one fully normalized template object.
 - The legacy MTS reference may describe a broader schema intent than the subset of behavior currently executed by markbase.
 

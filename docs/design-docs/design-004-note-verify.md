@@ -11,7 +11,7 @@
 - note-facing input-shape rules
 - a global `description` contract
 - the note's referenced template files under `templates/`
-- template frontmatter inheritance rules
+- schema-driven template validation rules
 - `_schema.required` and `_schema.properties`
 - link-field target checks
 - template-required `.base` embeds in Markdown body content
@@ -76,6 +76,7 @@ These are command errors, not `VerifyIssue`s.
 
 - zero matches: `ERROR`, return immediately
 - multiple matches: `ERROR`, return immediately
+- a note resolved from the `templates/` folder is rejected as a template file, not treated as a normal instance note
 
 ### 3. Read note content and run global checks
 
@@ -120,9 +121,11 @@ If two templates define the same field with different `type` values, verifier em
 For each loaded template frontmatter object:
 
 - `_schema.location` mismatch: `ERROR`
-- missing non-`_schema` template field in note frontmatter: `ERROR`
-- list-valued template field not fully contained by note list: `ERROR`
-- scalar template field value mismatch: `ERROR`
+- outer frontmatter non-`_schema` seed literals are ignored for verification
+- `_schema.instance` is treated as a creation blueprint, not an exact-equality rule set
+- continuing presence, type, enum, and link constraints come from `_schema.required` and `_schema.properties`
+- stable identity fields such as `type` must be modeled through both `_schema.instance` and `_schema.required` / `_schema.properties`
+- mutable seed fields such as `status` may change after creation as long as they still satisfy the declared schema
 
 Verifier also checks template Markdown body embeds:
 
@@ -164,6 +167,7 @@ This table reflects the current implementation, not the historical draft behavio
 | CLI name contains file extension | command error | yes |
 | Note lookup returns zero rows | `ERROR` | yes |
 | Note lookup returns multiple rows | `ERROR` | yes |
+| Note target resolves to a file under `templates/` | `ERROR` | yes |
 | `templates` missing, not array, or empty | `ERROR` | yes |
 | `templates` element is non-string | `ERROR` | yes |
 | First `templates` string is not a pure wikilink | `ERROR` | yes |
@@ -183,9 +187,6 @@ This table reflects the current implementation, not the historical draft behavio
 | Template lacks `_schema` | no issue is emitted; schema checks are skipped for that template | no |
 | Conflicting field `type` definitions across templates | `ERROR` | yes |
 | `_schema.location` mismatch | `ERROR` | yes |
-| Missing non-`_schema` template field | `ERROR` | yes |
-| List-valued template field not fully contained by note list | `ERROR` | yes |
-| Scalar template field value mismatch | `ERROR` | yes |
 | Template body `.base` embed is missing from note body | `ERROR` | yes |
 | `_schema.required` field missing or empty | `ERROR` | yes |
 | `_schema.properties` type mismatch | `ERROR` | yes |
@@ -208,8 +209,8 @@ Current sources:
 
 Not every issue includes a definition. For example:
 
+- template-file target rejection has no definition line
 - `_schema.location` mismatch has no definition line
-- missing non-`_schema` template field has no definition line
 - conflicting multi-template field types have no definition line
 - `.base` embed errors have no definition line
 
@@ -219,6 +220,7 @@ These are intentional documentation of current behavior, not proposals:
 
 - verification still uses early returns for note lookup, `templates`, and template file load failures; later issue categories continue collecting once verification passes those gates
 - only the first invalid string element in `templates` is rejected; later invalid string elements are silently dropped
+- verifier still reads raw template files instead of reusing the normalized `TemplateDocument` view used by `note new --template` and `template describe`
 
 ## References
 

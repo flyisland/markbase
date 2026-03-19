@@ -320,6 +320,7 @@ markbase note verify <name>
 Checks that the note conforms to all constraints defined in its referenced MTS template(s), and also runs a global `description` check before template validation:
 - Global frontmatter `description` exists, is a string, and is not blank (reported as ERROR)
 - Referenced template frontmatter must parse successfully as YAML, or verification fails
+- Targets that resolve to `templates/<name>.md` are rejected as template files rather than verified as note instances
 - Directory location matches `_schema.location`
 - Required frontmatter fields are present
 - Field types and enum values are correct
@@ -327,6 +328,8 @@ Checks that the note conforms to all constraints defined in its referenced MTS t
 - Link fields point to notes of the expected `type`
 - Template Markdown body `.base` embeds must also appear in the note body, so required embedded views are not dropped from instances
 - Embedded `.base` targets in the Markdown body must exist in the indexed vault; missing or unreadable `.base` targets are reported as errors after the rest of verification continues
+
+`note verify` no longer treats template outer-frontmatter seed values as literal-match requirements. `_schema.instance` defines creation-time defaults, while continuing invariants must be modeled through `_schema.required` and `_schema.properties`. In practice, stable identity fields such as `type` should be declared in both places, while mutable seed fields such as `status` may evolve after creation as long as they still satisfy the schema.
 
 Verification issues are reported to stderr. For issue output, the header includes `file.path`, and each schema-related issue includes a compact `Definition:` line so agents can repair notes with the expected type/constraints. Exit code is non-zero whenever verification produces any `ERROR`; dangling link references remain `INFO` and do not fail the command by themselves.
 
@@ -434,21 +437,29 @@ markbase template list -o table   # Compact Markdown table
 markbase template describe daily  # Show normalized template content
 ```
 
-Templates are stored in `templates/` under base-dir. `template describe` shows the normalized template view used by the CLI, including auto-injected `description` schema/default fields when older templates omit them. For new templates, prefer declaring all three `description` layers explicitly:
+Templates are stored in `templates/` under base-dir. `template describe` shows the normalized template view used by the CLI, including `_schema.instance` and auto-injected `description` schema/default fields when older templates omit them. For new templates, author instance defaults under `_schema.instance` and let `markbase note new --template` inject the `templates` field automatically:
 
 ```yaml
-description: ""
 _schema:
   description: 用于匹配客户公司资料的模板
+  location: company/
   required:
     - description
+    - type
   properties:
     description:
       type: text
       description: 一句话说明这个 note 是什么
+    type:
+      type: text
+      enum: [company]
+  instance:
+    description: ""
+    type: company
+    tags: []
 ```
 
-Here, outer frontmatter `description` is the instance note field, `_schema.description` is the template routing prompt, and `_schema.properties.description` is the schema definition for that instance field.
+Here, `_schema.description` is the template routing prompt, `_schema.properties.description` is the schema definition for the instance field, and `_schema.instance.description` is the concrete value written into new notes. Created notes receive `templates: ["[[<template-name>]]"]` from the CLI; template authors should not hand-write that field in the template.
 
 ## Query Syntax
 

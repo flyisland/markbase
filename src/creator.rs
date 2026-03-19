@@ -292,6 +292,98 @@ mod tests {
     }
 
     #[test]
+    fn test_create_note_with_template_uses_schema_instance() {
+        let temp_dir = std::env::temp_dir();
+        let test_dir = temp_dir.join("mdb_test_schema_instance");
+        let _ = fs::remove_dir_all(&test_dir);
+
+        let tmpl_dir = test_dir.join("templates");
+        fs::create_dir_all(&tmpl_dir).unwrap();
+        fs::write(
+            tmpl_dir.join("customer.md"),
+            r#"---
+type: ignored
+_schema:
+  instance:
+    type: company
+    tags: []
+---
+# {{name}}"#,
+        )
+        .unwrap();
+
+        let result = create_note(&test_dir, "acme", Some("customer"));
+        assert!(result.is_ok());
+        let created = result.unwrap();
+        let content = fs::read_to_string(&created.path).unwrap();
+        assert!(content.contains("type: company"));
+        assert!(content.contains("tags: []"));
+        assert!(!content.contains("type: ignored"));
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_create_note_with_template_auto_injects_templates_field() {
+        let temp_dir = std::env::temp_dir();
+        let test_dir = temp_dir.join("mdb_test_template_auto_link");
+        let _ = fs::remove_dir_all(&test_dir);
+
+        let tmpl_dir = test_dir.join("templates");
+        fs::create_dir_all(&tmpl_dir).unwrap();
+        fs::write(
+            tmpl_dir.join("customer.md"),
+            r#"---
+_schema:
+  instance:
+    type: company
+---
+# {{name}}"#,
+        )
+        .unwrap();
+
+        let result = create_note(&test_dir, "acme", Some("customer"));
+        assert!(result.is_ok());
+        let created = result.unwrap();
+        let content = fs::read_to_string(&created.path).unwrap();
+        assert!(content.contains("templates:"));
+        assert!(content.contains("- '[[customer]]'") || content.contains("- \"[[customer]]\""));
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_create_note_with_template_ignores_legacy_outer_templates_field() {
+        let temp_dir = std::env::temp_dir();
+        let test_dir = temp_dir.join("mdb_test_legacy_outer_templates");
+        let _ = fs::remove_dir_all(&test_dir);
+
+        let tmpl_dir = test_dir.join("templates");
+        fs::create_dir_all(&tmpl_dir).unwrap();
+        fs::write(
+            tmpl_dir.join("customer.md"),
+            r#"---
+templates:
+  - "[[legacy-template]]"
+_schema:
+  instance:
+    type: company
+---
+# {{name}}"#,
+        )
+        .unwrap();
+
+        let result = create_note(&test_dir, "acme", Some("customer"));
+        assert!(result.is_ok());
+        let created = result.unwrap();
+        let content = fs::read_to_string(&created.path).unwrap();
+        assert!(!content.contains("[[legacy-template]]"));
+        assert!(content.contains("- '[[customer]]'") || content.contains("- \"[[customer]]\""));
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
     fn test_create_note_template_not_found() {
         let temp_dir = std::env::temp_dir();
         let test_dir = temp_dir.join("mdb_test_notfound");
@@ -358,11 +450,12 @@ mod tests {
     #[test]
     fn test_process_template_removes_schema() {
         let content = r#"---
-type: company
-template: company_customer
 _schema:
   description: Customer template
   required: [name]
+  instance:
+    type: company
+    template: company_customer
 ---
 # Content"#;
         let (result, _) = process_template(content, "test").unwrap();
@@ -375,10 +468,12 @@ _schema:
     #[test]
     fn test_process_template_preserves_frontmatter_fields() {
         let content = r#"---
-type: person
-template: person_work
-name: John
-age: 30
+_schema:
+  instance:
+    type: person
+    template: person_work
+    name: John
+    age: 30
 ---
 # Body"#;
         let (result, _) = process_template(content, "test").unwrap();
@@ -400,7 +495,9 @@ age: 30
     #[test]
     fn test_process_template_with_name_variable() {
         let content = r#"---
-type: test
+_schema:
+  instance:
+    type: test
 ---
 # {{name}}
 Content"#;
@@ -411,9 +508,11 @@ Content"#;
     #[test]
     fn test_process_template_frontmatter_format() {
         let content = r#"---
-type: person
-template: person_work
-aliases: []
+_schema:
+  instance:
+    type: person
+    template: person_work
+    aliases: []
 ---
 # Body"#;
         let (result, _) = process_template(content, "test").unwrap();
@@ -427,11 +526,12 @@ aliases: []
     #[test]
     fn test_process_template_location() {
         let content = r#"---
-type: company
-template: company_customer
 _schema:
   description: Customer template
   location: customers/
+  instance:
+    type: company
+    template: company_customer
 ---
 # Body"#;
         let (result, location) = process_template(content, "test").unwrap();

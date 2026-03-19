@@ -116,8 +116,10 @@ fn test_template_lifecycle() {
     std::fs::write(
         templates_dir.join("daily.md"),
         r#"---
-template: daily
-type: journal
+_schema:
+  instance:
+    template: daily
+    type: journal
 ---
 
 # {{name}}
@@ -135,9 +137,11 @@ Time: {{time}}
     std::fs::write(
         templates_dir.join("project.md"),
         r#"---
-template: project
-type: project
-status: planning
+_schema:
+  instance:
+    template: project
+    type: project
+    status: planning
 ---
 
 # {{name}}

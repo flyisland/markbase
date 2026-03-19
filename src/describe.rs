@@ -35,6 +35,36 @@ mod tests {
     }
 
     #[test]
+    fn test_describe_template_shows_normalized_instance_block() {
+        let temp_dir = std::env::temp_dir();
+        let test_dir = temp_dir.join("mdb_describe_instance_test");
+        let _ = fs::remove_dir_all(&test_dir);
+
+        let tmpl_dir = test_dir.join("templates");
+        fs::create_dir_all(&tmpl_dir).unwrap();
+        fs::write(
+            tmpl_dir.join("daily.md"),
+            r#"---
+type: journal
+owner: Alice
+_schema:
+  location: journal/
+---
+# Daily Note"#,
+        )
+        .unwrap();
+
+        let result = describe_template(&test_dir, "daily").unwrap();
+        assert!(result.contains("instance:"));
+        assert!(result.contains("type: journal"));
+        assert!(result.contains("description: ''") || result.contains("description: \"\""));
+        assert!(result.contains("owner: Alice"));
+        assert!(!result.contains("type: journal\nowner: Alice"));
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
     fn test_describe_template_not_found() {
         let temp_dir = std::env::temp_dir();
         let test_dir = temp_dir.join("mdb_describe_test2");

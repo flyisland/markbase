@@ -92,6 +92,258 @@ templates: ["[[ghost_template]]"]
 }
 
 #[test]
+fn test_note_verify_ignores_template_outer_frontmatter_seed_fields() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company_customer.md"),
+        r#"---
+type: legacy-template
+status: Lead
+aliases: ["ACME Legacy"]
+_schema:
+  instance:
+    type: company
+    status: Lead
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "acme",
+        r#"---
+templates: ["[[company_customer]]"]
+type: company
+status: Active
+description: ACME customer
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("acme");
+
+    assert_cli_success(&output);
+    assert!(stdout_contains(&output, "passed all checks"));
+}
+
+#[test]
+fn test_note_verify_type_identity_enforced_via_schema() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company_customer.md"),
+        r#"---
+type: legacy-template
+_schema:
+  required:
+    - type
+  properties:
+    type:
+      type: text
+      enum: [company]
+  instance:
+    type: company
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "acme",
+        r#"---
+templates: ["[[company_customer]]"]
+type: partner
+description: ACME customer
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("acme");
+
+    assert_cli_error(&output);
+    assert!(stderr_contains(
+        &output,
+        "field 'type' has invalid value 'partner'"
+    ));
+    assert!(stderr_contains(&output, "Allowed values"));
+    assert!(!stderr_contains(&output, "value mismatch"));
+}
+
+#[test]
+fn test_note_verify_mutable_seed_status_not_frozen_to_initial_value() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company_customer.md"),
+        r#"---
+status: Lead
+_schema:
+  properties:
+    status:
+      type: text
+      enum: ["Lead", "Active", "Closed Won"]
+  instance:
+    type: company
+    status: Lead
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+
+    vault.create_note(
+        "acme",
+        r#"---
+templates: ["[[company_customer]]"]
+type: company
+status: Active
+description: ACME customer
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("acme");
+
+    assert_cli_success(&output);
+    assert!(stdout_contains(&output, "passed all checks"));
+}
+
+#[test]
+fn test_note_verify_template_file_is_not_a_valid_instance_target() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company_customer.md"),
+        r#"---
+_schema:
+  instance:
+    type: company
+---
+
+# Template
+"#,
+    )
+    .unwrap();
+    vault.index();
+
+    let output = vault.note_verify("company_customer");
+
+    assert_cli_error(&output);
+    assert!(stderr_contains(
+        &output,
+        "resolves to template file 'templates/company_customer.md'"
+    ));
+    assert!(stderr_contains(
+        &output,
+        "cannot be verified as a note instance"
+    ));
+}
+
+#[test]
+fn test_note_verify_template_semantics_preserved_after_instance_transition() {
+    let vault = TestVault::new();
+
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company_customer.md"),
+        r#"---
+status: Lead
+_schema:
+  location: entities/company/
+  required:
+    - type
+    - industry
+    - owner
+  properties:
+    type:
+      type: text
+      enum: [company]
+    industry:
+      type: text
+      enum: [saas, fintech]
+    owner:
+      type: text
+      format: link
+      target: person
+    status:
+      type: text
+      enum: ["Lead", "Active", "Closed Won"]
+  instance:
+    type: company
+    status: Lead
+---
+
+# Template
+
+![[opportunities.base]]
+"#,
+    )
+    .unwrap();
+
+    vault.create_file(
+        "opportunities.base",
+        "view: table\nfrom: notes\nwhere: type = 'opportunity'\n",
+    );
+    vault.create_note(
+        "alice",
+        r#"---
+type: person
+description: Account executive
+---
+
+# Alice
+"#,
+    );
+    vault.create_note_in_subdir(
+        "entities/company",
+        "acme",
+        r#"---
+templates: ["[[company_customer]]"]
+type: company
+industry: saas
+owner: "[[alice]]"
+status: Active
+description: ACME customer
+---
+
+# ACME
+
+![[opportunities.base]]
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_verify("acme");
+
+    assert_cli_success(&output);
+    assert!(stdout_contains(&output, "passed all checks"));
+}
+
+#[test]
 fn test_note_verify_location_mismatch() {
     let vault = TestVault::new();
 
@@ -1212,7 +1464,9 @@ fn test_note_create_with_template() {
     std::fs::write(
         templates_dir.join("daily.md"),
         r#"---
-template: daily
+_schema:
+  instance:
+    template: daily
 ---
 
 # {{name}}
@@ -1228,6 +1482,10 @@ Date: {{date}}
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert_eq!(stdout.trim(), "inbox/today.md");
     assert!(vault.path.join("inbox").join("today.md").exists());
+    let content = std::fs::read_to_string(vault.path.join("inbox").join("today.md")).unwrap();
+    assert!(content.contains("template: daily"));
+    assert!(content.contains("templates:"));
+    assert!(content.contains("[[daily]]"));
 }
 
 #[test]
@@ -3037,7 +3295,9 @@ fn test_note_create_with_template_adds_description_when_template_omits_it() {
     std::fs::write(
         templates_dir.join("daily.md"),
         r#"---
-template: daily
+_schema:
+  instance:
+    template: daily
 ---
 
 # {{name}}
@@ -3053,6 +3313,63 @@ Date: {{date}}
     let content = std::fs::read_to_string(vault.path.join("inbox").join("today.md")).unwrap();
     assert!(content.contains("description:"));
     assert!(!content.contains("_schema"));
+}
+
+#[test]
+fn test_note_create_with_template_uses_schema_instance() {
+    let vault = TestVault::new();
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company_customer.md"),
+        r#"---
+type: ignored
+_schema:
+  instance:
+    type: company
+    tags: []
+---
+
+# {{name}}
+"#,
+    )
+    .unwrap();
+    vault.index();
+
+    let output = vault.note_new_with_template("acme", "company_customer");
+
+    assert_cli_success(&output);
+    let content = std::fs::read_to_string(vault.path.join("inbox").join("acme.md")).unwrap();
+    assert!(content.contains("type: company"));
+    assert!(content.contains("tags: []"));
+    assert!(!content.contains("type: ignored"));
+}
+
+#[test]
+fn test_note_create_with_template_auto_injects_templates_field() {
+    let vault = TestVault::new();
+    let templates_dir = vault.path.join("templates");
+    std::fs::create_dir_all(&templates_dir).unwrap();
+    std::fs::write(
+        templates_dir.join("company_customer.md"),
+        r#"---
+_schema:
+  instance:
+    type: company
+---
+
+# {{name}}
+"#,
+    )
+    .unwrap();
+    vault.index();
+
+    let output = vault.note_new_with_template("acme", "company_customer");
+
+    assert_cli_success(&output);
+    let content = std::fs::read_to_string(vault.path.join("inbox").join("acme.md")).unwrap();
+    assert!(content.contains("templates:"));
+    assert!(content.contains("[[company_customer]]"));
 }
 
 #[test]
