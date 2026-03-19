@@ -7,6 +7,8 @@ use serde::Serialize;
 pub enum MatchSource {
     Name,
     Alias,
+    NameContainsQuery,
+    QueryContainsName,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -24,6 +26,8 @@ pub struct ResolveMatch {
 pub enum ResolveStatus {
     Exact,
     Alias,
+    NameContainsQuery,
+    QueryContainsName,
     Multiple,
     Missing,
 }
@@ -51,10 +55,25 @@ fn resolve_name(db: &Database, name: &str) -> Result<ResolveResult, Box<dyn std:
     let sql = format!(
         "SELECT path, name, json_extract_string(properties, '$.\"type\"') AS type, \
          json_extract_string(properties, '$.\"description\"') AS description, \
-         CASE WHEN name = '{escaped}' THEN 'name' ELSE 'alias' END AS matched_by \
+         CASE \
+             WHEN name = '{escaped}' THEN 'name' \
+             WHEN list_contains((properties->'$.\"aliases\"')::VARCHAR[], '{escaped}') THEN 'alias' \
+             WHEN contains(name, '{escaped}') AND name != '{escaped}' THEN 'name_contains_query' \
+             WHEN contains('{escaped}', name) AND name != '{escaped}' THEN 'query_contains_name' \
+         END AS matched_by \
          FROM notes \
-         WHERE name = '{escaped}' OR list_contains((properties->'$.\"aliases\"')::VARCHAR[], '{escaped}') \
-         ORDER BY CASE WHEN name = '{escaped}' THEN 0 ELSE 1 END, name, path"
+         WHERE name = '{escaped}' \
+            OR list_contains((properties->'$.\"aliases\"')::VARCHAR[], '{escaped}') \
+            OR (contains(name, '{escaped}') AND name != '{escaped}') \
+            OR (contains('{escaped}', name) AND name != '{escaped}') \
+         ORDER BY CASE \
+             WHEN name = '{escaped}' THEN 0 \
+             WHEN list_contains((properties->'$.\"aliases\"')::VARCHAR[], '{escaped}') THEN 1 \
+             WHEN contains(name, '{escaped}') AND name != '{escaped}' THEN 2 \
+             ELSE 3 \
+         END, \
+         abs(length(name) - length('{escaped}')), \
+         name, path"
     );
 
     let (field_names, rows) = db.query(&sql, "*", usize::MAX)?;
@@ -69,7 +88,10 @@ fn resolve_name(db: &Database, name: &str) -> Result<ResolveResult, Box<dyn std:
             description: normalize_optional(&row[3]),
             matched_by: match row[4].as_str() {
                 "name" => MatchSource::Name,
-                _ => MatchSource::Alias,
+                "alias" => MatchSource::Alias,
+                "name_contains_query" => MatchSource::NameContainsQuery,
+                "query_contains_name" => MatchSource::QueryContainsName,
+                _ => unreachable!("unexpected match source"),
             },
         })
         .collect();
@@ -83,13 +105,14 @@ fn resolve_name(db: &Database, name: &str) -> Result<ResolveResult, Box<dyn std:
     })
 }
 
-fn classify_status(query: &str, matches: &[ResolveMatch]) -> ResolveStatus {
+fn classify_status(_query: &str, matches: &[ResolveMatch]) -> ResolveStatus {
     match matches {
         [] => ResolveStatus::Missing,
         [single] => match single.matched_by {
-            MatchSource::Name if single.name == query => ResolveStatus::Exact,
-            MatchSource::Alias => ResolveStatus::Alias,
             MatchSource::Name => ResolveStatus::Exact,
+            MatchSource::Alias => ResolveStatus::Alias,
+            MatchSource::NameContainsQuery => ResolveStatus::NameContainsQuery,
+            MatchSource::QueryContainsName => ResolveStatus::QueryContainsName,
         },
         _ => ResolveStatus::Multiple,
     }
@@ -217,6 +240,99 @@ mod tests {
 
         assert_eq!(results[0].status, ResolveStatus::Multiple);
         assert_eq!(results[0].matches.len(), 2);
+    }
+
+    #[test]
+    fn test_resolve_name_contains_query_match() {
+        let (_dir, db) = make_db();
+        db.upsert_note(&note(
+            "绿联科技",
+            "companies/ugreen.md",
+            &[],
+            Some("company"),
+            Some("A company"),
+        ))
+        .unwrap();
+
+        let results = resolve_names(&db, &["绿联".to_string()]).unwrap();
+
+        assert_eq!(results[0].status, ResolveStatus::NameContainsQuery);
+        assert_eq!(
+            results[0].matches[0].matched_by,
+            MatchSource::NameContainsQuery
+        );
+    }
+
+    #[test]
+    fn test_resolve_query_contains_name_match() {
+        let (_dir, db) = make_db();
+        db.upsert_note(&note(
+            "绿联科技",
+            "companies/ugreen.md",
+            &[],
+            Some("company"),
+            Some("A company"),
+        ))
+        .unwrap();
+
+        let results = resolve_names(&db, &["深圳绿联科技有限公司".to_string()]).unwrap();
+
+        assert_eq!(results[0].status, ResolveStatus::QueryContainsName);
+        assert_eq!(
+            results[0].matches[0].matched_by,
+            MatchSource::QueryContainsName
+        );
+    }
+
+    #[test]
+    fn test_resolve_alias_ranks_before_partial_name_matches() {
+        let (_dir, db) = make_db();
+        db.upsert_note(&note(
+            "绿联科技",
+            "companies/ugreen.md",
+            &[],
+            Some("company"),
+            Some("Partial name match"),
+        ))
+        .unwrap();
+        db.upsert_note(&note(
+            "networking-brand",
+            "companies/networking-brand.md",
+            &["绿联"],
+            Some("company"),
+            Some("Alias match"),
+        ))
+        .unwrap();
+
+        let results = resolve_names(&db, &["绿联".to_string()]).unwrap();
+
+        assert_eq!(results[0].status, ResolveStatus::Multiple);
+        assert_eq!(results[0].matches.len(), 2);
+        assert_eq!(results[0].matches[0].name, "networking-brand");
+        assert_eq!(results[0].matches[0].matched_by, MatchSource::Alias);
+        assert_eq!(
+            results[0].matches[1].matched_by,
+            MatchSource::NameContainsQuery
+        );
+    }
+
+    #[test]
+    fn test_resolve_deduplicates_match_sources_by_priority() {
+        let (_dir, db) = make_db();
+        db.upsert_note(&note(
+            "绿联科技",
+            "companies/ugreen.md",
+            &["绿联"],
+            Some("company"),
+            Some("Alias and partial candidate"),
+        ))
+        .unwrap();
+
+        let results = resolve_names(&db, &["绿联".to_string()]).unwrap();
+
+        assert_eq!(results[0].status, ResolveStatus::Alias);
+        assert_eq!(results[0].matches.len(), 1);
+        assert_eq!(results[0].matches[0].matched_by, MatchSource::Alias);
     }
 
     #[test]

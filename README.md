@@ -285,17 +285,29 @@ markbase note resolve "张伟" "阿里"
 
 Outputs JSON by default for agent-friendly entity alignment. Each input returns `query`, `status`, and `matches`.
 
-Each resolve input must be a name or alias only, never a path or file-style name with an extension.
+Each resolve input is a path-free query string, never a path or file-style name with an extension.
 
 Statuses:
 - `exact` — one note matched by `file.name`
 - `alias` — one note matched by frontmatter `aliases`
+- `name_contains_query` — one note matched because `file.name` contains the query
+- `query_contains_name` — one note matched because the query contains `file.name`
 - `multiple` — more than one candidate matched; disambiguate before linking
-- `missing` — no matching note or alias found
+- `missing` — no exact name, alias, or partial-name candidate matched
 
 Each match includes `name`, `path`, `type`, `description`, and `matched_by`. Missing descriptions are emitted as `null`, not omitted.
 
-A single `exact` or `alias` match is still only a low-cost alignment hint: compare `description` and context before reusing the note. If the description is clearly about a different thing, prefer creating a new note instead of forcing reuse.
+`matched_by` can be `name`, `alias`, `name_contains_query`, or `query_contains_name`.
+
+Match priority is deterministic:
+- `name`
+- `alias`
+- `name_contains_query`
+- `query_contains_name`
+
+Partial matching applies only to `file.name`, never to frontmatter `aliases`.
+
+A single `exact`, `alias`, `name_contains_query`, or `query_contains_name` result is still only a low-cost alignment hint: compare `description` and context before reusing the note. If the description is clearly about a different thing, prefer creating a new note instead of forcing reuse.
 
 **Verify a note against its template schema:**
 
