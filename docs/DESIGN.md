@@ -16,6 +16,7 @@ This file is the entry index for design documents.
 - `design-docs/design-005-indexing.md`: active indexing contract for traversal scope, ignore behavior, resource treatment, and incremental updates
 - `design-docs/design-006-template-system.md`: active template subsystem contract for normalization, instance creation, and ownership boundaries with `note verify`
 - `design-docs/design-007-template-instance-metadata-patch.md`: active patch for moving template-authored instance defaults under `_schema.instance` and making `templates` system-derived
+- `design-docs/design-008-note-resolve.md`: active resolution contract for `note resolve`, including input rules, indexed name/alias matching, and JSON result semantics
 
 ## Legacy Design Docs
 
