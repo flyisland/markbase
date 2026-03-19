@@ -8,11 +8,11 @@ parallel_safe_verified: false
 
 ## Goal
 
-完成模板实例 metadata transition，把模板实例默认值从 legacy outer frontmatter 迁移到 `_schema.instance`，并让 `note new --template` 与 `note verify` 对这一模型达成一致。
+完成模板创建 metadata transition，把模板创建默认值从 legacy outer frontmatter 迁移到 `_schema.create`，并让 `note new --template` 与 `note verify` 对这一模型达成一致。
 
-这个计划的目标不是只让 `_schema.instance` 能被读取，而是完成一次完整的模板语义切换：
+这个计划的目标不是只让 `_schema.create` 能被读取，而是完成一次完整的模板语义切换：
 
-- `note new --template` 从 `_schema.instance` 物化实例 frontmatter
+- `note new --template` 从 `_schema.create` 物化实例 frontmatter
 - `templates` 变为系统自动注入字段，而不是模板作者手写字段
 - `note verify` 不再把模板 outer frontmatter 当作实例字面约束来源
 - stable identity 字段例如 `type` 能被持续验证，而 mutable seed 字段例如 `status` 不会被错误冻结
@@ -22,7 +22,7 @@ parallel_safe_verified: false
 
 ### Phase 1: 模板读模型与实例创建
 
-- [x] task-009: 为模板归一化、`template describe` 与 `note new --template` 引入 `_schema.instance`，并自动注入 `templates`
+- [x] task-009: 为模板归一化、`template describe` 与 `note new --template` 引入 schema-owned create surface，并自动注入 `templates`
 
 ### Phase 2: 验证语义切换
 
@@ -54,7 +54,7 @@ task-009 -> task-010 -> task-011
 
 ### 2026-03-18: 将 `note verify` 语义切换独立成单独 task
 
-原因：`_schema.instance` 的最大风险不是读取实现，而是 verifier 是否会错误地把 seed literal 当作持续约束。把验证切换单列，便于审查 stable identity rule 是否被正确落地。
+原因：schema-owned create surface 的最大风险不是读取实现，而是 verifier 是否会错误地把 seed literal 当作持续约束。把验证切换单列，便于审查 stable identity rule 是否被正确落地。
 
 ### 2026-03-18: 将正式文档合并与 patch 清理放到最后
 
@@ -62,20 +62,20 @@ task-009 -> task-010 -> task-011
 
 ## Progress Notes
 
-- 2026-03-18: `docs/design-docs/legacy/design-007-template-instance-metadata-patch.md` 的前身已建立，并明确 `_schema.instance`、system-derived `templates`、stable identity rule 与 verifier 语义切换
+- 2026-03-18: `docs/design-docs/legacy/design-007-template-instance-metadata-patch.md` 的前身已建立，并明确 schema-owned create surface、system-derived `templates`、stable identity rule 与 verifier 语义切换
 - 2026-03-18: 本计划与 `task-009` 至 `task-011` 作为该 patch 的实现入口
-- 2026-03-19: `_schema.instance` 创建模型、schema-first verifier 语义、README 与正式设计文档已完成收口，`design-007` 已归档并注明 merged ownership
+- 2026-03-19: `_schema.create` 创建模型、schema-first verifier 语义、README 与正式设计文档已完成收口，`design-007` 已归档并注明 merged ownership
 
 ## Definition of Done
 
 `exec-003` 只有在以下条件全部满足时才算完成：
 
-1. 模板归一化层支持 `_schema.instance`，并且不再把 arbitrary outer frontmatter 当作实例骨架
-2. `note new --template` 基于 `_schema.instance` 创建实例 note
+1. 模板归一化层支持 `_schema.create`，并且不再把 arbitrary outer frontmatter 当作实例骨架
+2. `note new --template` 基于 `_schema.create` 创建实例 note
 3. `note new --template <name>` 总是自动注入 `templates: ["[[<name>]]"]`
 4. `note verify` 不再对模板 outer frontmatter 执行 legacy literal-match 校验
 5. stable identity 字段例如 `type` 能通过 `_schema.required` 与 `_schema.properties` 被持续验证
-6. mutable seed 字段例如 `status` 不会因为 `_schema.instance.status: Lead` 而被永久要求等于 `Lead`
+6. mutable seed 字段例如 `status` 不会因为 `_schema.create.status: Lead` 而被永久要求等于 `Lead`
 7. template describe、create、verify 的共享模板语义在测试中得到覆盖
 8. `design-006`、`design-004`、`README.md` 与最终实现一致
 9. `design-007` 被移除或归档，不再作为 active patch contract
@@ -86,7 +86,7 @@ task-009 -> task-010 -> task-011
 执行过程中如果遇到以下情况，不要自行扩展语义，必须先回到 `design-007` 对齐：
 
 - 想把 `_schema.properties.default` 自动升级为实例物化值
-- 想让 `_schema.instance` 重新承担 generic exact-match verify 语义
+- 想让 `_schema.create` 重新承担 generic exact-match verify 语义
 - 想把 `templates` 重新暴露为模板作者必须手写的实例字段
 - 想保留 outer frontmatter literal-match 校验作为新旧并存的长期语义
 - 想在未明确文档合同前临时发明 `const`、`seed_only` 等新 schema 关键字

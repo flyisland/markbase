@@ -1,6 +1,6 @@
 ---
 id: task-010
-title: "切换 `note verify` 到 `_schema.instance` 时代的模板语义"
+title: "切换 `note verify` 到 `_schema.create` 时代的模板语义"
 status: completed
 exec-plan: exec-003
 phase: 2
@@ -35,16 +35,16 @@ completion_criteria:
 
 把 verifier 从 legacy outer-frontmatter literal-match 模式迁移到 `design-007` 规定的 schema-first 模式。
 
-这个任务的关键不是简单删除几条校验，而是明确 `_schema.instance` 在 verify 中只承担 creation blueprint 角色，持续约束必须来自 `_schema.required` 与 `_schema.properties`。
+这个任务的关键不是简单删除几条校验，而是明确 `_schema.create` 在 verify 中只承担 creation blueprint 角色，持续约束必须来自 `_schema.required` 与 `_schema.properties`。
 
 ## Decisions
 
 - verifier 继续从实例 note 的 `templates` 字段解析模板名
 - verifier 继续检查 `_schema.location`、`_schema.required`、`_schema.properties`、link target 和 template body `.base` embed 约束
 - verifier 必须移除对模板 outer frontmatter non-`_schema` 字段的 missing / scalar mismatch / list containment 校验
-- `_schema.instance` 不是 generic exact-match verify surface
+- `_schema.create` 不是 generic exact-match verify surface
 - stable identity 字段例如 `type` 必须通过 `_schema.required` 和 `_schema.properties` 建模后才能被持续验证
-- mutable seed 字段例如 `status` 只因为存在于 `_schema.instance`，不能被 verifier 永久要求等于初始值
+- mutable seed 字段例如 `status` 只因为存在于 `_schema.create`，不能被 verifier 永久要求等于初始值
 - 如果 `note verify <template-name>` 的命令可见行为改变，测试必须明确覆盖新的拒绝或新消息
 
 ## Boundaries
@@ -71,14 +71,14 @@ completion_criteria:
 
 场景: stable identity field `type` is enforced through `_schema.required` and `_schema.properties`, not by seed literal equality alone
 测试: test_note_verify_type_identity_enforced_via_schema
-假设 模板声明 `_schema.instance.type: company`，并通过 `_schema.required` 与 `_schema.properties.type.enum: [company]` 建模
+假设 模板声明 `_schema.create.type: company`，并通过 `_schema.required` 与 `_schema.properties.type.enum: [company]` 建模
 当   实例 note 的 `type` 被改为非 `company`
 那么 verifier 报错
 并且 该错误来源于 schema constraint，而不是 legacy outer-frontmatter literal match
 
 场景: mutable seed field `status` may evolve after creation without verify forcing the seed literal
 测试: test_note_verify_mutable_seed_status_not_frozen_to_initial_value
-假设 模板声明 `_schema.instance.status: Lead`，同时 `_schema.properties.status.enum` 允许 `Lead`、`Active`、`Closed Won`
+假设 模板声明 `_schema.create.status: Lead`，同时 `_schema.properties.status.enum` 允许 `Lead`、`Active`、`Closed Won`
 当   实例 note 的 `status` 变为 `Active`
 那么 verifier 通过
 并且 不会因为初始 seed 是 `Lead` 而要求 literal equality
@@ -92,6 +92,6 @@ completion_criteria:
 
 场景: location, required, property, link, and embedded `.base` checks continue to work after the transition
 测试: test_note_verify_template_semantics_preserved_after_instance_transition
-假设 模板已迁移到 `_schema.instance`
+假设 模板已迁移到 `_schema.create`
 当   验证包含 location、required、enum、link target 与 embedded `.base` 约束的实例 note
 那么 这些既有 schema-driven 检查继续正常工作

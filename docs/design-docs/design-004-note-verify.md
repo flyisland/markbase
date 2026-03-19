@@ -122,9 +122,9 @@ For each loaded template frontmatter object:
 
 - `_schema.location` mismatch: `ERROR`
 - outer frontmatter non-`_schema` seed literals are ignored for verification
-- `_schema.instance` is treated as a creation blueprint, not an exact-equality rule set
+- `_schema.create` is treated as a creation blueprint, not an exact-equality rule set
 - continuing presence, type, enum, and link constraints come from `_schema.required` and `_schema.properties`
-- stable identity fields such as `type` must be modeled through both `_schema.instance` and `_schema.required` / `_schema.properties`
+- stable identity fields such as `type` must be modeled through both `_schema.create` and `_schema.required` / `_schema.properties`
 - mutable seed fields such as `status` may change after creation as long as they still satisfy the declared schema
 
 Verifier also checks template Markdown body embeds:

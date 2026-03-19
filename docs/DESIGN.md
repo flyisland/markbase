@@ -19,7 +19,7 @@ This file is the entry index for design documents.
 
 ## Legacy Design Docs
 
-- `design-docs/legacy/design-007-template-instance-metadata-patch.md`: archived transition patch for `_schema.instance`; retained for history after its content was merged into `design-docs/design-006-template-system.md`, `design-docs/design-004-note-verify.md`, and `README.md`
+- `design-docs/legacy/design-007-template-instance-metadata-patch.md`: archived transition patch for the schema-owned create surface; retained for history after its content was merged into `design-docs/design-006-template-system.md`, `design-docs/design-004-note-verify.md`, and `README.md`
 - `design-docs/legacy/index.md`: archived feature-level design docs that predate the current Exec Plan / Task Spec structure
 - `design-docs/legacy/query_design.md`: query language and translation behavior
 - `design-docs/legacy/properties_design.md`: file vs note property model

@@ -104,7 +104,7 @@ type: legacy-template
 status: Lead
 aliases: ["ACME Legacy"]
 _schema:
-  instance:
+  create:
     type: company
     status: Lead
 ---
@@ -151,7 +151,7 @@ _schema:
     type:
       type: text
       enum: [company]
-  instance:
+  create:
     type: company
 ---
 
@@ -199,7 +199,7 @@ _schema:
     status:
       type: text
       enum: ["Lead", "Active", "Closed Won"]
-  instance:
+  create:
     type: company
     status: Lead
 ---
@@ -239,7 +239,7 @@ fn test_note_verify_template_file_is_not_a_valid_instance_target() {
         templates_dir.join("company_customer.md"),
         r#"---
 _schema:
-  instance:
+  create:
     type: company
 ---
 
@@ -292,7 +292,7 @@ _schema:
     status:
       type: text
       enum: ["Lead", "Active", "Closed Won"]
-  instance:
+  create:
     type: company
     status: Lead
 ---
@@ -1465,7 +1465,7 @@ fn test_note_create_with_template() {
         templates_dir.join("daily.md"),
         r#"---
 _schema:
-  instance:
+  create:
     template: daily
 ---
 
@@ -3296,7 +3296,7 @@ fn test_note_create_with_template_adds_description_when_template_omits_it() {
         templates_dir.join("daily.md"),
         r#"---
 _schema:
-  instance:
+  create:
     template: daily
 ---
 
@@ -3316,7 +3316,7 @@ Date: {{date}}
 }
 
 #[test]
-fn test_note_create_with_template_uses_schema_instance() {
+fn test_note_create_with_template_uses_schema_create() {
     let vault = TestVault::new();
     let templates_dir = vault.path.join("templates");
     std::fs::create_dir_all(&templates_dir).unwrap();
@@ -3325,7 +3325,7 @@ fn test_note_create_with_template_uses_schema_instance() {
         r#"---
 type: ignored
 _schema:
-  instance:
+  create:
     type: company
     tags: []
 ---
@@ -3354,7 +3354,7 @@ fn test_note_create_with_template_auto_injects_templates_field() {
         templates_dir.join("company_customer.md"),
         r#"---
 _schema:
-  instance:
+  create:
     type: company
 ---
 

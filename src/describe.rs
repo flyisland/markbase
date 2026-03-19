@@ -35,7 +35,7 @@ mod tests {
     }
 
     #[test]
-    fn test_describe_template_shows_normalized_instance_block() {
+    fn test_describe_template_shows_normalized_create_block() {
         let temp_dir = std::env::temp_dir();
         let test_dir = temp_dir.join("mdb_describe_instance_test");
         let _ = fs::remove_dir_all(&test_dir);
@@ -55,7 +55,7 @@ _schema:
         .unwrap();
 
         let result = describe_template(&test_dir, "daily").unwrap();
-        assert!(result.contains("instance:"));
+        assert!(result.contains("create:"));
         assert!(result.contains("type: journal"));
         assert!(result.contains("description: ''") || result.contains("description: \"\""));
         assert!(result.contains("owner: Alice"));

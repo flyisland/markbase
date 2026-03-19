@@ -117,7 +117,7 @@ fn test_template_lifecycle() {
         templates_dir.join("daily.md"),
         r#"---
 _schema:
-  instance:
+  create:
     template: daily
     type: journal
 ---
@@ -138,7 +138,7 @@ Time: {{time}}
         templates_dir.join("project.md"),
         r#"---
 _schema:
-  instance:
+  create:
     template: project
     type: project
     status: planning

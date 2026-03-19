@@ -16,7 +16,7 @@ boundaries:
     - "src/**"
 completion_criteria:
   - id: "cc-001"
-    scenario: "`design-006` reflects `_schema.instance` as the active template creation model"
+    scenario: "`design-006` reflects `_schema.create` as the active template creation model"
     test: "doc review"
   - id: "cc-002"
     scenario: "`design-004` reflects the new verifier semantics for seed values and stable identity fields"
@@ -37,7 +37,7 @@ completion_criteria:
 
 ## Decisions
 
-- `design-006` 必须接收 `_schema.instance`、system-derived `templates` 与新 creation contract
+- `design-006` 必须接收 `_schema.create`、system-derived `templates` 与新 creation contract
 - `design-004` 必须接收 verifier 侧的语义切换，包括 stable identity rule 的落地结果
 - README 中所有模板示例都必须改为新作者面，不再要求在模板 outer frontmatter 中手写 `type`、`templates` 等 seed fields
 - `design-007` 完成使命后必须被删除或移入 legacy，不能长期与 `design-006` 共同作为 active contract
@@ -58,11 +58,11 @@ completion_criteria:
 
 ## Completion Criteria
 
-场景: `design-006` reflects `_schema.instance` as the active template creation model
+场景: `design-006` reflects `_schema.create` as the active template creation model
 测试: doc review
 假设 前两阶段实现已完成
 当   阅读 `design-006`
-那么 其创建语义、归一化规则和 example 都以 `_schema.instance` 为正式 active contract
+那么 其创建语义、归一化规则和 example 都以 `_schema.create` 为正式 active contract
 
 场景: `design-004` reflects the new verifier semantics for seed values and stable identity fields
 测试: doc review
@@ -75,7 +75,7 @@ completion_criteria:
 测试: doc review
 假设 用户查看 `template describe` / `note new --template` 相关说明
 当   阅读 README 示例
-那么 示例只展示 `_schema.instance` 作者面与 system-derived `templates`
+那么 示例只展示 `_schema.create` 作者面与 system-derived `templates`
 
 场景: `design-007` is removed or archived once its content is absorbed
 测试: doc review

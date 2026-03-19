@@ -10,7 +10,7 @@ pub const DEFAULT_NOTE_DESCRIPTION: &str = "临时笔记";
 #[derive(Debug, Clone)]
 pub struct TemplateDocument {
     frontmatter: Map<String, Value>,
-    instance_frontmatter: Map<String, Value>,
+    create_frontmatter: Map<String, Value>,
     body: String,
     location: Option<String>,
     name: Option<String>,
@@ -31,11 +31,11 @@ impl TemplateDocument {
             Err(_) => (Map::new(), content.to_string()),
         };
 
-        let (frontmatter, instance_frontmatter, location) = normalize_frontmatter(frontmatter);
+        let (frontmatter, create_frontmatter, location) = normalize_frontmatter(frontmatter);
 
         Self {
             frontmatter,
-            instance_frontmatter,
+            create_frontmatter,
             body,
             location,
             name: None,
@@ -62,8 +62,8 @@ impl TemplateDocument {
         render_document(&self.frontmatter, &self.body)
     }
 
-    pub fn render_for_instance(&self) -> Result<String, Box<dyn std::error::Error>> {
-        let mut frontmatter = self.instance_frontmatter.clone();
+    pub fn render_for_create(&self) -> Result<String, Box<dyn std::error::Error>> {
+        let mut frontmatter = self.create_frontmatter.clone();
         frontmatter.remove("_schema");
         frontmatter.remove("templates");
 
@@ -146,42 +146,42 @@ fn normalize_frontmatter(
         .and_then(Value::as_object)
         .cloned()
         .unwrap_or_default();
-    let legacy_instance_keys = collect_legacy_instance_keys(&frontmatter, &schema_snapshot);
-    let legacy_instance_frontmatter =
-        extract_legacy_instance_frontmatter(&frontmatter, &legacy_instance_keys);
+    let legacy_create_keys = collect_legacy_create_keys(&frontmatter, &schema_snapshot);
+    let legacy_create_frontmatter =
+        extract_legacy_create_frontmatter(&frontmatter, &legacy_create_keys);
 
-    let instance_frontmatter = {
+    let create_frontmatter = {
         let schema = frontmatter
             .get_mut("_schema")
             .and_then(Value::as_object_mut)
             .expect("schema must be object");
-        let instance_value = schema
-            .entry("instance".to_string())
+        let create_value = schema
+            .entry("create".to_string())
             .or_insert_with(|| Value::Object(Map::new()));
-        if !instance_value.is_object() {
-            *instance_value = Value::Object(Map::new());
+        if !create_value.is_object() {
+            *create_value = Value::Object(Map::new());
         }
-        let instance = instance_value
+        let create = create_value
             .as_object_mut()
-            .expect("instance schema must be object");
-        for (key, value) in legacy_instance_frontmatter {
-            instance.entry(key).or_insert(value);
+            .expect("create schema must be object");
+        for (key, value) in legacy_create_frontmatter {
+            create.entry(key).or_insert(value);
         }
-        if !matches!(instance.get("description"), Some(Value::String(_))) {
-            instance.insert("description".to_string(), Value::String(String::new()));
+        if !matches!(create.get("description"), Some(Value::String(_))) {
+            create.insert("description".to_string(), Value::String(String::new()));
         }
 
-        instance.clone()
+        create.clone()
     };
 
-    for key in legacy_instance_keys {
+    for key in legacy_create_keys {
         frontmatter.remove(&key);
     }
 
-    (frontmatter, instance_frontmatter, location)
+    (frontmatter, create_frontmatter, location)
 }
 
-fn collect_legacy_instance_keys(
+fn collect_legacy_create_keys(
     frontmatter: &Map<String, Value>,
     schema: &Map<String, Value>,
 ) -> Vec<String> {
@@ -220,11 +220,11 @@ fn collect_legacy_instance_keys(
         .collect()
 }
 
-fn extract_legacy_instance_frontmatter(
+fn extract_legacy_create_frontmatter(
     frontmatter: &Map<String, Value>,
-    legacy_instance_keys: &[String],
+    legacy_create_keys: &[String],
 ) -> Map<String, Value> {
-    legacy_instance_keys
+    legacy_create_keys
         .iter()
         .filter_map(|key| {
             frontmatter
@@ -264,7 +264,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_from_content_normalizes_instance_block() {
+    fn test_from_content_normalizes_create_block() {
         let doc = TemplateDocument::from_content(
             r#"---
 type: company
@@ -279,68 +279,68 @@ _schema:
         assert!(described.contains("required:"));
         assert!(described.contains("- description"));
         assert!(described.contains("type: text"));
-        assert!(described.contains("instance:"));
+        assert!(described.contains("create:"));
         assert!(described.contains("type: company"));
         assert!(described.contains("description: ''") || described.contains("description: \"\""));
         assert!(described.contains("owner: Alice"));
-        assert!(!described.contains("instance:\n    owner: Alice"));
+        assert!(!described.contains("create:\n    owner: Alice"));
         assert_eq!(doc.location(), Some("customers/"));
     }
 
     #[test]
-    fn test_render_for_instance_uses_instance_block() {
+    fn test_render_for_create_uses_create_block() {
         let doc = TemplateDocument::from_content(
             r#"---
 type: company
 _schema:
   location: customers/
-  instance:
+  create:
     type: person
 ---
 # Body"#,
         );
 
-        let instance = doc.render_for_instance().unwrap();
-        assert!(instance.contains("type: person"));
-        assert!(!instance.contains("type: company"));
-        assert!(instance.contains("description: ''") || instance.contains("description: \"\""));
-        assert!(!instance.contains("_schema"));
-        assert!(!instance.contains("location:"));
+        let created = doc.render_for_create().unwrap();
+        assert!(created.contains("type: person"));
+        assert!(!created.contains("type: company"));
+        assert!(created.contains("description: ''") || created.contains("description: \"\""));
+        assert!(!created.contains("_schema"));
+        assert!(!created.contains("location:"));
     }
 
     #[test]
-    fn test_render_for_instance_does_not_copy_legacy_outer_templates_field() {
+    fn test_render_for_create_does_not_copy_legacy_outer_templates_field() {
         let doc = TemplateDocument::from_content(
             r#"---
 templates:
   - "[[legacy]]"
 _schema:
-  instance:
+  create:
     type: company
 ---
 # Body"#,
         );
 
-        let instance = doc.render_for_instance().unwrap();
-        assert!(instance.contains("type: company"));
-        assert!(!instance.contains("[[legacy]]"));
+        let created = doc.render_for_create().unwrap();
+        assert!(created.contains("type: company"));
+        assert!(!created.contains("[[legacy]]"));
     }
 
     #[test]
-    fn test_render_for_instance_does_not_copy_arbitrary_outer_frontmatter() {
+    fn test_render_for_create_does_not_copy_arbitrary_outer_frontmatter() {
         let doc = TemplateDocument::from_content(
             r#"---
 owner: Alice
 _schema:
-  instance:
+  create:
     type: company
 ---
 # Body"#,
         );
 
-        let instance = doc.render_for_instance().unwrap();
-        assert!(instance.contains("type: company"));
-        assert!(!instance.contains("owner: Alice"));
+        let created = doc.render_for_create().unwrap();
+        assert!(created.contains("type: company"));
+        assert!(!created.contains("owner: Alice"));
     }
 
     #[test]

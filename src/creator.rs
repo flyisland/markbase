@@ -100,7 +100,7 @@ fn process_template_document(
     template: &TemplateDocument,
     name: &str,
 ) -> Result<(String, Option<String>), Box<dyn std::error::Error>> {
-    let content = template.render_for_instance()?;
+    let content = template.render_for_create()?;
     Ok((
         replace_template_variables(&content, name),
         template.location().map(ToString::to_string),
@@ -292,9 +292,9 @@ mod tests {
     }
 
     #[test]
-    fn test_create_note_with_template_uses_schema_instance() {
+    fn test_create_note_with_template_uses_schema_create() {
         let temp_dir = std::env::temp_dir();
-        let test_dir = temp_dir.join("mdb_test_schema_instance");
+        let test_dir = temp_dir.join("mdb_test_schema_create");
         let _ = fs::remove_dir_all(&test_dir);
 
         let tmpl_dir = test_dir.join("templates");
@@ -304,7 +304,7 @@ mod tests {
             r#"---
 type: ignored
 _schema:
-  instance:
+  create:
     type: company
     tags: []
 ---
@@ -335,7 +335,7 @@ _schema:
             tmpl_dir.join("customer.md"),
             r#"---
 _schema:
-  instance:
+  create:
     type: company
 ---
 # {{name}}"#,
@@ -366,7 +366,7 @@ _schema:
 templates:
   - "[[legacy-template]]"
 _schema:
-  instance:
+  create:
     type: company
 ---
 # {{name}}"#,
@@ -453,7 +453,7 @@ _schema:
 _schema:
   description: Customer template
   required: [name]
-  instance:
+  create:
     type: company
     template: company_customer
 ---
@@ -469,7 +469,7 @@ _schema:
     fn test_process_template_preserves_frontmatter_fields() {
         let content = r#"---
 _schema:
-  instance:
+  create:
     type: person
     template: person_work
     name: John
@@ -496,7 +496,7 @@ _schema:
     fn test_process_template_with_name_variable() {
         let content = r#"---
 _schema:
-  instance:
+  create:
     type: test
 ---
 # {{name}}
@@ -509,7 +509,7 @@ Content"#;
     fn test_process_template_frontmatter_format() {
         let content = r#"---
 _schema:
-  instance:
+  create:
     type: person
     template: person_work
     aliases: []
@@ -529,7 +529,7 @@ _schema:
 _schema:
   description: Customer template
   location: customers/
-  instance:
+  create:
     type: company
     template: company_customer
 ---

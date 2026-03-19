@@ -329,7 +329,7 @@ Checks that the note conforms to all constraints defined in its referenced MTS t
 - Template Markdown body `.base` embeds must also appear in the note body, so required embedded views are not dropped from instances
 - Embedded `.base` targets in the Markdown body must exist in the indexed vault; missing or unreadable `.base` targets are reported as errors after the rest of verification continues
 
-`note verify` no longer treats template outer-frontmatter seed values as literal-match requirements. `_schema.instance` defines creation-time defaults, while continuing invariants must be modeled through `_schema.required` and `_schema.properties`. In practice, stable identity fields such as `type` should be declared in both places, while mutable seed fields such as `status` may evolve after creation as long as they still satisfy the schema.
+`note verify` no longer treats template outer-frontmatter seed values as literal-match requirements. `_schema.create` defines creation-time defaults, while continuing invariants must be modeled through `_schema.required` and `_schema.properties`. In practice, stable identity fields such as `type` should be declared in both places, while mutable seed fields such as `status` may evolve after creation as long as they still satisfy the schema.
 
 Verification issues are reported to stderr. For issue output, the header includes `file.path`, and each schema-related issue includes a compact `Definition:` line so agents can repair notes with the expected type/constraints. Exit code is non-zero whenever verification produces any `ERROR`; dangling link references remain `INFO` and do not fail the command by themselves.
 
@@ -437,7 +437,7 @@ markbase template list -o table   # Compact Markdown table
 markbase template describe daily  # Show normalized template content
 ```
 
-Templates are stored in `templates/` under base-dir. `template describe` shows the normalized template view used by the CLI, including `_schema.instance` and auto-injected `description` schema/default fields when older templates omit them. For new templates, author instance defaults under `_schema.instance` and let `markbase note new --template` inject the `templates` field automatically:
+Templates are stored in `templates/` under base-dir. `template describe` shows the normalized template view used by the CLI, including `_schema.create` and auto-injected `description` schema/default fields when older templates omit them. For new templates, author note-creation defaults under `_schema.create` and let `markbase note new --template` inject the `templates` field automatically:
 
 ```yaml
 _schema:
@@ -453,13 +453,13 @@ _schema:
     type:
       type: text
       enum: [company]
-  instance:
+  create:
     description: ""
     type: company
     tags: []
 ```
 
-Here, `_schema.description` is the template routing prompt, `_schema.properties.description` is the schema definition for the instance field, and `_schema.instance.description` is the concrete value written into new notes. Created notes receive `templates: ["[[<template-name>]]"]` from the CLI; template authors should not hand-write that field in the template.
+Here, `_schema.description` is the template routing prompt, `_schema.properties.description` is the schema definition for the instance field, and `_schema.create.description` is the concrete value written into new notes. Created notes receive `templates: ["[[<template-name>]]"]` from the CLI; template authors should not hand-write that field in the template.
 
 ## Query Syntax
 
