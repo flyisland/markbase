@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-03-19
+
+### Changed
+
+- **Partial note resolution matching** - `markbase note resolve` now falls back from exact-name and alias matches to deterministic partial `file.name` matches, returning the new statuses `name_contains_query` and `query_contains_name`, keeping aliases ahead of partial candidates, and ordering multiple partial matches by distance from the query before name/path tiebreakers.
+
 ## [0.6.2] - 2026-03-16
 
 ### Changed
@@ -167,6 +173,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Note renaming with link updates
 - Multiple output formats (table, json, list)
 
+[0.7.0]: https://github.com/flyisland/markbase/compare/0.6.2...0.7.0
 [0.6.2]: https://github.com/flyisland/markbase/compare/0.6.1...0.6.2
 [0.6.1]: https://github.com/flyisland/markbase/compare/0.6.0...0.6.1
 [0.5.0]: https://github.com/flyisland/markbase/compare/0.4.0...0.5.0
