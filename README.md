@@ -299,6 +299,8 @@ Each match includes `name`, `path`, `type`, `description`, and `matched_by`. Mis
 
 `matched_by` can be `name`, `alias`, `name_contains_query`, or `query_contains_name`.
 
+Matching is case-insensitive for exact name, alias, and partial `file.name` resolution. Returned `name` and `path` keep their indexed casing.
+
 Match priority is deterministic:
 - `name`
 - `alias`

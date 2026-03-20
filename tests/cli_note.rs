@@ -2653,6 +2653,30 @@ aliases: ["ACME Corp"]
 }
 
 #[test]
+fn test_note_resolve_exact_match_is_case_insensitive() {
+    let vault = TestVault::new();
+    vault.create_note(
+        "acme",
+        r#"---
+type: company
+aliases: ["ACME Corp"]
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_resolve(&["ACME"]);
+
+    assert_cli_success(&output);
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json[0]["status"], "exact");
+    assert_eq!(json[0]["matches"][0]["name"], "acme");
+    assert_eq!(json[0]["matches"][0]["matched_by"], "name");
+}
+
+#[test]
 fn test_note_resolve_alias_match() {
     let vault = TestVault::new();
     vault.create_note(
@@ -2668,6 +2692,30 @@ aliases: ["阿里"]
     vault.index();
 
     let output = vault.note_resolve(&["阿里"]);
+
+    assert_cli_success(&output);
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json[0]["status"], "alias");
+    assert_eq!(json[0]["matches"][0]["name"], "acme");
+    assert_eq!(json[0]["matches"][0]["matched_by"], "alias");
+}
+
+#[test]
+fn test_note_resolve_alias_match_is_case_insensitive() {
+    let vault = TestVault::new();
+    vault.create_note(
+        "acme",
+        r#"---
+type: company
+aliases: ["ACME Corp"]
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_resolve(&["acme corp"]);
 
     assert_cli_success(&output);
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -2755,6 +2803,43 @@ description: Network accessory brand
     assert_eq!(json[0]["status"], "query_contains_name");
     assert_eq!(json[0]["matches"][0]["name"], "绿联科技");
     assert_eq!(json[0]["matches"][0]["matched_by"], "query_contains_name");
+}
+
+#[test]
+fn test_note_resolve_partial_name_matching_is_case_insensitive() {
+    let vault = TestVault::new();
+    vault.create_note(
+        "AcmePlatform",
+        r#"---
+type: company
+description: Case-insensitive partial match sample
+---
+
+# ACME Platform
+"#,
+    );
+    vault.create_note(
+        "Acme",
+        r#"---
+type: company
+description: Case-insensitive query-contains-name sample
+---
+
+# ACME
+"#,
+    );
+    vault.index();
+
+    let output = vault.note_resolve(&["platform", "bestACMEcustomer"]);
+
+    assert_cli_success(&output);
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json[0]["status"], "name_contains_query");
+    assert_eq!(json[0]["matches"][0]["name"], "AcmePlatform");
+    assert_eq!(json[0]["matches"][0]["matched_by"], "name_contains_query");
+    assert_eq!(json[1]["status"], "query_contains_name");
+    assert_eq!(json[1]["matches"][0]["name"], "Acme");
+    assert_eq!(json[1]["matches"][0]["matched_by"], "query_contains_name");
 }
 
 #[test]
@@ -3010,7 +3095,7 @@ fn test_note_resolve_behavior_matches_readme_contract() {
         "acme",
         r#"---
 type: company
-aliases: ["阿里"]
+aliases: ["ACME Corp"]
 description: Exact and alias sample
 ---
 
@@ -3052,8 +3137,8 @@ description: Another person
     vault.index();
 
     let output = vault.note_resolve(&[
-        "acme",
-        "阿里",
+        "ACME",
+        "acme corp",
         "绿联",
         "深圳绿联科技有限公司",
         "张伟",

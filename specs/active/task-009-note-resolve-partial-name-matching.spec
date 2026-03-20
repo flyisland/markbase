@@ -8,8 +8,8 @@ boundaries:
     - "tests/cli_note.rs"
     - "README.md"
     - "docs/design-docs/design-008-note-resolve.md"
+    - "specs/active/task-009-note-resolve-partial-name-matching.spec"
   forbidden_patterns:
-    - "specs/**"
     - "src/query/**"
     - "src/db.rs"
     - "src/scanner.rs"
@@ -29,6 +29,9 @@ completion_criteria:
   - id: "cc-005"
     scenario: "README 对 resolve 新状态和匹配来源的说明与实现一致"
     test: "test_note_resolve_behavior_matches_readme_contract"
+  - id: "cc-006"
+    scenario: "name、alias 和部分名称匹配都不区分大小写"
+    test: "test_note_resolve_partial_name_matching_is_case_insensitive"
 ---
 
 ## Intent
@@ -38,7 +41,7 @@ completion_criteria:
 - 查询名称是笔记名称的一部分
 - 笔记名称是查询名称的一部分
 
-这个任务的目标不是把 `resolve` 扩展成 fuzzy search，而是在不牺牲可预测性的前提下，降低用户和 agent 因“名称写长一点或写短一点”导致的 miss 率。
+这个任务的目标不是把 `resolve` 扩展成 fuzzy search，而是在不牺牲可预测性的前提下，降低用户和 agent 因“名称写长一点或写短一点”、或者仅仅大小写不同导致的 miss 率。
 
 ## Decisions
 
@@ -55,8 +58,8 @@ completion_criteria:
   1. `abs(length(name) - length(query))` 升序
   2. `name` 升序
   3. `path` 升序
-- 该任务不改变输入校验规则：仍然要求 path-free 且不带扩展名
-- 该任务不改变大小写敏感或空白敏感语义
+- 该任务不改变输入校验规则，但把 `name` / `alias` / 部分名称匹配统一为大小写不敏感
+- 该任务不改变空白敏感语义
 
 ## Boundaries
 
@@ -69,11 +72,12 @@ completion_criteria:
 
 ### Forbidden
 
-- 不得把 `note resolve` 扩展为 fuzzy search、语义检索或大小写不敏感匹配
+- 不得把 `note resolve` 扩展为 fuzzy search 或语义检索
 - 不得为 `aliases` 增加部分匹配
 - 不得修改数据库 schema，或把匹配状态写回索引
 - 不得改变 `note resolve` 的输入校验边界
 - 不得通过删除 `multiple` 候选来制造“更智能”的单命中结果
+- 不得把大小写不敏感匹配理解为路径匹配、扩展名剥离或 alias 部分匹配
 
 ## Completion Criteria
 
@@ -111,3 +115,11 @@ completion_criteria:
 假设 README 已记录 `exact`、`alias`、`name_contains_query`、`query_contains_name`、`multiple`、`missing`
 当   执行覆盖这些状态的 CLI 回归测试
 那么 README 中的用户可见行为与实现一致
+
+场景: name、alias 和部分名称匹配都不区分大小写
+测试: test_note_resolve_partial_name_matching_is_case_insensitive
+假设 vault 中存在名称为 `AcmePlatform` 的 note
+并且 另一个 note 的 alias 为 `ACME Corp`
+当   执行 `markbase note resolve "platform" "acme corp"`
+那么 `platform` 的结果按 `name_contains_query` 命中 `AcmePlatform`
+并且 `acme corp` 的结果按 `alias` 命中对应 note

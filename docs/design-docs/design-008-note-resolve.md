@@ -22,7 +22,7 @@ This document does not define:
 - path-based HTTP route resolution for web views
 - render-time embed resolution
 - rename-time link rewriting
-- fuzzy search, semantic search, alias partial matching, or case-insensitive matching
+- fuzzy search, semantic search, or alias partial matching
 
 ## Command Contract
 
@@ -83,10 +83,10 @@ As a result, exact-name resolution is name-based, not path-based.
 
 For each query string `q`, resolver executes one indexed lookup with this logical shape:
 
-- match rows where `notes.name == q`
-- also match rows where `q` is contained in frontmatter `aliases`
-- also match rows where `notes.name` contains `q` and `notes.name != q`
-- also match rows where `q` contains `notes.name` and `notes.name != q`
+- match rows where `notes.name == q`, case-insensitively
+- also match rows where `q` is contained in frontmatter `aliases`, case-insensitively
+- also match rows where `notes.name` contains `q`, case-insensitively, and `notes.name != q` under the same case-insensitive comparison
+- also match rows where `q` contains `notes.name`, case-insensitively, and `notes.name != q` under the same case-insensitive comparison
 - mark exact-name rows as `matched_by = name`
 - mark alias rows as `matched_by = alias`
 - mark `notes.name LIKE %q%` rows as `matched_by = name_contains_query`
@@ -97,9 +97,8 @@ For each query string `q`, resolver executes one indexed lookup with this logica
 
 Current matching is:
 
-- exact string equality for `name` and `alias`
-- deterministic substring matching for `notes.name` only
-- case-sensitive
+- case-insensitive equality for `name` and `alias`
+- deterministic case-insensitive substring matching for `notes.name` only
 - whitespace-sensitive except for whatever normalization already happened when the note was indexed
 - limited to the current contents of the derived index
 
@@ -197,6 +196,8 @@ Each query becomes one SQL statement against the `notes` table that reads:
 - `properties.type`
 - `properties.description`
 - a computed `matched_by`
+
+The query compares `name`, `aliases`, and partial-name candidates with case-insensitive string matching while preserving the original stored casing in returned `name`, `path`, `type`, and `description` fields.
 
 ### 4. Row normalization
 

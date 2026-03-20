@@ -52,28 +52,44 @@ pub fn resolve_names(
 
 fn resolve_name(db: &Database, name: &str) -> Result<ResolveResult, Box<dyn std::error::Error>> {
     let escaped = name.replace('\'', "''");
+    let name_matches = format!("lower(name) = lower('{escaped}')");
+    let alias_matches = format!(
+        "EXISTS (\
+             SELECT 1 \
+             FROM UNNEST((properties->'$.\"aliases\"')::VARCHAR[]) AS alias(alias_value) \
+             WHERE lower(alias_value) = lower('{escaped}')\
+         )"
+    );
+    let name_contains_query =
+        format!("contains(lower(name), lower('{escaped}')) AND lower(name) != lower('{escaped}')");
+    let query_contains_name =
+        format!("contains(lower('{escaped}'), lower(name)) AND lower(name) != lower('{escaped}')");
     let sql = format!(
         "SELECT path, name, json_extract_string(properties, '$.\"type\"') AS type, \
          json_extract_string(properties, '$.\"description\"') AS description, \
          CASE \
-             WHEN name = '{escaped}' THEN 'name' \
-             WHEN list_contains((properties->'$.\"aliases\"')::VARCHAR[], '{escaped}') THEN 'alias' \
-             WHEN contains(name, '{escaped}') AND name != '{escaped}' THEN 'name_contains_query' \
-             WHEN contains('{escaped}', name) AND name != '{escaped}' THEN 'query_contains_name' \
+             WHEN {name_matches} THEN 'name' \
+             WHEN {alias_matches} THEN 'alias' \
+             WHEN {name_contains_query} THEN 'name_contains_query' \
+             WHEN {query_contains_name} THEN 'query_contains_name' \
          END AS matched_by \
          FROM notes \
-         WHERE name = '{escaped}' \
-            OR list_contains((properties->'$.\"aliases\"')::VARCHAR[], '{escaped}') \
-            OR (contains(name, '{escaped}') AND name != '{escaped}') \
-            OR (contains('{escaped}', name) AND name != '{escaped}') \
+         WHERE {name_matches} \
+            OR {alias_matches} \
+            OR ({name_contains_query}) \
+            OR ({query_contains_name}) \
          ORDER BY CASE \
-             WHEN name = '{escaped}' THEN 0 \
-             WHEN list_contains((properties->'$.\"aliases\"')::VARCHAR[], '{escaped}') THEN 1 \
-             WHEN contains(name, '{escaped}') AND name != '{escaped}' THEN 2 \
+             WHEN {name_matches} THEN 0 \
+             WHEN {alias_matches} THEN 1 \
+             WHEN {name_contains_query} THEN 2 \
              ELSE 3 \
          END, \
          abs(length(name) - length('{escaped}')), \
-         name, path"
+         name, path",
+        name_matches = name_matches,
+        alias_matches = alias_matches,
+        name_contains_query = name_contains_query,
+        query_contains_name = query_contains_name,
     );
 
     let (field_names, rows) = db.query(&sql, "*", usize::MAX)?;
@@ -195,6 +211,25 @@ mod tests {
     }
 
     #[test]
+    fn test_resolve_exact_match_is_case_insensitive() {
+        let (_dir, db) = make_db();
+        db.upsert_note(&note(
+            "acme",
+            "companies/acme.md",
+            &["ACME Corp"],
+            Some("company"),
+            Some("A customer company"),
+        ))
+        .unwrap();
+
+        let results = resolve_names(&db, &["ACME".to_string()]).unwrap();
+
+        assert_eq!(results[0].status, ResolveStatus::Exact);
+        assert_eq!(results[0].matches[0].matched_by, MatchSource::Name);
+        assert_eq!(results[0].matches[0].name, "acme");
+    }
+
+    #[test]
     fn test_resolve_alias_match() {
         let (_dir, db) = make_db();
         db.upsert_note(&note(
@@ -214,6 +249,25 @@ mod tests {
             results[0].matches[0].description.as_deref(),
             Some("A customer company")
         );
+    }
+
+    #[test]
+    fn test_resolve_alias_match_is_case_insensitive() {
+        let (_dir, db) = make_db();
+        db.upsert_note(&note(
+            "acme",
+            "companies/acme.md",
+            &["ACME Corp"],
+            Some("company"),
+            Some("A customer company"),
+        ))
+        .unwrap();
+
+        let results = resolve_names(&db, &["acme corp".to_string()]).unwrap();
+
+        assert_eq!(results[0].status, ResolveStatus::Alias);
+        assert_eq!(results[0].matches[0].matched_by, MatchSource::Alias);
+        assert_eq!(results[0].matches[0].name, "acme");
     }
 
     #[test]
@@ -264,6 +318,28 @@ mod tests {
     }
 
     #[test]
+    fn test_resolve_name_contains_query_match_is_case_insensitive() {
+        let (_dir, db) = make_db();
+        db.upsert_note(&note(
+            "AcmePlatform",
+            "companies/acme-platform.md",
+            &[],
+            Some("company"),
+            Some("A company"),
+        ))
+        .unwrap();
+
+        let results = resolve_names(&db, &["platform".to_string()]).unwrap();
+
+        assert_eq!(results[0].status, ResolveStatus::NameContainsQuery);
+        assert_eq!(
+            results[0].matches[0].matched_by,
+            MatchSource::NameContainsQuery
+        );
+        assert_eq!(results[0].matches[0].name, "AcmePlatform");
+    }
+
+    #[test]
     fn test_resolve_query_contains_name_match() {
         let (_dir, db) = make_db();
         db.upsert_note(&note(
@@ -282,6 +358,28 @@ mod tests {
             results[0].matches[0].matched_by,
             MatchSource::QueryContainsName
         );
+    }
+
+    #[test]
+    fn test_resolve_query_contains_name_match_is_case_insensitive() {
+        let (_dir, db) = make_db();
+        db.upsert_note(&note(
+            "Acme",
+            "companies/acme.md",
+            &[],
+            Some("company"),
+            Some("A company"),
+        ))
+        .unwrap();
+
+        let results = resolve_names(&db, &["bestACMEcustomer".to_string()]).unwrap();
+
+        assert_eq!(results[0].status, ResolveStatus::QueryContainsName);
+        assert_eq!(
+            results[0].matches[0].matched_by,
+            MatchSource::QueryContainsName
+        );
+        assert_eq!(results[0].matches[0].name, "Acme");
     }
 
     #[test]
