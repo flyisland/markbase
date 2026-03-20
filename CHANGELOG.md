@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2026-03-20
+
+### Changed
+
+- **Template creation contract** - Templates now define note creation defaults under `_schema.create`, `markbase note new --template` renders from that block instead of copying arbitrary outer frontmatter seed values, and the CLI auto-injects the instance `templates` field so template links stay normalized.
+- **Template verification semantics** - `markbase note verify` now rejects template files passed as instance targets and stops treating template outer-frontmatter seed values as ongoing literal-match requirements, so mutable instance fields can evolve after creation while schema constraints remain enforced.
+- **Template describe and docs** - `markbase template describe`, the template system docs, and the README examples now present `_schema.create` as the normalized authoring model for template-backed note creation.
+
 ## [0.7.0] - 2026-03-19
 
 ### Changed
