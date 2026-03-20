@@ -1,78 +1,94 @@
 # Documentation Guide
 
-This document tells humans and agents where to place documentation in markbase and which document is authoritative when multiple layers exist.
+This file is the repository-level guide to markbase's Specmate-aligned
+documentation system.
 
-## 1. Current Document Layers
+The formal managed-document contract lives in
+`docs/design-docs/implemented/design-009-document-system.md`.
 
-Markbase currently uses this subset of the larger document-driven workflow:
+## 1. Managed vs Repository vs Supporting
 
-- `ARCHITECTURE.md`: stable system map, module boundaries, invariants, and shared-logic rules
-- `docs/core-beliefs.md`: project-level decision rules for ambiguous implementation choices
-- `README.md`: user-facing CLI behavior and command contract
-- `docs/design-docs/`: current feature or subsystem design contracts
-- `docs/exec-plans/active/`: active multi-task execution plans and sequencing
-- `docs/exec-plans/completed/`: completed execution plans kept for rationale and history
-- `docs/exec-plans/legacy/`: older implementation plans from before the current plan/spec structure
-- `specs/active/`: active task-level specs with intent, boundaries, and completion criteria
-- `specs/completed/`: completed task specs kept for acceptance history and delivery rationale
-- `docs/design-docs/legacy/`: older or superseded design references kept for history, not the default active contract
+Use these categories:
 
-This repo does not currently rely on a required `specs/project.spec` or PRD layer. Do not invent those as part of routine work unless the repo explicitly adopts them.
+- Managed documents: PRDs, Design Docs, Design Patches, Exec Plans, Guidelines,
+  Task Specs, `specs/project.md`, and `specs/org.md`
+- Repository documents outside management: `AGENTS.md`, `ARCHITECTURE.md`,
+  `README.md`, `docs/DOCUMENTATION.md`, `docs/DESIGN.md`, and `docs/PLANS.md`
+- Supporting material: `docs/references/` and `docs/generated/`
 
-## 2. Classification Rules
+## 2. Placement Rules
 
-When deciding where a new document belongs, use the first matching rule:
+When creating or moving managed documents, use these paths:
 
-1. If it defines stable cross-module structure or invariants for the whole repo, put it in `ARCHITECTURE.md` or link it from there.
-2. If it records project-wide engineering beliefs that guide choices but are not mechanically verifiable, put it in `docs/core-beliefs.md`.
-3. If it defines current feature behavior, data shape, interface semantics, or subsystem boundaries that should remain true after implementation, put it in `docs/design-docs/`.
-4. If it coordinates multiple tasks for one delivery goal, including order, dependencies, and progress, put it in `docs/exec-plans/active/`.
-5. If it is a single task contract with intent, decisions, boundaries, and completion criteria, put it in `specs/active/`.
-6. If it is a completed task contract you want to preserve for history, move it to `specs/completed/`.
-7. If it explains current user-visible CLI behavior, examples, or flags, update `README.md`.
-8. If it is only historical background or has been superseded by a newer design or plan, move it to the matching `legacy/` directory instead of treating it as active guidance.
+- `docs/prd/draft/`, `docs/prd/approved/`, `docs/prd/obsolete/`
+- `docs/design-docs/draft/`, `docs/design-docs/candidate/`,
+  `docs/design-docs/implemented/`, `docs/design-docs/obsolete/`
+- `docs/exec-plans/draft/`, `docs/exec-plans/active/`,
+  `docs/exec-plans/archived/`
+- `docs/guidelines/`
+- `specs/active/`
+- `specs/archived/`
+- `specs/project.md`
+- `specs/org.md`
 
-## 3. Authority And Precedence
+Do not place active design contracts at `docs/design-docs/` root.
+
+Do not use `specs/archived/` or `docs/exec-plans/archived/`; those were
+pre-migration locations.
+
+## 3. Naming Rules
+
+- PRDs, Design Docs, Design Patches, and Exec Plans use three-digit IDs.
+- Task Specs use four-digit IDs.
+- Task Spec IDs are globally unique and never reused.
+- Task Specs use `.md`, not `.spec`.
+- Design Patches use `design-<parent-id>-patch-<nn>-<slug>.md`.
+
+## 4. Authority Order
 
 When documents overlap, use this order:
 
-1. `specs/active/*.spec` for the specific task they cover
-2. `docs/exec-plans/active/` for task ordering, dependencies, and progress
-3. `docs/design-docs/` for active feature-level design contracts
-4. `ARCHITECTURE.md` and `docs/core-beliefs.md` for global boundaries and decision rules
-5. `README.md` for user-facing command behavior
-6. `specs/completed/`, `docs/design-docs/legacy/`, and `docs/exec-plans/legacy/` for background only
+1. `specs/active/task-*.md` for the specific task they cover
+2. `docs/exec-plans/active/` for sequencing and execution progress
+3. `docs/design-docs/implemented/` for current system contracts
+4. `docs/design-docs/candidate/` for approved-but-not-yet-implemented targets
+5. `docs/guidelines/` plus `ARCHITECTURE.md` for cross-cutting rules
+6. `README.md` for user-visible CLI behavior
+7. `docs/references/` and `docs/generated/` for background only
 
-If an active task spec or active exec plan conflicts with a legacy document, follow the active spec/plan and update or archive the outdated legacy doc in the same change.
+Do not execute against `docs/design-docs/draft/` documents.
 
-## 4. Lifecycle Rules
+## 5. Lifecycle Rules
 
-- New active design docs go in `docs/design-docs/` using `design-{id}-{slug}.md`.
-- New active exec plans go in `docs/exec-plans/active/` using `exec-{id}-{slug}.md`.
-- Completed exec plans move to `docs/exec-plans/completed/` without renaming.
-- Historical pre-migration implementation plans stay in `docs/exec-plans/legacy/`.
-- Task contracts go in `specs/active/` using `task-{id}-{slug}.spec`.
-- Completed task contracts move to `specs/completed/` without renaming.
-- Superseded or background-only design docs move to `docs/design-docs/legacy/`.
+- New implementation-ready design docs start in `docs/design-docs/candidate/`.
+- Once code fully matches the design, move the doc to
+  `docs/design-docs/implemented/`.
+- Superseded design docs and merged design patches move to
+  `docs/design-docs/obsolete/`.
+- Completed or cancelled Task Specs move to `specs/archived/`.
+- Completed or abandoned Exec Plans move to `docs/exec-plans/archived/`.
+- Historical material that is not part of the managed system belongs in
+  `docs/references/`.
 
-Prefer moving a document between lifecycle directories over inventing a second file for the same artifact.
+## 6. Index Maintenance
 
-## 5. Index Maintenance
+When you change the documentation layout or the managed-doc inventory, update
+these files in the same change:
 
-When you add or move a document, update the matching entry points in the same change:
+- `docs/DESIGN.md`
+- `docs/PLANS.md`
+- `AGENTS.md`
+- `ARCHITECTURE.md` if documentation roles or boundaries changed
+- `README.md` if user-visible behavior changed
 
-- `docs/DESIGN.md` for active or legacy design docs
-- `docs/PLANS.md` for exec plan indexes
-- `AGENTS.md` when the set of core entry documents changes
-- `README.md` when user-visible behavior changes
-- `ARCHITECTURE.md` when structural boundaries or documentation roles change
+## 7. Current Migration Notes
 
-## 6. Agent Shortcut
+Markbase now uses the full managed-document layout, including:
 
-If asked to "classify" a document, decide in this order:
+- lifecycle directories for PRDs, Design Docs, and Exec Plans
+- `docs/guidelines/` for cross-cutting guidance
+- `specs/project.md` and `specs/org.md`
+- four-digit `task-0001` style IDs
 
-1. Is it a stable design contract, an execution tracker, or a task acceptance contract?
-2. Is it active guidance or historical background?
-3. Does it change user-facing behavior, project-wide rules, or only one feature/task?
-
-Then place it in the narrowest authoritative location above and update the relevant index file.
+Pre-migration legacy design and planning material is preserved under
+`docs/references/legacy-designs/` and `docs/references/legacy-exec-plans/`.

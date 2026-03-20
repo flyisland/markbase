@@ -23,25 +23,25 @@ cargo run -- query "author == 'Tom'"
 Before making non-trivial changes, read these in order:
 
 1. `ARCHITECTURE.md`
-2. `docs/core-beliefs.md`
+2. `docs/guidelines/core-beliefs.md`
 3. `docs/DOCUMENTATION.md`
-4. Relevant files under `docs/design-docs/` and `docs/design-docs/legacy/`
+4. Relevant files under `docs/design-docs/implemented/`, `docs/design-docs/candidate/`, and `docs/design-docs/draft/`
 5. Relevant files under `docs/exec-plans/active/` and `specs/active/` when the task is covered there
 6. `README.md` if user-visible behavior may change
 
 ## Core Documents
 
 - `ARCHITECTURE.md`: system map, boundaries, invariants, and shared-logic rules
-- `docs/core-beliefs.md`: project-specific engineering beliefs for choosing between valid implementations
+- `docs/guidelines/core-beliefs.md`: project-specific engineering beliefs for choosing between valid implementations
 - `docs/DOCUMENTATION.md`: where docs belong, which layer is authoritative, and how to classify new docs
 - `docs/DESIGN.md`: entry index for design docs
 - `docs/PLANS.md`: entry index for active execution plans
 - `README.md`: user-facing behavior and command contract
-- `docs/design-docs/design-001-links-and-embeds.md`: link, embed, backlink, and rename semantics
-- `docs/design-docs/legacy/properties_design.md`: `file.*` vs `note.*` field model
-- `docs/design-docs/legacy/query_design.md`: query mode and translation rules
-- `docs/design-docs/legacy/note_render_design.md`: `.base` rendering pipeline
-- `docs/design-docs/design-006-template-system.md`: active template subsystem behavior
+- `docs/design-docs/implemented/design-001-links-and-embeds.md`: link, embed, backlink, and rename semantics
+- `docs/references/legacy-designs/properties_design.md`: historical `file.*` vs `note.*` field model
+- `docs/references/legacy-designs/query_design.md`: historical query mode and translation rules
+- `docs/references/legacy-designs/note_render_design.md`: historical `.base` rendering pipeline
+- `docs/design-docs/implemented/design-006-template-system.md`: active template subsystem behavior
 
 ## Execution Rules
 
@@ -57,7 +57,7 @@ Before making non-trivial changes, read these in order:
 - Run `cargo test`, `cargo clippy -- -D warnings`, and `cargo fmt --check` before considering a task complete.
 - If behavior changes, update `README.md`.
 - If structure, invariants, or shared-logic boundaries change, update `ARCHITECTURE.md`.
-- If project-level decision principles change, update `docs/core-beliefs.md`.
+- If project-level decision principles change, update `docs/guidelines/core-beliefs.md`.
 - If a repeatable bug is fixed, add or strengthen a test.
 
 ## Notes for This Repo

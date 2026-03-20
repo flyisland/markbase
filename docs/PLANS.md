@@ -1,15 +1,23 @@
 # Execution Plans
 
-This file is the entry index for execution plans across their lifecycle states.
+This file is the entry index for managed execution plans and historical
+planning references.
+
+## Draft Plans
+
+- `exec-plans/draft/`: no draft plans currently tracked
 
 ## Active Plans
 
-## Completed Plans
+- `exec-plans/active/`: no active plans currently tracked
 
-- `exec-plans/completed/exec-003-template-instance-metadata-transition.md`: complete the template creation-metadata transition by moving creation defaults to `_schema.create`, switching `note verify` to schema-first semantics, and merging the temporary patch contract into the formal docs
-- `exec-plans/completed/exec-002-render-note-embeds.md`: add Markdown note embed rendering to `note render`, including body-only expansion, recursive render, and cycle protection
-- `exec-plans/completed/exec-001-link-syntax-unification.md`: unify Obsidian link/embed parsing semantics across extractor, renamer, verifier, and renderer
+## Archived Plans
 
-## Legacy Plans
+- `exec-plans/archived/exec-001-link-syntax-unification.md`: unify shared Obsidian link and embed semantics across extractor, renamer, verifier, and renderer
+- `exec-plans/archived/exec-002-render-note-embeds.md`: implement recursive Markdown note-embed rendering and document its stable contract
+- `exec-plans/archived/exec-003-template-instance-metadata-transition.md`: migrate template instance creation and verification to the `_schema.create` model
+- `exec-plans/archived/exec-004-document-system-migration.md`: migrate the repository to the Specmate-managed document layout, status model, and task numbering scheme
 
-- `exec-plans/legacy/`: implementation plans created before the current Exec Plan / Task Spec structure
+## Supporting References
+
+- `references/legacy-exec-plans/`: pre-migration implementation plans retained for background context only

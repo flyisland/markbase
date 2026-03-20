@@ -205,11 +205,11 @@ Markbase is designed around predictable local performance, not distributed compl
 When changing one part of the system, inspect the neighboring contracts as well.
 
 - Query semantics: update `src/query/`, `src/renderer/filter.rs`, `README.md`, and query-related design docs/tests.
-- Link parsing or rename behavior: update `src/extractor.rs`, `src/renamer.rs`, `src/verifier.rs`, `docs/design-docs/design-001-links-and-embeds.md`, and note-related tests.
+- Link parsing or rename behavior: update `src/extractor.rs`, `src/renamer.rs`, `src/verifier.rs`, `docs/design-docs/implemented/design-001-links-and-embeds.md`, and note-related tests.
 - Index schema or note fields: update `src/db.rs`, `src/scanner.rs`, `README.md`, `AGENTS.md`, and any affected specs.
-- Index traversal or ignore semantics: update `README.md`, `ARCHITECTURE.md`, `docs/design-docs/design-005-indexing.md`, and scanner tests.
-- Template behavior: update `src/template.rs`, `src/creator.rs`, `src/describe.rs`, `src/verifier.rs`, and `docs/design-docs/design-006-template-system.md`.
-- Render pipeline behavior: update `src/renderer/`, `docs/design-docs/legacy/note_render_design.md`, and render tests.
+- Index traversal or ignore semantics: update `README.md`, `ARCHITECTURE.md`, `docs/design-docs/implemented/design-005-indexing.md`, and scanner tests.
+- Template behavior: update `src/template.rs`, `src/creator.rs`, `src/describe.rs`, `src/verifier.rs`, and `docs/design-docs/implemented/design-006-template-system.md`.
+- Render pipeline behavior: update `src/renderer/`, `docs/design-docs/implemented/design-002-render.md`, and render tests.
 
 ## 11. Documentation Role
 
@@ -218,6 +218,6 @@ This file should stay stable and structural. Put changing implementation details
 - `docs/DOCUMENTATION.md` for document placement, authority, and lifecycle rules
 - `README.md` for user-facing behavior
 - `AGENTS.md` for developer/agent entry guidance
-- `docs/design-docs/` for current feature-level design details
-- `docs/design-docs/legacy/` for older feature-level design details that have not yet been rewritten
+- `docs/design-docs/implemented/` and `docs/design-docs/candidate/` for managed feature-level design details
+- `docs/references/` for older or supporting design material that is not part of the managed document system
 - tests for executable regression coverage
