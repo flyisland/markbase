@@ -9,7 +9,6 @@ boundaries:
     - "docs/design-docs/implemented/design-006-template-system.md"
     - "docs/design-docs/implemented/design-004-note-verify.md"
     - "docs/design-docs/obsolete/design-006-patch-01-template-instance-metadata-transition.md"
-    - "docs/DESIGN.md"
     - "README.md"
     - "tests/cli_note.rs"
   forbidden_patterns:

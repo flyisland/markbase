@@ -33,9 +33,6 @@ the managed model:
 - `AGENTS.md`
 - `ARCHITECTURE.md`
 - `README.md`
-- `docs/DOCUMENTATION.md`
-- `docs/DESIGN.md`
-- `docs/PLANS.md`
 
 Supporting material lives under:
 
@@ -150,10 +147,23 @@ Current planned-but-unimplemented design contracts live under
 Historical unmanaged material from the pre-migration system lives under
 `docs/references/legacy-designs/` and `docs/references/legacy-exec-plans/`.
 
+Repository-level onboarding lives in `AGENTS.md`.
+
+Stable cross-module architecture rules live in `ARCHITECTURE.md`.
+
+There are no separate root-level design or plan index files. The lifecycle
+directories themselves are the primary navigation surface.
+
+When a human or agent needs a complete list of current design contracts, inspect
+`docs/design-docs/implemented/` directly.
+
+When a human or agent needs current execution work, inspect
+`docs/exec-plans/active/` and `specs/active/` directly.
+
 ## 6. Change rules
 
 - Do not create new active design docs at `docs/design-docs/` root.
-- Do not create new completed task specs under `specs/archived/`.
+- Do not create new completed task specs directly under `specs/archived/`.
 - Do not reuse an existing task ID for a second task.
 - When a status changes, move the file and update frontmatter in the same
   change.

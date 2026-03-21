@@ -24,24 +24,48 @@ Before making non-trivial changes, read these in order:
 
 1. `ARCHITECTURE.md`
 2. `docs/guidelines/core-beliefs.md`
-3. `docs/DOCUMENTATION.md`
-4. Relevant files under `docs/design-docs/implemented/`, `docs/design-docs/candidate/`, and `docs/design-docs/draft/`
+3. `docs/design-docs/implemented/design-009-document-system.md`
+4. Relevant active design docs listed in `Task Navigation` below
 5. Relevant files under `docs/exec-plans/active/` and `specs/active/` when the task is covered there
 6. `README.md` if user-visible behavior may change
+7. `docs/references/` only when an active document explicitly points there or historical context is required
 
 ## Core Documents
 
 - `ARCHITECTURE.md`: system map, boundaries, invariants, and shared-logic rules
 - `docs/guidelines/core-beliefs.md`: project-specific engineering beliefs for choosing between valid implementations
-- `docs/DOCUMENTATION.md`: where docs belong, which layer is authoritative, and how to classify new docs
-- `docs/DESIGN.md`: entry index for design docs
-- `docs/PLANS.md`: entry index for active execution plans
+- `docs/design-docs/implemented/design-009-document-system.md`: managed-document rules, lifecycle states, and directory layout
 - `README.md`: user-facing behavior and command contract
+- `docs/design-docs/implemented/design-010-query-subsystem.md`: active query command and field-translation contract
+- `docs/design-docs/implemented/design-011-note-creation.md`: active `note new` command contract
 - `docs/design-docs/implemented/design-001-links-and-embeds.md`: link, embed, backlink, and rename semantics
-- `docs/references/legacy-designs/properties_design.md`: historical `file.*` vs `note.*` field model
-- `docs/references/legacy-designs/query_design.md`: historical query mode and translation rules
-- `docs/references/legacy-designs/note_render_design.md`: historical `.base` rendering pipeline
+- `docs/design-docs/implemented/design-002-render.md`: active render contract
 - `docs/design-docs/implemented/design-006-template-system.md`: active template subsystem behavior
+- `docs/design-docs/implemented/design-008-note-resolve.md`: active note resolution contract
+- `docs/design-docs/implemented/design-004-note-verify.md`: active note verification contract
+- `docs/design-docs/implemented/design-005-indexing.md`: active indexing contract
+
+## Task Navigation
+
+Prefer active managed docs before legacy references.
+
+- Query semantics and output: `docs/design-docs/implemented/design-010-query-subsystem.md`, then `README.md`
+- Note creation: `docs/design-docs/implemented/design-011-note-creation.md`, then `docs/design-docs/implemented/design-006-template-system.md`
+- Rename and link rewriting: `docs/design-docs/implemented/design-001-links-and-embeds.md`
+- Note resolve: `docs/design-docs/implemented/design-008-note-resolve.md`
+- Note verify: `docs/design-docs/implemented/design-004-note-verify.md`, then `docs/design-docs/implemented/design-006-template-system.md`
+- Note render: `docs/design-docs/implemented/design-002-render.md`, then `docs/design-docs/implemented/design-001-links-and-embeds.md`
+- Index traversal, collisions, and ignore behavior: `docs/design-docs/implemented/design-005-indexing.md`
+- Template normalization and describe output: `docs/design-docs/implemented/design-006-template-system.md`
+- Documentation-system rules: `docs/design-docs/implemented/design-009-document-system.md`
+
+## Historical References
+
+Use `docs/references/` only for migration context, abandoned designs, or when an active doc explicitly points there.
+
+- `docs/references/legacy-designs/query_design.md`: historical query design only
+- `docs/references/legacy-designs/note_render_design.md`: historical render design only
+- `docs/references/legacy-designs/properties_design.md`: historical field-model context only
 
 ## Execution Rules
 
