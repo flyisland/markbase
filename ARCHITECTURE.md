@@ -103,7 +103,8 @@ This layer exists so user query ergonomics can evolve without leaking raw schema
 - The web layer reuses `src/renderer/` for note semantics instead of implementing a second note-embed or `.base` execution path.
 - Web `.md` and `.base` routes return translated Markdown bodies; binary resource routes return raw bytes with a derived content type.
 - `src/web/` also owns docsify shell initialization for the supported browser entrypoint at `base-dir/index.html`.
-- `web serve` is the user-facing browser surface and therefore requires the docsify shell to exist before startup; `web get` remains the shell-independent inspection command.
+- The generated docsify shell owns frontend-only internal-link adaptation, resource URL normalization, callout UI upgrades, and embedded shell metadata such as the generating `markbase` version and git commit/time; the backend web contract remains Markdown and resource bytes rather than callout-specific HTML.
+- `web serve` is the user-facing browser surface and therefore requires the docsify shell to exist before startup, and requires that shell's embedded `markbase` version to match the serving binary; `web get` remains the shell-independent inspection command.
 
 ## 5. Core Invariants
 

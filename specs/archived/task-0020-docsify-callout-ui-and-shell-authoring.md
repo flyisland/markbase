@@ -1,7 +1,7 @@
 ---
 id: task-0020
 title: "实现 docsify callout UI 与 shell 模板化维护"
-status: active
+status: completed
 design: design-012-patch-01
 boundaries:
   allowed:
@@ -11,7 +11,7 @@ boundaries:
     - "docs/design-docs/implemented/design-012-docsify-frontend-integration.md"
     - "docs/design-docs/draft/design-012-patch-01-callout-ui-and-shell-authoring.md"
     - "docs/design-docs/obsolete/design-012-patch-01-callout-ui-and-shell-authoring.md"
-    - "specs/active/task-0020-docsify-callout-ui-and-shell-authoring.md"
+    - "specs/archived/task-0020-docsify-callout-ui-and-shell-authoring.md"
     - "tests/cli_web.rs"
     - "tests/common/**"
   forbidden_patterns:

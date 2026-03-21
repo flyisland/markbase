@@ -1,15 +1,21 @@
 ---
 id: design-012-patch-01
 title: "Docsify Callout UI And Shell Authoring"
-status: draft
+status: obsolete:merged
 parent: design-012
+merged-into: design-012
 module: web-frontend
 ---
 
 # Docsify Callout UI And Shell Authoring
 
-**Status:** Draft  
+**Status:** Obsolete: Merged  
 **Target:** `design-012` frontend integration follow-up
+
+This file is retained as an archived patch record.
+
+Its active content has been folded back into
+`docs/design-docs/implemented/design-012-docsify-frontend-integration.md`.
 
 ## Purpose
 

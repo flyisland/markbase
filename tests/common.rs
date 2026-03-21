@@ -11,6 +11,13 @@ use tempfile::TempDir;
 
 static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+pub fn docsify_shell_stub() -> String {
+    format!(
+        "<!-- markbase-shell-version: {} -->\n<!doctype html><html><body>shell</body></html>\n",
+        env!("MARKBASE_BUILD_VERSION")
+    )
+}
+
 fn get_unique_id() -> u64 {
     TEST_COUNTER.fetch_add(1, Ordering::SeqCst)
 }

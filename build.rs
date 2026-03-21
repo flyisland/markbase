@@ -9,45 +9,44 @@ fn main() {
         .map(|o| o.status.success())
         .unwrap_or(false);
 
-    let version = if in_git_repo {
-        // In git repo - include SHA and timestamp
-        let sha = Command::new("git")
-            .args(["rev-parse", "--short", "HEAD"])
+    let version = env!("CARGO_PKG_VERSION").to_string();
+    let git_commit = if in_git_repo {
+        Command::new("git")
+            .args(["rev-parse", "--short=12", "HEAD"])
             .output()
             .ok()
             .filter(|o| o.status.success())
             .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-            .unwrap_or_default();
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "unknown".to_string())
+    } else {
+        "unknown".to_string()
+    };
 
-        let git_timestamp = Command::new("git")
-            .args(["log", "-1", "--format=%at"])
+    let git_commit_time = if in_git_repo {
+        Command::new("git")
+            .args(["show", "-s", "--format=%cI", "HEAD"])
             .output()
             .ok()
             .filter(|o| o.status.success())
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
-
-        let timestamp = match git_timestamp {
-            Some(ts_str) => {
-                if let Ok(ts) = ts_str.parse::<i64>() {
-                    chrono::DateTime::from_timestamp(ts, 0).map_or(ts_str.clone(), |dt| {
-                        dt.format("%Y-%m-%d %H:%M:%S").to_string()
-                    })
-                } else {
-                    ts_str
-                }
-            }
-            None => String::new(),
-        };
-
-        if sha.is_empty() {
-            env!("CARGO_PKG_VERSION").to_string()
-        } else {
-            format!("{} ({} {})", env!("CARGO_PKG_VERSION"), sha, timestamp)
-        }
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "unknown".to_string())
     } else {
-        // Not in git repo (e.g., crates.io install) - just version number
-        env!("CARGO_PKG_VERSION").to_string()
+        "unknown".to_string()
     };
 
-    println!("cargo:rustc-env=MARKBASE_VERSION={}", version);
+    let decorated_version = if git_commit == "unknown" || git_commit_time == "unknown" {
+        version.clone()
+    } else {
+        format!("{} ({} {})", version, git_commit, git_commit_time)
+    };
+
+    println!("cargo:rustc-env=MARKBASE_VERSION={}", decorated_version);
+    println!("cargo:rustc-env=MARKBASE_BUILD_VERSION={}", version);
+    println!("cargo:rustc-env=MARKBASE_GIT_COMMIT={}", git_commit);
+    println!(
+        "cargo:rustc-env=MARKBASE_GIT_COMMIT_TIME={}",
+        git_commit_time
+    );
 }

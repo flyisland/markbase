@@ -154,6 +154,8 @@ markbase web init-docsify --force
 - write the docsify shell file at `<base-dir>/index.html`
 - refuse to overwrite an existing `index.html` unless `--force` is provided
 - require users to specify an initial homepage route via `--homepage`
+- embed the generating `markbase` version and git commit/time into the shell's
+  HTML metadata and visible footer
 
 ### Homepage Input
 
@@ -213,6 +215,11 @@ markbase web init-docsify --homepage <canonical-url>
 
 This keeps browser-serving behavior honest: the command should not report a
 ready web experience when the supported browser entrypoint does not exist.
+
+`web serve` should also reject a shell whose embedded `markbase` version does
+not match the serving binary. This keeps the browser shell contract aligned
+with the implementation that is serving Markdown and resources, and avoids
+silent drift after users upgrade the CLI without regenerating `index.html`.
 
 `markbase web get` remains a backend inspection tool and does not depend on the
 presence of `index.html`.
@@ -282,6 +289,93 @@ adaptation.
 
 This means the first docsify integration solves the navigation problem in the
 frontend layer without changing the backend contract from `design-003`.
+
+## Callout Ownership
+
+Obsidian callouts, including foldable forms such as:
+
+```md
+> [!info] Title
+> body
+
+> [!faq]+ Expanded by default
+> body
+
+> [!faq]- Collapsed by default
+> body
+```
+
+are owned by the docsify frontend layer rather than the markbase backend.
+
+The active responsibility split is:
+
+- the backend preserves blockquote and callout container structure during note
+  render and `.base` expansion
+- the backend keeps the original callout marker line in Markdown output
+- the backend does not generate dedicated callout HTML and does not add a
+  docsify-specific callout rewrite pass
+- the docsify shell recognizes callout marker syntax after Markdown has been
+  rendered to HTML
+- the docsify shell applies callout UI, fold/unfold interaction, and styling
+
+This keeps vault-aware semantics on the backend and presentation behavior in the
+frontend shell.
+
+## Foldable Callout Support
+
+The docsify shell supports these Obsidian-compatible marker forms:
+
+- `[!type]` for non-foldable callouts
+- `[!type]+` for foldable callouts expanded by default
+- `[!type]-` for foldable callouts collapsed by default
+
+Trailing text on the marker line becomes the visible title. When the marker line
+has no trailing title text, the shell derives a stable default title from the
+callout type.
+
+Nested callouts remain supported because the backend preserves nested
+blockquote structure in Markdown output and the frontend applies callout upgrade
+from the inside out.
+
+The preferred DOM representation is:
+
+- non-foldable callouts become a styled container such as
+  `<div class="mb-callout" data-callout="info">`
+- foldable callouts become native disclosure UI such as
+  `<details class="mb-callout" data-callout="faq">`
+- foldable title rows use `<summary>`
+
+## Frontend Upgrade Strategy
+
+The generated docsify shell upgrades callouts after Markdown has been rendered
+to HTML.
+
+The shell plugin:
+
+- scans rendered `blockquote` elements inside the docsify app container
+- detects a leading Obsidian callout marker line
+- derives callout type, foldable state, and title
+- replaces plain blockquote presentation with callout UI while preserving the
+  rendered HTML body
+- processes nested matches from the inside out
+
+This DOM-upgrade approach is preferred over frontend Markdown pre-processing
+because it reuses docsify's parser output and avoids introducing a second
+partial Markdown parser in browser code.
+
+## Generated Shell Authoring
+
+The user-facing output of `markbase web init-docsify` remains a single
+generated file:
+
+```text
+<base-dir>/index.html
+```
+
+Repository implementation may use template or asset files to maintain the shell
+HTML, JS, and CSS more clearly, but the generated output contract remains a
+single-file browser entrypoint. This separates repository maintainability from
+the user-facing installation shape.
 
 ## Why This Is A Separate Design
 

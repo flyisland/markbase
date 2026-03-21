@@ -449,15 +449,23 @@ markbase web get /entities/person/alice.md  # print final web Markdown body
 
 `markbase web init-docsify --homepage <canonical-url>` writes `index.html` into
 the base-dir root. `--homepage` is required, and an existing `index.html` is
-left untouched unless `--force` is provided.
+left untouched unless `--force` is provided. The generated browser shell
+remains a single `index.html`; users do not need to manage extra JS or CSS
+files. That shell also embeds the generating `markbase` version plus git
+commit/time metadata in both the page footer and HTML metadata.
 
 `markbase web serve` is the user-facing browser entrypoint. It requires
 `base-dir/index.html` to exist and will refuse to start until the docsify shell
-has been initialized. Once initialized:
+has been initialized. It also verifies that the installed shell was generated
+by the same `markbase` version as the serving binary; a version mismatch is a
+hard startup error and requires re-running `markbase web init-docsify --force`.
+Once initialized:
 
 - requesting `/` returns `index.html`
 - requesting `/index.html` returns the same docsify shell
 - the shell keeps internal `.md` and `.base` document links inside docsify
+- the shell upgrades Obsidian-style callouts, including foldable
+  `[!type]+` and `[!type]-`, in the browser UI
 - binary resource URLs such as images and attachments continue to resolve
   directly
 

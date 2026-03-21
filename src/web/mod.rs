@@ -14,6 +14,14 @@ pub const DEFAULT_BIND_ADDR: &str = "127.0.0.1";
 pub const DEFAULT_PORT: u16 = 3000;
 pub const DOCSIFY_INDEX_FILENAME: &str = "index.html";
 pub const DEFAULT_CACHE_CONTROL: &str = "no-store, no-cache, must-revalidate";
+const DOCSIFY_INDEX_TEMPLATE: &str = include_str!("templates/docsify_index.html");
+const DOCSIFY_SHELL_STYLE: &str = include_str!("templates/docsify_shell.css");
+const DOCSIFY_SHELL_SCRIPT: &str = include_str!("templates/docsify_shell.js");
+const MARKBASE_BUILD_VERSION: &str = env!("MARKBASE_BUILD_VERSION");
+const MARKBASE_GIT_COMMIT: &str = env!("MARKBASE_GIT_COMMIT");
+const MARKBASE_GIT_COMMIT_TIME: &str = env!("MARKBASE_GIT_COMMIT_TIME");
+const DOCSIFY_SHELL_VERSION_MARKER_PREFIX: &str = "<!-- markbase-shell-version: ";
+const DOCSIFY_SHELL_VERSION_MARKER_SUFFIX: &str = " -->";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedNoteRoute {
@@ -95,6 +103,7 @@ pub fn serve(
     cache_control: Option<&str>,
 ) -> Result<(), WebError> {
     ensure_docsify_shell_exists(base_dir)?;
+    ensure_docsify_shell_version_matches(base_dir)?;
     let cache_control = cache_control.unwrap_or(DEFAULT_CACHE_CONTROL);
     let listener = TcpListener::bind((bind, port))
         .map_err(|err| WebError::Io(format!("failed to bind {}:{}: {}", bind, port, err)))?;
@@ -672,86 +681,68 @@ fn ensure_docsify_shell_exists(base_dir: &Path) -> Result<(), WebError> {
 fn render_docsify_index(homepage: &str) -> String {
     let homepage_json =
         serde_json::to_string(homepage).expect("serializing docsify homepage should not fail");
-    format!(
-        r##"<!doctype html>
-<html>
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>markbase</title>
-    <link
-      rel="stylesheet"
-      href="//cdn.jsdelivr.net/npm/docsify@4/themes/vue.css"
-    />
-  </head>
-  <body>
-    <div id="app">Loading...</div>
-    <script>
-      window.$docsify = {{
-        name: "markbase",
-        homepage: {homepage_json},
-        basePath: "/",
-        ext: "",
-        externalLinkTarget: "_self",
-        noCompileLinks: ["/.*\\.md(?:[?#].*)?", "/.*\\.base(?:[?#].*)?"],
-        auto2top: true,
-        plugins: [
-          function (hook) {{
-            function normalizeDocsifyDom() {{
-              document
-                .querySelectorAll(".markdown-section a[href], .sidebar a[href], nav a[href]")
-                .forEach(function (a) {{
-                  const href = a.getAttribute("href");
-                  if (!href) return;
-                  if (!href.startsWith("/")) return;
-                  if (href.startsWith("//")) return;
-                  if (href.startsWith("/#")) return;
+    let version_html = html_escape(MARKBASE_BUILD_VERSION);
+    let commit_html = html_escape(MARKBASE_GIT_COMMIT);
+    let commit_time_html = html_escape(MARKBASE_GIT_COMMIT_TIME);
+    DOCSIFY_INDEX_TEMPLATE
+        .replace("__MARKBASE_DOCSIFY_STYLE__", DOCSIFY_SHELL_STYLE)
+        .replace("__MARKBASE_DOCSIFY_SCRIPT__", DOCSIFY_SHELL_SCRIPT)
+        .replace("__MARKBASE_DOCSIFY_HOMEPAGE__", &homepage_json)
+        .replace("__MARKBASE_BUILD_VERSION__", &version_html)
+        .replace("__MARKBASE_GIT_COMMIT__", &commit_html)
+        .replace("__MARKBASE_GIT_COMMIT_TIME__", &commit_time_html)
+}
 
-                  const path = href.split("#")[0].split("?")[0];
-                  if (!(path.endsWith(".md") || path.endsWith(".base"))) return;
+fn ensure_docsify_shell_version_matches(base_dir: &Path) -> Result<(), WebError> {
+    let index_path = docsify_index_path(base_dir);
+    let html = fs::read_to_string(&index_path).map_err(|err| {
+        WebError::Io(format!(
+            "failed to read docsify shell '{}': {}",
+            index_path.display(),
+            err
+        ))
+    })?;
 
-                  a.setAttribute("href", "#" + href);
-                  a.removeAttribute("target");
-                  a.removeAttribute("rel");
-                }});
+    let shell_version = read_docsify_shell_version(&html).ok_or_else(|| {
+        WebError::Io(format!(
+            "ERROR: docsify shell '{}' is missing a markbase version marker. Re-run `markbase web init-docsify --homepage <canonical-url> --force` with markbase {}.",
+            index_path.display(),
+            MARKBASE_BUILD_VERSION
+        ))
+    })?;
 
-              document
-                .querySelectorAll(".markdown-section img[data-origin], .sidebar img[data-origin]")
-                .forEach(function (img) {{
-                  const original = img.getAttribute("data-origin");
-                  if (!original) return;
-                  if (!original.startsWith("/")) return;
+    if shell_version == MARKBASE_BUILD_VERSION {
+        return Ok(());
+    }
 
-                  img.setAttribute("src", original);
-                }});
-            }}
+    Err(WebError::Io(format!(
+        "ERROR: docsify shell '{}' was generated by markbase {}, but `markbase web serve` is running markbase {}. Re-run `markbase web init-docsify --homepage <canonical-url> --force` before serving.",
+        index_path.display(),
+        shell_version,
+        MARKBASE_BUILD_VERSION
+    )))
+}
 
-            if (!window.__markbaseDocsifyObserverInstalled) {{
-              window.__markbaseDocsifyObserverInstalled = true;
-              const observer = new MutationObserver(function () {{
-                normalizeDocsifyDom();
-              }});
+fn read_docsify_shell_version(html: &str) -> Option<&str> {
+    let start = html.find(DOCSIFY_SHELL_VERSION_MARKER_PREFIX)?;
+    let version_start = start + DOCSIFY_SHELL_VERSION_MARKER_PREFIX.len();
+    let suffix_start = html[version_start..].find(DOCSIFY_SHELL_VERSION_MARKER_SUFFIX)?;
+    Some(&html[version_start..version_start + suffix_start])
+}
 
-              observer.observe(document.body, {{
-                childList: true,
-                subtree: true,
-                attributes: true,
-                attributeFilter: ["href", "src", "data-origin"],
-              }});
-            }}
-
-            hook.doneEach(function () {{
-              normalizeDocsifyDom();
-            }});
-          }},
-        ],
-      }};
-    </script>
-    <script src="//cdn.jsdelivr.net/npm/docsify@4"></script>
-  </body>
-</html>
-"##
-    )
+fn html_escape(input: &str) -> String {
+    let mut escaped = String::with_capacity(input.len());
+    for ch in input.chars() {
+        match ch {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            '\'' => escaped.push_str("&#39;"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
 }
 
 fn is_image_extension(ext: &str) -> bool {
@@ -856,6 +847,11 @@ mod tests {
         assert!(html.contains("homepage: \"/HOME.md\""));
         assert!(html.contains("ext: \"\""));
         assert!(html.contains("externalLinkTarget: \"_self\""));
+        assert!(html.contains(&format!(
+            "<meta name=\"markbase-version\" content=\"{}\" />",
+            MARKBASE_BUILD_VERSION
+        )));
+        assert!(html.contains("Generated by markbase"));
         assert!(
             html.contains(
                 "noCompileLinks: [\"/.*\\\\.md(?:[?#].*)?\", \"/.*\\\\.base(?:[?#].*)?\"]"
@@ -873,6 +869,28 @@ mod tests {
         assert!(html.contains("a.removeAttribute(\"target\")"));
         assert!(html.contains("img.setAttribute(\"src\", original)"));
         assert!(!html.contains("path.endsWith(\".png\")"));
+    }
+
+    #[test]
+    fn test_read_docsify_shell_version_extracts_embedded_shell_version_marker() {
+        let html = render_docsify_index("/HOME.md");
+        assert_eq!(
+            read_docsify_shell_version(&html),
+            Some(MARKBASE_BUILD_VERSION)
+        );
+    }
+
+    #[test]
+    fn test_render_docsify_index_includes_callout_upgrade_assets() {
+        let html = render_docsify_index("/HOME.md");
+        assert!(html.contains(".mb-callout {"));
+        assert!(html.contains("function upgradeCalloutsDom() {"));
+        assert!(html.contains("function parseCalloutMetadata(firstParagraph) {"));
+        assert!(html.contains("function defaultTitleForCallout(calloutType) {"));
+        assert!(html.contains("function calloutDepth(blockquote) {"));
+        assert!(html.contains("const foldMarkerSvg ="));
+        assert!(html.contains("document.createElement(metadata.foldable ? \"details\" : \"div\")"));
+        assert!(html.contains("document.createElement(metadata.foldable ? \"summary\" : \"div\")"));
     }
 
     #[test]
