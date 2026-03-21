@@ -63,7 +63,6 @@ This design does not cover:
 ## Design Goals
 
 - Keep docsify installation explicit and user-triggered.
-- Avoid polluting the user's note root with frontend shell files by default.
 - Preserve the current markbase backend boundary: Markdown and resource bytes
   remain the primary HTTP contract.
 - Make the generated docsify shell work with current markbase web output,
@@ -89,8 +88,9 @@ Markbase should provide an explicit initialization command:
 markbase web init-docsify
 ```
 
-This command generates a minimal docsify shell and related assets into a
-markbase-owned directory under the current base-dir.
+This command generates a minimal docsify shell into the current base-dir so the
+shell is directly reachable as `/index.html` from the existing `web serve`
+root.
 
 The shell is optional. Users who do not want docsify should not pay any cost or
 see any generated files outside explicit initialization.
@@ -103,6 +103,8 @@ The chosen direction for docsify integration is:
 - treat docsify compatibility as a frontend integration responsibility
 - solve docsify navigation with a generated frontend plugin rather than a
   backend link-shape rewrite
+- generate the shell at the base-dir root as `index.html` rather than under a
+  markbase-owned subdirectory
 
 This means the current absolute backend href shape, such as:
 
@@ -117,32 +119,31 @@ integration document built on top of the existing backend contract.
 
 ## Generated Location
 
-The default output location should be:
+The default output location should be the base-dir root:
 
 ```text
-<base-dir>/.markbase/web/docsify/
+<base-dir>/index.html
 ```
 
 The first implementation should generate at least:
 
 ```text
-.markbase/web/docsify/index.html
+index.html
 ```
 
 Reasons:
 
-- this keeps frontend artifacts out of the user's content root
-- it makes ownership clear: these files belong to markbase tooling, not to note
-  content
-- it leaves room for future docsify-specific assets without inventing a second
-  storage location later
+- users already expect a browsable entrypoint at the web root
+- `http://127.0.0.1:3000/index.html` is simpler than a tool-owned nested path
+- docsify shell installation should optimize for direct use, not hidden storage
+- overwrite risk is still controlled by explicit command invocation plus
+  `--force`
 
 ## Command Contract
 
 The initial command surface should be small:
 
 ```bash
-markbase web init-docsify
 markbase web init-docsify --homepage <canonical-url>
 markbase web init-docsify --force
 ```
@@ -150,9 +151,9 @@ markbase web init-docsify --force
 ### Behavior
 
 - create the target directory if needed
-- write the docsify shell files
-- refuse to overwrite existing generated files unless `--force` is provided
-- allow users to specify an initial homepage route
+- write the docsify shell file at `<base-dir>/index.html`
+- refuse to overwrite an existing `index.html` unless `--force` is provided
+- require users to specify an initial homepage route via `--homepage`
 
 ### Homepage Input
 
@@ -164,14 +165,13 @@ get` and `markbase web serve` already understand, for example:
 /entities/person/alice.md
 ```
 
-If omitted, the implementation may use a deterministic default such as:
+In the first implementation, `--homepage` is required.
 
-- `/README.md` when that route exists
-- otherwise a generated placeholder homepage that explains how to configure the
-  docsify shell
-
-The command must not guess a homepage from arbitrary vault contents without a
-stable rule.
+The command must not guess a homepage from arbitrary vault contents and must not
+invent implicit defaults such as `/README.md` or a generated placeholder home.
+Requiring an explicit homepage keeps the installed docsify shell aligned with
+the user's actual navigation intent and avoids turning a fallback default into a
+hidden product contract.
 
 ## Serving Model
 
@@ -184,12 +184,38 @@ markbase web serve
 and then open:
 
 ```text
-http://127.0.0.1:3000/.markbase/web/docsify/index.html
+http://127.0.0.1:3000/index.html
 ```
 
+For docsify-first browsing, the frontend integration should also define a root
+entry behavior:
+
+- when the browser requests `/`, markbase should serve the generated
+  `/index.html` shell instead of treating `/` as a canonical vault document
+  route
+- this root-to-index behavior exists to make the docsify shell directly
+  enterable from the site root and does not change canonical note or resource
+  routing rules under `design-003`
+
 This works because markbase already serves non-Markdown files as raw resources.
-The docsify shell remains just another served asset, while markbase continues
-to act as the content server for Markdown and attachments.
+The docsify shell remains just another served asset at the vault root, while
+markbase continues to act as the content server for Markdown and attachments.
+
+Because the supported browser entrypoint is now the generated docsify shell,
+`markbase web serve` should treat the presence of `<base-dir>/index.html` as a
+startup prerequisite for user-facing browser mode. If the shell has not been
+initialized yet, `web serve` should fail fast with an explanatory message that
+directs the user to run:
+
+```bash
+markbase web init-docsify --homepage <canonical-url>
+```
+
+This keeps browser-serving behavior honest: the command should not report a
+ready web experience when the supported browser entrypoint does not exist.
+
+`markbase web get` remains a backend inspection tool and does not depend on the
+presence of `index.html`.
 
 This preserves the backend boundary from `design-003`:
 
@@ -284,12 +310,13 @@ This design should be considered implemented only when all of the following are
 true:
 
 1. `markbase web init-docsify` exists and is documented
-2. the command writes a minimal docsify shell under
-   `<base-dir>/.markbase/web/docsify/`
+2. the command writes a minimal docsify shell at `<base-dir>/index.html`
 3. the command has explicit overwrite behavior and does not silently replace an
-   existing shell without `--force`
-4. the generated shell can use `markbase web serve` as its content backend
-5. opening the generated shell renders a configured homepage route
+   existing `index.html` without `--force`
+4. `markbase web serve` fails with an explanatory setup error when
+   `<base-dir>/index.html` is missing
+5. opening `/` or `/index.html` renders the generated shell and configured
+   homepage route
 6. clicking internal `.md` and `.base` links stays inside the docsify shell
 7. binary resource links continue to resolve as direct resources
 8. README and ARCHITECTURE document the docsify integration boundary
