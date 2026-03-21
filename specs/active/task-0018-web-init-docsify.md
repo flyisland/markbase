@@ -9,7 +9,7 @@ boundaries:
     - "src/web/**"
     - "README.md"
     - "ARCHITECTURE.md"
-    - "docs/design-docs/draft/design-012-docsify-frontend-integration.md"
+    - "docs/design-docs/implemented/design-012-docsify-frontend-integration.md"
     - "specs/active/task-0018-web-init-docsify.md"
     - "tests/cli_web.rs"
     - "tests/common/**"
@@ -89,7 +89,7 @@ frontend plugin。
 - src/web/**
 - README.md
 - ARCHITECTURE.md
-- docs/design-docs/draft/design-012-docsify-frontend-integration.md
+- docs/design-docs/implemented/design-012-docsify-frontend-integration.md
 - specs/active/task-0018-web-init-docsify.md
 - tests/cli_web.rs
 - tests/common/**

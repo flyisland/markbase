@@ -1,13 +1,13 @@
 ---
 id: design-012
 title: "Docsify Frontend Integration"
-status: draft
+status: implemented
 module: web-frontend
 ---
 
 # Docsify Frontend Integration
 
-**Status:** Draft  
+**Status:** Implemented  
 **Target:** markbase web frontend integration
 
 ## Purpose
