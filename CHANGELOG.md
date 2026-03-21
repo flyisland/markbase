@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-03-21
+
+### Added
+
+- **Docsify shell initialization** - Added `markbase web init-docsify --homepage <canonical-url>` to generate a supported `index.html` browser shell at the vault root, with `--force` overwrite protection for explicit reinitialization.
+
+### Changed
+
+- **Docsify-first web serving** - `markbase web serve` now requires the generated docsify shell before starting, serves `/` and `/index.html` as that shell, and documents the docsify browser flow as the supported entrypoint for web browsing.
+- **Configurable cache headers** - `markbase web serve` now sends `Cache-Control: no-store` by default for all served responses and accepts `--cache-control <value>` to override that header when callers want browser caching.
+
+### Fixed
+
+- **Web render route fidelity** - `.base` and Markdown note rendering now preserves relative `this.file.name` filter behavior in web output, rewrites docsify-internal document links correctly, and keeps binary resource URLs and docsify base-route fetching aligned with canonical routes.
+
 ## [0.8.0] - 2026-03-21
 
 ### Added
@@ -200,6 +215,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Note renaming with link updates
 - Multiple output formats (table, json, list)
 
+[0.9.0]: https://github.com/flyisland/markbase/compare/0.8.0...0.9.0
 [0.8.0]: https://github.com/flyisland/markbase/compare/0.7.2...0.8.0
 [0.7.2]: https://github.com/flyisland/markbase/compare/0.7.1...0.7.2
 [0.7.1]: https://github.com/flyisland/markbase/compare/0.7.0...0.7.1
