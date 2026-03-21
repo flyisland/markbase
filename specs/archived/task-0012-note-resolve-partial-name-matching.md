@@ -1,14 +1,14 @@
 ---
 id: task-0012
 title: "为 note resolve 增加确定性部分名称匹配"
-status: active
+status: completed
 boundaries:
   allowed:
     - "src/resolver.rs"
     - "tests/cli_note.rs"
     - "README.md"
     - "docs/design-docs/implemented/design-008-note-resolve.md"
-    - "specs/active/task-0012-note-resolve-partial-name-matching.md"
+    - "specs/archived/task-0012-note-resolve-partial-name-matching.md"
   forbidden_patterns:
     - "src/query/**"
     - "src/db.rs"
