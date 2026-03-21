@@ -344,6 +344,12 @@ fn test_web_resource_route_streams_bytes_with_correct_content_type() {
 
     assert_eq!(image.status_code, 200);
     assert_eq!(image.headers.get("content-type").unwrap(), "image/png");
+    assert_eq!(
+        image.headers.get("cache-control").unwrap(),
+        "no-store, no-cache, must-revalidate"
+    );
+    assert_eq!(image.headers.get("pragma").unwrap(), "no-cache");
+    assert_eq!(image.headers.get("expires").unwrap(), "0");
     assert_eq!(image.body, b"png-bytes");
 
     assert_eq!(audio.status_code, 200);
@@ -366,6 +372,27 @@ fn test_web_resource_route_streams_bytes_with_correct_content_type() {
 }
 
 #[test]
+fn test_web_serve_cache_control_override_replaces_default_no_cache_headers() {
+    let vault = TestVault::new();
+    vault.create_file("assets/image.png", "png-bytes");
+    vault.create_file("index.html", "shell");
+    let port = pick_free_port();
+    let _server =
+        vault.spawn_web_server_with_cache_control("127.0.0.1", port, Some("public, max-age=60"));
+
+    let image = http_get(port, "/assets/image.png");
+
+    assert_eq!(image.status_code, 200);
+    assert_eq!(image.headers.get("content-type").unwrap(), "image/png");
+    assert_eq!(
+        image.headers.get("cache-control").unwrap(),
+        "public, max-age=60"
+    );
+    assert_eq!(image.headers.get("pragma"), None);
+    assert_eq!(image.headers.get("expires"), None);
+}
+
+#[test]
 fn test_web_serve_cli_surface_matches_docs() {
     let vault = TestVault::new();
     let output = vault.run_cli(&["web", "serve", "--help"]);
@@ -374,9 +401,11 @@ fn test_web_serve_cli_surface_matches_docs() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("--bind"));
     assert!(stdout.contains("--port"));
+    assert!(stdout.contains("--cache-control"));
 
     let readme = include_str!("../README.md");
     assert!(readme.contains("markbase web serve"));
+    assert!(readme.contains("markbase web serve --cache-control"));
     assert!(readme.contains("127.0.0.1:3000"));
 }
 
@@ -520,6 +549,12 @@ fn test_web_root_serves_generated_index_html() {
         response.headers.get("content-type").unwrap(),
         "text/html; charset=utf-8"
     );
+    assert_eq!(
+        response.headers.get("cache-control").unwrap(),
+        "no-store, no-cache, must-revalidate"
+    );
+    assert_eq!(response.headers.get("pragma").unwrap(), "no-cache");
+    assert_eq!(response.headers.get("expires").unwrap(), "0");
     let body = String::from_utf8_lossy(&response.body);
     assert!(body.contains("window.$docsify"));
     assert!(body.contains("homepage: \"/HOME.md\""));
@@ -531,8 +566,22 @@ fn test_web_init_docsify_plugin_rewrites_internal_document_links() {
     assert_cli_success(&vault.web_init_docsify("/HOME.md"));
 
     let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
+    assert!(html.contains("externalLinkTarget: \"_self\""));
+    assert!(
+        html.contains("noCompileLinks: [\"/.*\\\\.md(?:[?#].*)?\", \"/.*\\\\.base(?:[?#].*)?\"]")
+    );
+    assert!(html.contains("function normalizeDocsifyDom() {"));
+    assert!(html.contains("new MutationObserver(function () {"));
+    assert!(html.contains(
+        ".querySelectorAll(\".markdown-section a[href], .sidebar a[href], nav a[href]\")"
+    ));
+    assert!(html.contains(
+        ".querySelectorAll(\".markdown-section img[data-origin], .sidebar img[data-origin]\")"
+    ));
     assert!(html.contains("path.endsWith(\".md\") || path.endsWith(\".base\")"));
     assert!(html.contains("a.setAttribute(\"href\", \"#\" + href)"));
+    assert!(html.contains("a.removeAttribute(\"target\")"));
+    assert!(html.contains("img.setAttribute(\"src\", original)"));
 }
 
 #[test]
@@ -542,4 +591,5 @@ fn test_web_init_docsify_plugin_leaves_binary_resource_urls_untouched() {
 
     let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
     assert!(html.contains("if (!(path.endsWith(\".md\") || path.endsWith(\".base\"))) return;"));
+    assert!(html.contains("if (!original.startsWith(\"/\")) return;"));
 }

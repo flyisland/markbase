@@ -201,6 +201,12 @@ enum WebCommands {
 
         #[arg(long = "port", default_value_t = web::DEFAULT_PORT)]
         port: u16,
+
+        #[arg(
+            long = "cache-control",
+            help = "Set the Cache-Control header for all web responses (default: no-store, no-cache, must-revalidate)"
+        )]
+        cache_control: Option<String>,
     },
     #[command(about = "Render the canonical web response body for one route")]
     Get {
@@ -492,8 +498,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         },
         Commands::Web { command } => match command {
-            WebCommands::Serve { bind, port } => {
-                web::serve(&base_dir, &db_path, compute_backlinks, &bind, port)?;
+            WebCommands::Serve {
+                bind,
+                port,
+                cache_control,
+            } => {
+                web::serve(
+                    &base_dir,
+                    &db_path,
+                    compute_backlinks,
+                    &bind,
+                    port,
+                    cache_control.as_deref(),
+                )?;
             }
             WebCommands::Get { canonical_url } => {
                 let body = web::get(&base_dir, &db_path, compute_backlinks, &canonical_url)?;
@@ -760,9 +777,41 @@ mod tests {
         let cli = Cli::parse_from(["markbase", "web", "serve"]);
         if let Commands::Web { command } = cli.command {
             match command {
-                WebCommands::Serve { bind, port } => {
+                WebCommands::Serve {
+                    bind,
+                    port,
+                    cache_control,
+                } => {
                     assert_eq!(bind, web::DEFAULT_BIND_ADDR);
                     assert_eq!(port, web::DEFAULT_PORT);
+                    assert_eq!(cache_control, None);
+                }
+                _ => panic!("Expected Serve command"),
+            }
+        } else {
+            panic!("Expected Web command");
+        }
+    }
+
+    #[test]
+    fn test_web_serve_command_parses_custom_cache_control() {
+        let cli = Cli::parse_from([
+            "markbase",
+            "web",
+            "serve",
+            "--cache-control",
+            "public, max-age=60",
+        ]);
+        if let Commands::Web { command } = cli.command {
+            match command {
+                WebCommands::Serve {
+                    bind,
+                    port,
+                    cache_control,
+                } => {
+                    assert_eq!(bind, web::DEFAULT_BIND_ADDR);
+                    assert_eq!(port, web::DEFAULT_PORT);
+                    assert_eq!(cache_control.as_deref(), Some("public, max-age=60"));
                 }
                 _ => panic!("Expected Serve command"),
             }

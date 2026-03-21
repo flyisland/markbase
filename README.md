@@ -439,6 +439,7 @@ final web Markdown body.
 markbase web init-docsify --homepage /HOME.md
 markbase web serve                           # listen on 127.0.0.1:3000
 markbase web serve --bind 127.0.0.1 --port 4000
+markbase web serve --cache-control "public, max-age=60"
 markbase web get /entities/person/alice.md  # print final web Markdown body
 ```
 
@@ -455,6 +456,11 @@ has been initialized. Once initialized:
 - the shell keeps internal `.md` and `.base` document links inside docsify
 - binary resource URLs such as images and attachments continue to resolve
   directly
+
+By default, `web serve` returns `Cache-Control: no-store, no-cache,
+must-revalidate` plus matching legacy no-cache headers on every response. Pass
+`--cache-control <value>` to override that header for all responses served by
+the process.
 
 Web routing is path-based and derived from indexed `file.path`, but internal
 rendering still resolves Markdown notes and `.base` targets by name. The

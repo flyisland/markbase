@@ -195,6 +195,15 @@ impl TestVault {
     }
 
     pub fn spawn_web_server(&self, bind: &str, port: u16) -> TestServer {
+        self.spawn_web_server_with_cache_control(bind, port, None)
+    }
+
+    pub fn spawn_web_server_with_cache_control(
+        &self,
+        bind: &str,
+        port: u16,
+        cache_control: Option<&str>,
+    ) -> TestServer {
         let binary_path = std::env::current_exe()
             .ok()
             .and_then(|p| p.parent().map(|p| p.join("markbase")))
@@ -206,17 +215,22 @@ impl TestVault {
             PathBuf::from("target/debug/markbase")
         };
 
-        let child = Command::new(&cmd_path)
-            .args([
-                "--base-dir",
-                &self.path.to_string_lossy(),
-                "web",
-                "serve",
-                "--bind",
-                bind,
-                "--port",
-                &port.to_string(),
-            ])
+        let mut command = Command::new(&cmd_path);
+        command.args([
+            "--base-dir",
+            &self.path.to_string_lossy(),
+            "web",
+            "serve",
+            "--bind",
+            bind,
+            "--port",
+            &port.to_string(),
+        ]);
+        if let Some(cache_control) = cache_control {
+            command.args(["--cache-control", cache_control]);
+        }
+
+        let child = command
             .env_remove("MARKBASE_BASE_DIR")
             .stdout(Stdio::null())
             .stderr(Stdio::null())

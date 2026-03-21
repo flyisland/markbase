@@ -13,6 +13,7 @@ use crate::scanner::{self, IndexOptions};
 pub const DEFAULT_BIND_ADDR: &str = "127.0.0.1";
 pub const DEFAULT_PORT: u16 = 3000;
 pub const DOCSIFY_INDEX_FILENAME: &str = "index.html";
+pub const DEFAULT_CACHE_CONTROL: &str = "no-store, no-cache, must-revalidate";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedNoteRoute {
@@ -91,8 +92,10 @@ pub fn serve(
     compute_backlinks: bool,
     bind: &str,
     port: u16,
+    cache_control: Option<&str>,
 ) -> Result<(), WebError> {
     ensure_docsify_shell_exists(base_dir)?;
+    let cache_control = cache_control.unwrap_or(DEFAULT_CACHE_CONTROL);
     let listener = TcpListener::bind((bind, port))
         .map_err(|err| WebError::Io(format!("failed to bind {}:{}: {}", bind, port, err)))?;
     let local_addr = listener
@@ -103,7 +106,9 @@ pub fn serve(
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
-                if let Err(err) = handle_connection(stream, base_dir, db_path, compute_backlinks) {
+                if let Err(err) =
+                    handle_connection(stream, base_dir, db_path, compute_backlinks, cache_control)
+                {
                     eprintln!("WARN: web request failed: {}", err);
                 }
             }
@@ -508,6 +513,7 @@ fn handle_connection(
     base_dir: &Path,
     db_path: &Path,
     compute_backlinks: bool,
+    cache_control: &str,
 ) -> Result<(), WebError> {
     stream
         .set_read_timeout(Some(Duration::from_secs(5)))
@@ -537,6 +543,7 @@ fn handle_connection(
             "Method Not Allowed",
             "text/plain; charset=utf-8",
             b"Method Not Allowed",
+            cache_control,
         );
     }
 
@@ -547,9 +554,10 @@ fn handle_connection(
             "OK",
             "text/markdown; charset=utf-8",
             body.as_bytes(),
+            cache_control,
         ),
         Ok(WebResponse::Resource { body, content_type }) => {
-            write_response(&mut stream, 200, "OK", content_type, &body)
+            write_response(&mut stream, 200, "OK", content_type, &body, cache_control)
         }
         Err(WebError::BadPath(message)) => write_response(
             &mut stream,
@@ -557,6 +565,7 @@ fn handle_connection(
             "Bad Request",
             "text/plain; charset=utf-8",
             message.as_bytes(),
+            cache_control,
         ),
         Err(WebError::NotFound(message)) => write_response(
             &mut stream,
@@ -564,6 +573,7 @@ fn handle_connection(
             "Not Found",
             "text/plain; charset=utf-8",
             message.as_bytes(),
+            cache_control,
         ),
         Err(err) => write_response(
             &mut stream,
@@ -571,6 +581,7 @@ fn handle_connection(
             "Internal Server Error",
             "text/plain; charset=utf-8",
             err.to_string().as_bytes(),
+            cache_control,
         ),
     }
 }
@@ -581,13 +592,23 @@ fn write_response(
     status_text: &str,
     content_type: &str,
     body: &[u8],
+    cache_control: &str,
 ) -> Result<(), WebError> {
+    let cache_headers = if cache_control == DEFAULT_CACHE_CONTROL {
+        format!(
+            "Cache-Control: {}\r\nPragma: no-cache\r\nExpires: 0\r\n",
+            cache_control
+        )
+    } else {
+        format!("Cache-Control: {}\r\n", cache_control)
+    };
     let header = format!(
-        "HTTP/1.1 {} {}\r\nContent-Length: {}\r\nContent-Type: {}\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 {} {}\r\nContent-Length: {}\r\nContent-Type: {}\r\n{}Connection: close\r\n\r\n",
         status_code,
         status_text,
         body.len(),
-        content_type
+        content_type,
+        cache_headers
     );
     stream.write_all(header.as_bytes())?;
     stream.write_all(body)?;
@@ -671,22 +692,56 @@ fn render_docsify_index(homepage: &str) -> String {
         homepage: {homepage_json},
         basePath: "/",
         ext: "",
+        externalLinkTarget: "_self",
+        noCompileLinks: ["/.*\\.md(?:[?#].*)?", "/.*\\.base(?:[?#].*)?"],
         auto2top: true,
         plugins: [
           function (hook) {{
-            hook.doneEach(function () {{
-              document.querySelectorAll("#app a[href]").forEach(function (a) {{
-                const href = a.getAttribute("href");
-                if (!href) return;
-                if (!href.startsWith("/")) return;
-                if (href.startsWith("//")) return;
-                if (href.startsWith("/#")) return;
+            function normalizeDocsifyDom() {{
+              document
+                .querySelectorAll(".markdown-section a[href], .sidebar a[href], nav a[href]")
+                .forEach(function (a) {{
+                  const href = a.getAttribute("href");
+                  if (!href) return;
+                  if (!href.startsWith("/")) return;
+                  if (href.startsWith("//")) return;
+                  if (href.startsWith("/#")) return;
 
-                const path = href.split("#")[0].split("?")[0];
-                if (!(path.endsWith(".md") || path.endsWith(".base"))) return;
+                  const path = href.split("#")[0].split("?")[0];
+                  if (!(path.endsWith(".md") || path.endsWith(".base"))) return;
 
-                a.setAttribute("href", "#" + href);
+                  a.setAttribute("href", "#" + href);
+                  a.removeAttribute("target");
+                  a.removeAttribute("rel");
+                }});
+
+              document
+                .querySelectorAll(".markdown-section img[data-origin], .sidebar img[data-origin]")
+                .forEach(function (img) {{
+                  const original = img.getAttribute("data-origin");
+                  if (!original) return;
+                  if (!original.startsWith("/")) return;
+
+                  img.setAttribute("src", original);
+                }});
+            }}
+
+            if (!window.__markbaseDocsifyObserverInstalled) {{
+              window.__markbaseDocsifyObserverInstalled = true;
+              const observer = new MutationObserver(function () {{
+                normalizeDocsifyDom();
               }});
+
+              observer.observe(document.body, {{
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ["href", "src", "data-origin"],
+              }});
+            }}
+
+            hook.doneEach(function () {{
+              normalizeDocsifyDom();
             }});
           }},
         ],
@@ -800,7 +855,23 @@ mod tests {
         let html = render_docsify_index("/HOME.md");
         assert!(html.contains("homepage: \"/HOME.md\""));
         assert!(html.contains("ext: \"\""));
+        assert!(html.contains("externalLinkTarget: \"_self\""));
+        assert!(
+            html.contains(
+                "noCompileLinks: [\"/.*\\\\.md(?:[?#].*)?\", \"/.*\\\\.base(?:[?#].*)?\"]"
+            )
+        );
+        assert!(html.contains("function normalizeDocsifyDom() {"));
+        assert!(html.contains("new MutationObserver(function () {"));
+        assert!(html.contains(
+            ".querySelectorAll(\".markdown-section a[href], .sidebar a[href], nav a[href]\")"
+        ));
+        assert!(html.contains(
+            ".querySelectorAll(\".markdown-section img[data-origin], .sidebar img[data-origin]\")"
+        ));
         assert!(html.contains("path.endsWith(\".md\") || path.endsWith(\".base\")"));
+        assert!(html.contains("a.removeAttribute(\"target\")"));
+        assert!(html.contains("img.setAttribute(\"src\", original)"));
         assert!(!html.contains("path.endsWith(\".png\")"));
     }
 

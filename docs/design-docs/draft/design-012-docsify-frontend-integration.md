@@ -251,6 +251,35 @@ In the first version, that plugin should:
 - leave binary resource URLs untouched so images and attachments still resolve
   directly
 
+### Resource URL normalization
+
+The docsify integration must distinguish document navigation from resource
+delivery:
+
+- Markdown note routes and `.base` routes should be adapted into docsify-local
+  navigation
+- binary resources such as images, PDFs, and other attachments must remain
+  direct resource requests and must not be rewritten into docsify hash routes
+
+In practice, docsify may further normalize rendered HTML after Markdown is
+converted, especially for image elements. When markbase emits an absolute
+resource URL such as:
+
+```md
+![](/logs/opportunities/_assets/example.png)
+```
+
+the frontend integration must preserve that absolute resource identity. If the
+rendered DOM contains a docsify-adjusted image `src` that no longer matches the
+server-emitted absolute resource path, but the original absolute path is still
+available from docsify metadata such as `data-origin`, the plugin should
+restore the image request URL back to the original absolute resource path.
+
+This rule applies to image-style resources that docsify renders as `<img>`
+elements. Non-image attachments such as PDFs and generic binary downloads
+should continue to use their direct absolute resource links without docsify hash
+adaptation.
+
 This means the first docsify integration solves the navigation problem in the
 frontend layer without changing the backend contract from `design-003`.
 
