@@ -303,6 +303,9 @@ Its responsibilities include:
 
 - translating Base filter objects and string predicates
 - materializing the `this` context used by expressions such as `link(this)`
+- comparing pure frontmatter wikilink scalars by normalized target when they are
+  used in scalar equality predicates, so `company == this.file.name` can match a
+  stored value such as `company: "[[acme]]"`
 - translating column selections and sort clauses
 - preserving shared namespace semantics for bare fields, `file.*`, and `note.*`
 

@@ -427,6 +427,10 @@ By default, the same view is wrapped in a JSON code fence so agents can parse it
 Supported filters: `link(this)`, `link("name")`, `file.hasLink(this.file)`,
 `file.hasTag()`, `file.inFolder()`, date comparisons, `isEmpty()`, `contains()`.
 
+When a frontmatter scalar stores a pure wikilink such as `company: "[[acme]]"`,
+Base equality filters compare by the normalized target name, so
+`company == this.file.name` and `company == link(this)` both match.
+
 Warnings (unsupported filters, missing embedded notes, missing base files) go to stderr.
 Exit code is non-zero only on hard errors (e.g. note not found).
 

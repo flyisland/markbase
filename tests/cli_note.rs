@@ -1996,6 +1996,35 @@ fn test_note_render_this_file_name_filter_matches_current_note() {
 }
 
 #[test]
+fn test_note_render_frontmatter_wikilink_field_matches_this_file_name() {
+    let vault = TestVault::new();
+    vault.create_note("acme", "![[company-person.base]]\n");
+    vault.create_note(
+        "alice",
+        "---\ntype: person\ncompany: \"[[acme]]\"\ndescription: Account owner\n---\n",
+    );
+    vault.create_note(
+        "bob",
+        "---\ntype: person\ncompany: \"[[other]]\"\ndescription: Not this company\n---\n",
+    );
+    vault.create_file(
+        "company-person.base",
+        "views:\n  - type: table\n    name: Company People\n    filters:\n      and:\n        - type == \"person\"\n        - company == this.file.name\n    order:\n      - file.name\n      - description\n",
+    );
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "acme", "-o", "table"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stdout.contains("> **Company People**"));
+    assert!(stdout.contains("[[alice]]"));
+    assert!(!stdout.contains("[[bob]]"));
+    assert!(stderr.is_empty(), "unexpected stderr output: {}", stderr);
+}
+
+#[test]
 fn test_note_render_base_embed_with_view_selector() {
     let vault = TestVault::new();
     vault.create_note("host", "![[tasks.base#Open Tasks]]");
@@ -2386,7 +2415,8 @@ fn test_note_render_dry_run() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stdout.contains("dry-run from opps.base"));
     assert!(stdout.contains("FROM notes"));
-    assert!(stdout.contains("[[acme]]"));
+    assert!(stdout.contains("regexp_extract"));
+    assert!(stdout.contains("'acme'"));
     assert!(stderr.is_empty(), "unexpected stderr output: {}", stderr);
 }
 

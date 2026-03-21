@@ -200,6 +200,33 @@ fn test_web_output_rewrites_wikilinks_to_canonical_routes() {
 }
 
 #[test]
+fn test_web_render_mode_frontmatter_wikilink_field_matches_this_file_name() {
+    let vault = TestVault::new();
+    vault.create_note_in_subdir("entities/company", "acme", "![[company-person.base]]\n");
+    vault.create_note_in_subdir(
+        "entities/person",
+        "alice",
+        "---\ntype: person\ncompany: \"[[acme]]\"\ndescription: Account owner\n---\n",
+    );
+    vault.create_note_in_subdir(
+        "entities/person",
+        "bob",
+        "---\ntype: person\ncompany: \"[[other]]\"\ndescription: Not this company\n---\n",
+    );
+    vault.create_file(
+        "base-views/company-person.base",
+        "views:\n  - type: table\n    name: Company People\n    filters:\n      and:\n        - type == \"person\"\n        - company == this.file.name\n    order:\n      - file.name\n      - description\n",
+    );
+
+    let output = vault.web_get("/entities/company/acme.md");
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("| [alice](/entities/person/alice.md) |"));
+    assert!(!stdout.contains("| [bob](/entities/person/bob.md) |"));
+}
+
+#[test]
 fn test_web_output_rewrites_base_wikilinks_to_canonical_routes() {
     let vault = TestVault::new();
     vault.create_file(

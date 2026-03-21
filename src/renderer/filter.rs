@@ -1,5 +1,6 @@
 #![allow(clippy::collapsible_if, clippy::manual_strip, dead_code)]
 
+use crate::link_syntax::parse_link_target;
 use crate::renderer::output::ColumnMeta;
 use regex::Regex;
 use serde_json::Value;
@@ -182,19 +183,20 @@ fn translate_string_filter(
     if let Some(caps) = COMPARE_RE.captures(&s) {
         let attr = &caps[1];
         let op = &caps[2];
-        let raw_value = &caps[3];
-
+        let raw_value = caps[3].trim();
         let value = raw_value.trim_matches('"').trim_matches('\'').to_string();
 
-        let (sql_expr, _) = parse_attribute(attr)?;
+        let (sql_expr, is_frontmatter) = parse_attribute(attr)?;
+        let sql_expr = if is_frontmatter {
+            normalize_pure_wikilink_sql(&sql_expr)
+        } else {
+            sql_expr
+        };
 
-        let translated_value = if value.starts_with('"') || value.starts_with('\'') {
-            let inner = value.trim_matches('"').trim_matches('\'');
-            if inner.starts_with("[[") && inner.ends_with("]]") {
-                format!("'{}'", inner.replace('\'', "''"))
-            } else {
-                format!("'{}'", unescape_string_literal(inner))
-            }
+        let translated_value = if is_quoted_string(raw_value) {
+            let inner = &raw_value[1..raw_value.len() - 1];
+            let normalized = normalize_pure_wikilink_literal(inner);
+            format!("'{}'", unescape_string_literal(&normalized))
         } else if value.parse::<f64>().is_ok() {
             format!("{}::DOUBLE", value)
         } else if translate_date_expr(&value).is_some() {
@@ -255,6 +257,39 @@ fn unescape_string_literal(s: &str) -> String {
     s.replace('\'', "''")
 }
 
+fn is_quoted_string(value: &str) -> bool {
+    (value.starts_with('"') && value.ends_with('"'))
+        || (value.starts_with('\'') && value.ends_with('\''))
+}
+
+fn normalize_pure_wikilink_literal(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.starts_with("[[") && trimmed.ends_with("]]") && trimmed.len() >= 4 {
+        return parse_link_target(&trimmed[2..trimmed.len() - 2]).normalized_target;
+    }
+    trimmed.to_string()
+}
+
+fn normalize_pure_wikilink_sql(expr: &str) -> String {
+    format!(
+        concat!(
+            "CASE ",
+            "WHEN {expr} IS NULL THEN NULL ",
+            "WHEN regexp_matches({expr}, '^\\s*\\[\\[[^\\]]+\\]\\]\\s*$') THEN ",
+            "regexp_replace(",
+            "regexp_replace(",
+            "split_part(split_part(regexp_extract({expr}, '^\\s*\\[\\[([^\\]]+)\\]\\]\\s*$', 1), '|', 1), '#', 1), ",
+            "'^.*/', ''",
+            "), ",
+            "'\\\\.md$', ''",
+            ") ",
+            "ELSE {expr} ",
+            "END"
+        ),
+        expr = expr
+    )
+}
+
 fn file_prop_to_col(prop: &str) -> Option<String> {
     match prop {
         "name" => Some("name".to_string()),
@@ -282,13 +317,13 @@ fn parse_attribute(attr: &str) -> Option<(String, bool)> {
         let field = &attr[5..];
         return Some((
             format!("json_extract_string(properties, '$.\"{}\"')", field),
-            false,
+            true,
         ));
     }
     let field = attr;
     Some((
         format!("json_extract_string(properties, '$.\"{}\"')", field),
-        false,
+        true,
     ))
 }
 
@@ -565,7 +600,21 @@ mod tests {
         let mut warnings = Vec::new();
         let filter = serde_json::json!("related_customer == link(this)");
         let result = translate_filter(&filter, &this, "test.base", &mut warnings);
-        assert!(result.unwrap().contains("'[[acme]]'"));
+        let sql = result.unwrap();
+        assert!(sql.contains("regexp_extract"));
+        assert!(sql.contains("'acme'"));
+        assert!(!sql.contains("'[[acme]]'"));
+    }
+
+    #[test]
+    fn test_translate_frontmatter_link_field_matches_plain_note_name() {
+        let this = ctx();
+        let mut warnings = Vec::new();
+        let filter = serde_json::json!("company == this.file.name");
+        let result = translate_filter(&filter, &this, "test.base", &mut warnings);
+        let sql = result.unwrap();
+        assert!(sql.contains("regexp_extract"));
+        assert!(sql.contains("'acme'"));
     }
 
     #[test]
