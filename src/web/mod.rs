@@ -12,6 +12,7 @@ use crate::scanner::{self, IndexOptions};
 
 pub const DEFAULT_BIND_ADDR: &str = "127.0.0.1";
 pub const DEFAULT_PORT: u16 = 3000;
+pub const DOCSIFY_INDEX_FILENAME: &str = "index.html";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedNoteRoute {
@@ -91,6 +92,7 @@ pub fn serve(
     bind: &str,
     port: u16,
 ) -> Result<(), WebError> {
+    ensure_docsify_shell_exists(base_dir)?;
     let listener = TcpListener::bind((bind, port))
         .map_err(|err| WebError::Io(format!("failed to bind {}:{}: {}", bind, port, err)))?;
     let local_addr = listener
@@ -112,6 +114,29 @@ pub fn serve(
     }
 
     Ok(())
+}
+
+pub fn init_docsify(base_dir: &Path, homepage: &str, force: bool) -> Result<PathBuf, WebError> {
+    decode_canonical_path(homepage)?;
+
+    let index_path = docsify_index_path(base_dir);
+    if index_path.exists() && !force {
+        return Err(WebError::Io(format!(
+            "ERROR: docsify shell already exists at '{}'. Re-run with --force to overwrite it.",
+            index_path.display()
+        )));
+    }
+
+    let shell = render_docsify_index(homepage);
+    fs::write(&index_path, shell).map_err(|err| {
+        WebError::Io(format!(
+            "failed to write docsify shell '{}': {}",
+            index_path.display(),
+            err
+        ))
+    })?;
+
+    Ok(index_path)
 }
 
 pub fn with_request_context<T, F>(
@@ -258,6 +283,12 @@ fn resolve_decoded_path(
     db: &Database,
     decoded_path: &str,
 ) -> Result<RouteTarget, WebError> {
+    let decoded_path = if decoded_path.is_empty() {
+        DOCSIFY_INDEX_FILENAME
+    } else {
+        decoded_path
+    };
+
     let note = db
         .get_note_by_path(decoded_path)
         .map_err(|err| WebError::Internal(format!("failed to resolve route: {}", err)))?
@@ -601,6 +632,72 @@ fn content_type_for_path(path: &str) -> &'static str {
     }
 }
 
+fn docsify_index_path(base_dir: &Path) -> PathBuf {
+    base_dir.join(DOCSIFY_INDEX_FILENAME)
+}
+
+fn ensure_docsify_shell_exists(base_dir: &Path) -> Result<(), WebError> {
+    let index_path = docsify_index_path(base_dir);
+    if index_path.is_file() {
+        return Ok(());
+    }
+
+    Err(WebError::Io(format!(
+        "ERROR: docsify shell not found at '{}'. Run `markbase web init-docsify --homepage <canonical-url>` first.",
+        index_path.display()
+    )))
+}
+
+fn render_docsify_index(homepage: &str) -> String {
+    let homepage_json =
+        serde_json::to_string(homepage).expect("serializing docsify homepage should not fail");
+    format!(
+        r##"<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>markbase</title>
+    <link
+      rel="stylesheet"
+      href="//cdn.jsdelivr.net/npm/docsify@4/themes/vue.css"
+    />
+  </head>
+  <body>
+    <div id="app">Loading...</div>
+    <script>
+      window.$docsify = {{
+        name: "markbase",
+        homepage: {homepage_json},
+        basePath: "/",
+        auto2top: true,
+        plugins: [
+          function (hook) {{
+            hook.doneEach(function () {{
+              document.querySelectorAll("#app a[href]").forEach(function (a) {{
+                const href = a.getAttribute("href");
+                if (!href) return;
+                if (!href.startsWith("/")) return;
+                if (href.startsWith("//")) return;
+                if (href.startsWith("/#")) return;
+
+                const path = href.split("#")[0].split("?")[0];
+                if (!(path.endsWith(".md") || path.endsWith(".base"))) return;
+
+                a.setAttribute("href", "#" + href);
+              }});
+            }});
+          }},
+        ],
+      }};
+    </script>
+    <script src="//cdn.jsdelivr.net/npm/docsify@4"></script>
+  </body>
+</html>
+"##
+    )
+}
+
 fn is_image_extension(ext: &str) -> bool {
     matches!(
         ext.to_ascii_lowercase().as_str(),
@@ -695,5 +792,22 @@ mod tests {
     #[test]
     fn test_strip_comments_removes_balanced_comments() {
         assert_eq!(strip_comments("A %%hidden%% B"), "A  B");
+    }
+
+    #[test]
+    fn test_render_docsify_index_rewrites_internal_document_links_only() {
+        let html = render_docsify_index("/HOME.md");
+        assert!(html.contains("homepage: \"/HOME.md\""));
+        assert!(html.contains("path.endsWith(\".md\") || path.endsWith(\".base\")"));
+        assert!(!html.contains("path.endsWith(\".png\")"));
+    }
+
+    #[test]
+    fn test_render_docsify_index_escapes_homepage_for_javascript_string_literal() {
+        let html = render_docsify_index("/docs/%22quoted%22.md");
+        assert!(html.contains("homepage: \"/docs/%22quoted%22.md\""));
+
+        let html = render_docsify_index("/docs/\"quoted\".md");
+        assert!(html.contains("homepage: \"/docs/\\\"quoted\\\".md\""));
     }
 }

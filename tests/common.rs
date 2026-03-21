@@ -186,6 +186,14 @@ impl TestVault {
         self.run_cli(&["web", "get", canonical_url])
     }
 
+    pub fn web_init_docsify(&self, homepage: &str) -> Output {
+        self.run_cli(&["web", "init-docsify", "--homepage", homepage])
+    }
+
+    pub fn web_init_docsify_force(&self, homepage: &str) -> Output {
+        self.run_cli(&["web", "init-docsify", "--homepage", homepage, "--force"])
+    }
+
     pub fn spawn_web_server(&self, bind: &str, port: u16) -> TestServer {
         let binary_path = std::env::current_exe()
             .ok()

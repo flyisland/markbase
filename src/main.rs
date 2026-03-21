@@ -207,6 +207,18 @@ enum WebCommands {
         #[arg(help = "Canonical vault-shaped URL path such as /entities/person/alice.md")]
         canonical_url: String,
     },
+    #[command(about = "Generate a docsify browser shell at base-dir/index.html")]
+    InitDocsify {
+        #[arg(
+            long = "homepage",
+            required = true,
+            help = "Canonical route loaded by docsify, such as /HOME.md or /All%20Logs.base"
+        )]
+        homepage: String,
+
+        #[arg(long = "force", help = "Overwrite an existing base-dir/index.html")]
+        force: bool,
+    },
 }
 
 fn get_database_path(cli_base_dir: PathBuf) -> Result<PathBuf, String> {
@@ -487,6 +499,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 let body = web::get(&base_dir, &db_path, compute_backlinks, &canonical_url)?;
                 print!("{}", body);
             }
+            WebCommands::InitDocsify { homepage, force } => {
+                let path = web::init_docsify(&base_dir, &homepage, force)?;
+                let relative_path = path.strip_prefix(&base_dir).unwrap_or(path.as_path());
+                println!("{}", relative_path.display());
+            }
         },
     }
 
@@ -763,6 +780,35 @@ mod tests {
                     assert_eq!(canonical_url, "/entities/person/alice.md");
                 }
                 _ => panic!("Expected Get command"),
+            }
+        } else {
+            panic!("Expected Web command");
+        }
+    }
+
+    #[test]
+    fn test_web_init_docsify_requires_homepage() {
+        let result = Cli::try_parse_from(["markbase", "web", "init-docsify"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_web_init_docsify_command_parses() {
+        let cli = Cli::parse_from([
+            "markbase",
+            "web",
+            "init-docsify",
+            "--homepage",
+            "/HOME.md",
+            "--force",
+        ]);
+        if let Commands::Web { command } = cli.command {
+            match command {
+                WebCommands::InitDocsify { homepage, force } => {
+                    assert_eq!(homepage, "/HOME.md");
+                    assert!(force);
+                }
+                _ => panic!("Expected InitDocsify command"),
             }
         } else {
             panic!("Expected Web command");

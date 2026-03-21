@@ -4,6 +4,7 @@ use common::{
     TestVault, assert_cli_error, assert_cli_success, http_get, pick_free_port, stderr_contains,
     stdout_contains,
 };
+use std::fs;
 
 #[test]
 fn test_web_route_resolves_note_path_to_internal_note_name() {
@@ -30,6 +31,7 @@ fn test_web_route_matches_decoded_file_path() {
 #[test]
 fn test_web_request_refreshes_index_before_route_resolution() {
     let vault = TestVault::new();
+    vault.create_file("index.html", "shell");
     let port = pick_free_port();
     let _server = vault.spawn_web_server("127.0.0.1", port);
 
@@ -45,6 +47,7 @@ fn test_web_request_refreshes_index_before_route_resolution() {
 fn test_web_request_closes_request_scoped_db_handle() {
     let vault = TestVault::new();
     vault.create_note_in_subdir("entities/person", "alice", "One\n");
+    vault.create_file("index.html", "shell");
     let port = pick_free_port();
     let _server = vault.spawn_web_server("127.0.0.1", port);
 
@@ -70,6 +73,7 @@ fn test_web_request_closes_request_scoped_db_handle() {
 #[test]
 fn test_web_http_route_returns_404_for_miss_and_400_for_bad_path() {
     let vault = TestVault::new();
+    vault.create_file("index.html", "shell");
     let port = pick_free_port();
     let _server = vault.spawn_web_server("127.0.0.1", port);
 
@@ -309,6 +313,7 @@ fn test_web_resource_route_streams_bytes_with_correct_content_type() {
     vault.create_file("assets/audio.mp3", "mp3-bytes");
     vault.create_file("data/report.json", "{\"ok\":true}");
     vault.create_file("files/blob.bin", "bin-bytes");
+    vault.create_file("index.html", "shell");
     let port = pick_free_port();
     let _server = vault.spawn_web_server("127.0.0.1", port);
 
@@ -364,6 +369,7 @@ fn test_web_get_matches_web_serve_for_note_targets() {
         "tasks.base",
         "views:\n  - type: table\n    name: Open Tasks\n    filters:\n      and:\n        - status == \"open\"\n    order:\n      - file.name\n",
     );
+    vault.create_file("index.html", "shell");
     let port = pick_free_port();
     let _server = vault.spawn_web_server("127.0.0.1", port);
 
@@ -411,4 +417,109 @@ fn test_web_interface_behavior_matches_docs() {
     assert!(
         architecture.contains("Canonical browser routes resolve by vault-relative `file.path`.")
     );
+}
+
+#[test]
+fn test_web_init_docsify_requires_homepage() {
+    let vault = TestVault::new();
+
+    let output = vault.run_cli(&["web", "init-docsify"]);
+
+    assert_cli_error(&output);
+}
+
+#[test]
+fn test_web_init_docsify_writes_index_html_to_base_dir_root() {
+    let vault = TestVault::new();
+
+    let output = vault.web_init_docsify("/HOME.md");
+
+    assert_cli_success(&output);
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "index.html");
+    let index_path = vault.path.join("index.html");
+    assert!(index_path.exists());
+}
+
+#[test]
+fn test_web_init_docsify_refuses_overwrite_without_force() {
+    let vault = TestVault::new();
+    let index_path = vault.path.join("index.html");
+    fs::write(&index_path, "old").unwrap();
+
+    let output = vault.web_init_docsify("/HOME.md");
+
+    assert_cli_error(&output);
+    assert!(stderr_contains(&output, "already exists"));
+    assert_eq!(fs::read_to_string(&index_path).unwrap(), "old");
+
+    let forced = vault.web_init_docsify_force("/HOME.md");
+    assert_cli_success(&forced);
+    assert!(
+        fs::read_to_string(&index_path)
+            .unwrap()
+            .contains("homepage: \"/HOME.md\"")
+    );
+}
+
+#[test]
+fn test_web_init_docsify_embeds_configured_homepage() {
+    let vault = TestVault::new();
+
+    let output = vault.web_init_docsify("/All%20Opputunities%20Logs.base");
+
+    assert_cli_success(&output);
+    let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
+    assert!(html.contains("homepage: \"/All%20Opputunities%20Logs.base\""));
+}
+
+#[test]
+fn test_web_serve_requires_docsify_index_html() {
+    let vault = TestVault::new();
+
+    let output = vault.run_cli(&["web", "serve"]);
+
+    assert_cli_error(&output);
+    assert!(stderr_contains(
+        &output,
+        "Run `markbase web init-docsify --homepage <canonical-url>` first."
+    ));
+}
+
+#[test]
+fn test_web_root_serves_generated_index_html() {
+    let vault = TestVault::new();
+    assert_cli_success(&vault.web_init_docsify("/HOME.md"));
+
+    let port = pick_free_port();
+    let _server = vault.spawn_web_server("127.0.0.1", port);
+
+    let response = http_get(port, "/");
+
+    assert_eq!(response.status_code, 200);
+    assert_eq!(
+        response.headers.get("content-type").unwrap(),
+        "text/html; charset=utf-8"
+    );
+    let body = String::from_utf8_lossy(&response.body);
+    assert!(body.contains("window.$docsify"));
+    assert!(body.contains("homepage: \"/HOME.md\""));
+}
+
+#[test]
+fn test_web_init_docsify_plugin_rewrites_internal_document_links() {
+    let vault = TestVault::new();
+    assert_cli_success(&vault.web_init_docsify("/HOME.md"));
+
+    let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
+    assert!(html.contains("path.endsWith(\".md\") || path.endsWith(\".base\")"));
+    assert!(html.contains("a.setAttribute(\"href\", \"#\" + href)"));
+}
+
+#[test]
+fn test_web_init_docsify_plugin_leaves_binary_resource_urls_untouched() {
+    let vault = TestVault::new();
+    assert_cli_success(&vault.web_init_docsify("/HOME.md"));
+
+    let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
+    assert!(html.contains("if (!(path.endsWith(\".md\") || path.endsWith(\".base\"))) return;"));
 }

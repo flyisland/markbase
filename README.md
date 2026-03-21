@@ -432,13 +432,29 @@ Exit code is non-zero only on hard errors (e.g. note not found).
 
 ### `web`
 
-Serve canonical path-based browser routes or inspect the final web Markdown body.
+Initialize the supported docsify shell, serve browser routes, or inspect the
+final web Markdown body.
 
 ```bash
+markbase web init-docsify --homepage /HOME.md
 markbase web serve                           # listen on 127.0.0.1:3000
 markbase web serve --bind 127.0.0.1 --port 4000
 markbase web get /entities/person/alice.md  # print final web Markdown body
 ```
+
+`markbase web init-docsify --homepage <canonical-url>` writes `index.html` into
+the base-dir root. `--homepage` is required, and an existing `index.html` is
+left untouched unless `--force` is provided.
+
+`markbase web serve` is the user-facing browser entrypoint. It requires
+`base-dir/index.html` to exist and will refuse to start until the docsify shell
+has been initialized. Once initialized:
+
+- requesting `/` returns `index.html`
+- requesting `/index.html` returns the same docsify shell
+- the shell keeps internal `.md` and `.base` document links inside docsify
+- binary resource URLs such as images and attachments continue to resolve
+  directly
 
 Web routing is path-based and derived from indexed `file.path`, but internal
 rendering still resolves Markdown notes and `.base` targets by name. The
