@@ -670,6 +670,7 @@ fn render_docsify_index(homepage: &str) -> String {
         name: "markbase",
         homepage: {homepage_json},
         basePath: "/",
+        ext: "",
         auto2top: true,
         plugins: [
           function (hook) {{
@@ -798,6 +799,7 @@ mod tests {
     fn test_render_docsify_index_rewrites_internal_document_links_only() {
         let html = render_docsify_index("/HOME.md");
         assert!(html.contains("homepage: \"/HOME.md\""));
+        assert!(html.contains("ext: \"\""));
         assert!(html.contains("path.endsWith(\".md\") || path.endsWith(\".base\")"));
         assert!(!html.contains("path.endsWith(\".png\")"));
     }
