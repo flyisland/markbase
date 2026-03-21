@@ -1,7 +1,7 @@
 ---
 id: task-0018
 title: "实现 web init-docsify 命令"
-status: active
+status: completed
 design: design-012
 boundaries:
   allowed:
@@ -10,7 +10,7 @@ boundaries:
     - "README.md"
     - "ARCHITECTURE.md"
     - "docs/design-docs/implemented/design-012-docsify-frontend-integration.md"
-    - "specs/active/task-0018-web-init-docsify.md"
+    - "specs/archived/task-0018-web-init-docsify.md"
     - "tests/cli_web.rs"
     - "tests/common/**"
   forbidden_patterns:
@@ -90,7 +90,7 @@ frontend plugin。
 - README.md
 - ARCHITECTURE.md
 - docs/design-docs/implemented/design-012-docsify-frontend-integration.md
-- specs/active/task-0018-web-init-docsify.md
+- specs/archived/task-0018-web-init-docsify.md
 - tests/cli_web.rs
 - tests/common/**
 
