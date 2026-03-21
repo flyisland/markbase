@@ -200,6 +200,26 @@ fn test_web_output_rewrites_wikilinks_to_canonical_routes() {
 }
 
 #[test]
+fn test_web_output_rewrites_base_wikilinks_to_canonical_routes() {
+    let vault = TestVault::new();
+    vault.create_file(
+        "views/All Opputunities Logs.base",
+        "views:\n  - type: table\n    name: All Logs\n",
+    );
+    vault.create_note(
+        "host",
+        "[[All Opputunities Logs.base]]\n[[All Opputunities Logs.base|商机活动记录]]\n",
+    );
+
+    let output = vault.web_get("/host.md");
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("[All Opputunities Logs.base](/views/All%20Opputunities%20Logs.base)"));
+    assert!(stdout.contains("[商机活动记录](/views/All%20Opputunities%20Logs.base)"));
+}
+
+#[test]
 fn test_web_output_percent_encodes_emitted_urls() {
     let vault = TestVault::new();
     vault.create_note_in_subdir("entities/person", "张 三", "Target\n");

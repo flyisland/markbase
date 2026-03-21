@@ -350,7 +350,7 @@ fn rewrite_wikilink(token: &LinkToken, db: &Database) -> Result<String, WebError
     let Some(note) = lookup_unique_name(db, &token.parsed.normalized_target)? else {
         return Ok(token_text(token));
     };
-    if note.ext != "md" {
+    if note.ext != "md" && note.ext != "base" {
         return Ok(token_text(token));
     }
 
