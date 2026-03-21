@@ -1974,6 +1974,28 @@ fn test_note_render_link_this_filter() {
 }
 
 #[test]
+fn test_note_render_this_file_name_filter_matches_current_note() {
+    let vault = TestVault::new();
+    vault.create_note("host", "![[attendees.base]]\n");
+    vault.create_note("other", "---\nattendees_internal:\n  - Bob\n---\n");
+    vault.create_file(
+        "attendees.base",
+        "views:\n  - type: table\n    name: Current Note\n    order:\n      - file.name\n    filters:\n      and:\n        - file.name == this.file.name\n",
+    );
+    vault.index();
+
+    let output = vault.run_cli(&["note", "render", "host", "-o", "table"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stdout.contains("> **Current Note**"));
+    assert!(stdout.contains("[[host]]"));
+    assert!(!stdout.contains("[[other]]"));
+    assert!(stderr.is_empty(), "unexpected stderr output: {}", stderr);
+}
+
+#[test]
 fn test_note_render_base_embed_with_view_selector() {
     let vault = TestVault::new();
     vault.create_note("host", "![[tasks.base#Open Tasks]]");

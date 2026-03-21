@@ -30,7 +30,8 @@ static IN_FOLDER_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"^file\.inFolder\("([^"]+)"\)$"#).unwrap());
 static FILE_PROP_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^file\.(\w+)\s*([><=!]+)\s*(.+)$").unwrap());
-static THIS_FILE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"this\.file\.name").unwrap());
+static THIS_FILE_NAME_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"this\.file\.name").unwrap());
 static IS_EMPTY_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(.+)\.isEmpty\(\)$").unwrap());
 static CONTAINS_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(.+)\.contains\((.+)\)$").unwrap());
@@ -116,8 +117,8 @@ fn translate_string_filter(
     s = LINK_QUOTED_RE
         .replace_all(&s, |caps: &regex::Captures| format!("\"[[{}]]\"", &caps[1]))
         .to_string();
-    s = THIS_FILE_RE
-        .replace_all(&s, &format!("\"[[{}]]\"", this.name))
+    s = THIS_FILE_NAME_RE
+        .replace_all(&s, &format!("\"{}\"", this.name))
         .to_string();
 
     if HAS_LINK_RE.is_match(&s) {
@@ -574,6 +575,15 @@ mod tests {
         let filter = serde_json::json!("file.hasLink(this.file)");
         let result = translate_filter(&filter, &this, "test.base", &mut warnings);
         assert_eq!(result.unwrap(), "list_contains(links, 'acme')");
+    }
+
+    #[test]
+    fn test_translate_file_name_equals_this_file_name() {
+        let this = ctx();
+        let mut warnings = Vec::new();
+        let filter = serde_json::json!("file.name == this.file.name");
+        let result = translate_filter(&filter, &this, "test.base", &mut warnings);
+        assert_eq!(result.unwrap(), "name == 'acme'");
     }
 
     #[test]
