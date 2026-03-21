@@ -9,6 +9,8 @@ use crate::db::{Database, Note};
 use crate::link_syntax::{LinkKind, LinkToken, ScanContext, scan_link_tokens};
 use crate::renderer::{RenderFormat, RenderMode, RenderOptions, render_note_to_string};
 use crate::scanner::{self, IndexOptions};
+use crate::template::TemplateDocument;
+use serde_json::{Map as JsonMap, Value, json};
 
 pub const DEFAULT_BIND_ADDR: &str = "127.0.0.1";
 pub const DEFAULT_PORT: u16 = 3000;
@@ -74,6 +76,7 @@ impl From<std::io::Error> for WebError {
 enum WebResponse {
     EntryHtml(String),
     Markdown(String),
+    Json(String),
     Resource {
         body: Vec<u8>,
         content_type: &'static str,
@@ -98,6 +101,35 @@ struct ExportedDocsifyEntryHtml {
     version: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MetadataField {
+    Properties,
+    Links,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RequestMode {
+    Markdown,
+    Metadata(Vec<MetadataField>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedRequestTarget {
+    canonical_path: String,
+    mode: RequestMode,
+}
+
+#[derive(Debug, Clone)]
+struct PropertySchemaInfo {
+    template_name: String,
+    required: bool,
+    field_type: Option<String>,
+    format: Option<String>,
+    target: Option<String>,
+    enum_values: Option<Vec<String>>,
+    description: Option<String>,
+}
+
 pub fn get(
     base_dir: &Path,
     db_path: &Path,
@@ -108,7 +140,7 @@ pub fn get(
         WebResponse::EntryHtml(_) => Err(WebError::BinaryResource(
             "ERROR: `markbase web get` does not emit docsify entry HTML.".to_string(),
         )),
-        WebResponse::Markdown(body) => Ok(body),
+        WebResponse::Markdown(body) | WebResponse::Json(body) => Ok(body),
         WebResponse::Resource { .. } => Err(WebError::BinaryResource(format!(
             "ERROR: canonical URL '{}' resolves to a binary resource; `markbase web get` does not stream resource bytes.",
             canonical_url
@@ -470,13 +502,14 @@ fn render_request(
         return Ok(WebResponse::EntryHtml(entry_html.to_string()));
     }
 
+    let request = parse_request_target(raw_path)?;
     with_request_context(
         base_dir,
         db_path,
         compute_backlinks,
-        raw_path,
-        |db, target| match target {
-            RouteTarget::Note(note) => {
+        &request.canonical_path,
+        |db, target| match (&request.mode, target) {
+            (RequestMode::Markdown, RouteTarget::Note(note)) => {
                 let rendered = render_note_to_string(
                     base_dir,
                     db,
@@ -491,7 +524,7 @@ fn render_request(
                 let normalized = normalize_markdown_for_web(&rendered, db)?;
                 Ok(WebResponse::Markdown(normalized))
             }
-            RouteTarget::Resource(resource) => {
+            (RequestMode::Markdown, RouteTarget::Resource(resource)) => {
                 let body = fs::read(&resource.absolute_path).map_err(|err| {
                     WebError::Io(format!(
                         "failed to read resource '{}': {}",
@@ -503,6 +536,38 @@ fn render_request(
                     content_type: content_type_for_path(&resource.file_path),
                 })
             }
+            (RequestMode::Metadata(fields), RouteTarget::Note(note)) => {
+                let note_row = db
+                    .get_note_by_path(&note.file_path)
+                    .map_err(|err| {
+                        WebError::Internal(format!(
+                            "failed to load note metadata for '{}': {}",
+                            note.file_path, err
+                        ))
+                    })?
+                    .ok_or_else(|| {
+                        WebError::NotFound(format!(
+                            "ERROR: canonical URL '/{}' was not found in the indexed vault.",
+                            note.file_path
+                        ))
+                    })?;
+
+                if note_row.ext != "md" {
+                    return Err(WebError::BadPath(format!(
+                        "ERROR: metadata mode only supports canonical Markdown note routes; '/{}' resolves to '.{}'.",
+                        note_row.path, note_row.ext
+                    )));
+                }
+
+                let metadata = render_note_metadata(base_dir, db, &note_row, fields)?;
+                Ok(WebResponse::Json(metadata))
+            }
+            (RequestMode::Metadata(_), RouteTarget::Resource(resource)) => {
+                Err(WebError::BadPath(format!(
+                    "ERROR: metadata mode only supports canonical Markdown note routes; '/{}' resolves to a binary resource.",
+                    resource.file_path
+                )))
+            }
         },
     )
 }
@@ -513,6 +578,109 @@ fn is_docsify_entry_html_route(raw_path: &str) -> bool {
         .map(|(path, _)| path)
         .unwrap_or(raw_path);
     path_only == "/" || path_only == format!("/{}", DOCSIFY_INDEX_FILENAME)
+}
+
+fn parse_request_target(raw_path: &str) -> Result<ParsedRequestTarget, WebError> {
+    let Some((path, query)) = raw_path.split_once('?') else {
+        return Ok(ParsedRequestTarget {
+            canonical_path: raw_path.to_string(),
+            mode: RequestMode::Markdown,
+        });
+    };
+
+    if query.is_empty() {
+        return Err(WebError::BadPath(format!(
+            "ERROR: canonical URL '{}' contains an empty query string.",
+            raw_path
+        )));
+    }
+
+    let fields = parse_query_fields(raw_path, query)?;
+    Ok(ParsedRequestTarget {
+        canonical_path: path.to_string(),
+        mode: RequestMode::Metadata(fields),
+    })
+}
+
+fn parse_query_fields(raw_path: &str, query: &str) -> Result<Vec<MetadataField>, WebError> {
+    let mut fields_value = None;
+
+    for segment in query.split('&') {
+        if segment.is_empty() {
+            return Err(WebError::BadPath(format!(
+                "ERROR: canonical URL '{}' contains an empty query parameter.",
+                raw_path
+            )));
+        }
+
+        let Some((key, value)) = segment.split_once('=') else {
+            return Err(WebError::BadPath(format!(
+                "ERROR: canonical URL '{}' contains an unsupported query parameter '{}'.",
+                raw_path, segment
+            )));
+        };
+
+        if key != "fields" {
+            return Err(WebError::BadPath(format!(
+                "ERROR: canonical URL '{}' contains an unsupported query parameter '{}'.",
+                raw_path, key
+            )));
+        }
+
+        if fields_value.is_some() {
+            return Err(WebError::BadPath(format!(
+                "ERROR: canonical URL '{}' repeats the 'fields' query parameter.",
+                raw_path
+            )));
+        }
+
+        fields_value = Some(value);
+    }
+
+    let Some(fields_value) = fields_value else {
+        return Err(WebError::BadPath(format!(
+            "ERROR: canonical URL '{}' is missing the required 'fields' query parameter value.",
+            raw_path
+        )));
+    };
+
+    parse_fields_value(raw_path, fields_value)
+}
+
+fn parse_fields_value(raw_path: &str, value: &str) -> Result<Vec<MetadataField>, WebError> {
+    if value.is_empty() {
+        return Err(WebError::BadPath(format!(
+            "ERROR: canonical URL '{}' contains an empty 'fields' query parameter.",
+            raw_path
+        )));
+    }
+
+    let mut fields = Vec::new();
+    for token in value.split(',') {
+        if token.is_empty() || token.trim() != token {
+            return Err(WebError::BadPath(format!(
+                "ERROR: canonical URL '{}' contains malformed 'fields' syntax.",
+                raw_path
+            )));
+        }
+
+        let field = match token {
+            "properties" => MetadataField::Properties,
+            "links" => MetadataField::Links,
+            _ => {
+                return Err(WebError::BadPath(format!(
+                    "ERROR: canonical URL '{}' requests unsupported metadata field '{}'.",
+                    raw_path, token
+                )));
+            }
+        };
+
+        if !fields.contains(&field) {
+            fields.push(field);
+        }
+    }
+
+    Ok(fields)
 }
 
 fn resolve_decoded_path(
@@ -644,6 +812,474 @@ fn lookup_unique_name(db: &Database, name: &str) -> Result<Option<Note>, WebErro
     }
 
     Ok(matches.into_iter().next())
+}
+
+fn render_note_metadata(
+    base_dir: &Path,
+    db: &Database,
+    note: &Note,
+    fields: &[MetadataField],
+) -> Result<String, WebError> {
+    let template_names = parse_note_template_names(&note.properties);
+    let property_schemas = collect_property_schemas(base_dir, &template_names);
+    let property_order = load_note_frontmatter_order(base_dir, note).unwrap_or_default();
+
+    let mut response = JsonMap::new();
+    response.insert(
+        "file".to_string(),
+        build_file_metadata(note, &template_names),
+    );
+
+    for field in fields {
+        match field {
+            MetadataField::Properties => {
+                response.insert(
+                    "properties".to_string(),
+                    build_properties_metadata(db, note, &property_schemas, &property_order)?,
+                );
+            }
+            MetadataField::Links => {
+                response.insert("links".to_string(), build_links_metadata(db, note)?);
+            }
+        }
+    }
+
+    serde_json::to_string(&Value::Object(response))
+        .map_err(|err| WebError::Internal(format!("failed to serialize note metadata: {}", err)))
+}
+
+fn build_file_metadata(note: &Note, template_names: &[String]) -> Value {
+    json!({
+        "path": note.path,
+        "name": note.name,
+        "folder": note.folder,
+        "templates": template_names,
+    })
+}
+
+fn build_properties_metadata(
+    db: &Database,
+    note: &Note,
+    property_schemas: &std::collections::HashMap<String, PropertySchemaInfo>,
+    property_order: &[String],
+) -> Result<Value, WebError> {
+    let mut fields = Vec::new();
+
+    if let Some(properties) = note.properties.as_object() {
+        for key in property_order {
+            if let Some(value) = properties.get(key) {
+                fields.push(build_property_field(
+                    db,
+                    key,
+                    value,
+                    property_schemas.get(key),
+                )?);
+            }
+        }
+
+        let mut remaining_keys: Vec<&String> = properties
+            .keys()
+            .filter(|key| !property_order.contains(*key))
+            .collect();
+        remaining_keys.sort();
+
+        for key in remaining_keys {
+            if let Some(value) = properties.get(key) {
+                fields.push(build_property_field(
+                    db,
+                    key,
+                    value,
+                    property_schemas.get(key),
+                )?);
+            }
+        }
+    }
+
+    Ok(json!({ "fields": fields }))
+}
+
+fn build_property_field(
+    db: &Database,
+    key: &str,
+    raw_value: &Value,
+    schema: Option<&PropertySchemaInfo>,
+) -> Result<Value, WebError> {
+    let mut field = JsonMap::new();
+    field.insert("key".to_string(), Value::String(key.to_string()));
+    field.insert("raw".to_string(), raw_value.clone());
+    field.insert("value".to_string(), semantic_value_node(db, raw_value)?);
+    if let Some(schema) = schema {
+        field.insert("schema".to_string(), property_schema_value(schema));
+    }
+    Ok(Value::Object(field))
+}
+
+fn semantic_value_node(db: &Database, value: &Value) -> Result<Value, WebError> {
+    match value {
+        Value::Null => Ok(json!({ "kind": "null" })),
+        Value::Bool(_) | Value::Number(_) => Ok(json!({ "kind": "scalar", "value": value })),
+        Value::String(text) => rich_text_value(db, text),
+        Value::Array(items) => Ok(json!({
+            "kind": "list",
+            "items": items
+                .iter()
+                .map(|item| semantic_value_node(db, item))
+                .collect::<Result<Vec<_>, _>>()?,
+        })),
+        Value::Object(object) => {
+            let fields = object
+                .iter()
+                .map(|(key, nested)| {
+                    Ok(json!({
+                        "key": key,
+                        "value": semantic_value_node(db, nested)?,
+                    }))
+                })
+                .collect::<Result<Vec<_>, WebError>>()?;
+            Ok(json!({
+                "kind": "object",
+                "fields": fields,
+            }))
+        }
+    }
+}
+
+fn rich_text_value(db: &Database, input: &str) -> Result<Value, WebError> {
+    let tokens = scan_link_tokens(input, ScanContext::FrontmatterString);
+    let mut segments = Vec::new();
+    let mut cursor = 0;
+
+    for token in tokens
+        .into_iter()
+        .filter(|token| token.kind == LinkKind::WikiLink)
+    {
+        if cursor < token.full_span.start {
+            segments.push(json!({
+                "type": "text",
+                "text": &input[cursor..token.full_span.start],
+            }));
+        }
+
+        segments.push(frontmatter_wikilink_segment(db, &token)?);
+        cursor = token.full_span.end;
+    }
+
+    if cursor < input.len() || segments.is_empty() {
+        segments.push(json!({
+            "type": "text",
+            "text": &input[cursor..],
+        }));
+    }
+
+    Ok(json!({
+        "kind": "rich_text",
+        "segments": segments,
+    }))
+}
+
+fn frontmatter_wikilink_segment(db: &Database, token: &LinkToken) -> Result<Value, WebError> {
+    let mut segment = JsonMap::new();
+    segment.insert("type".to_string(), Value::String("wikilink".to_string()));
+    segment.insert(
+        "target".to_string(),
+        Value::String(token.parsed.normalized_target.clone()),
+    );
+    segment.insert(
+        "text".to_string(),
+        Value::String(wikilink_display_text(token)),
+    );
+
+    if let Some(target) = lookup_unique_name(db, &token.parsed.normalized_target)? {
+        segment.insert("exists".to_string(), Value::Bool(true));
+        segment.insert(
+            "href".to_string(),
+            Value::String(encode_canonical_path(&target.path)),
+        );
+    } else {
+        segment.insert("exists".to_string(), Value::Bool(false));
+    }
+
+    Ok(Value::Object(segment))
+}
+
+fn wikilink_display_text(token: &LinkToken) -> String {
+    if let Some(alias) = token.parsed.alias_or_size.as_deref() {
+        alias.to_string()
+    } else if let Some(anchor) = token.parsed.anchor.as_deref() {
+        if anchor.starts_with('^') {
+            token.parsed.normalized_target.clone()
+        } else {
+            format!("{} > {}", token.parsed.normalized_target, anchor)
+        }
+    } else {
+        token.parsed.normalized_target.clone()
+    }
+}
+
+fn build_links_metadata(db: &Database, note: &Note) -> Result<Value, WebError> {
+    let links = note
+        .links
+        .iter()
+        .map(|target| build_link_entry(db, target))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Value::Array(links))
+}
+
+fn build_link_entry(db: &Database, target: &str) -> Result<Value, WebError> {
+    let mut entry = JsonMap::new();
+    entry.insert("target".to_string(), Value::String(target.to_string()));
+
+    if let Some(resolved) = lookup_unique_name(db, target)? {
+        entry.insert(
+            "kind".to_string(),
+            Value::String(resolved_link_kind(&resolved).to_string()),
+        );
+        entry.insert("exists".to_string(), Value::Bool(true));
+        entry.insert(
+            "href".to_string(),
+            Value::String(encode_canonical_path(&resolved.path)),
+        );
+    } else {
+        entry.insert(
+            "kind".to_string(),
+            Value::String(unresolved_link_kind(target).to_string()),
+        );
+        entry.insert("exists".to_string(), Value::Bool(false));
+    }
+
+    Ok(Value::Object(entry))
+}
+
+fn resolved_link_kind(note: &Note) -> &'static str {
+    match note.ext.as_str() {
+        "md" => "note",
+        "base" => "base",
+        _ => "resource",
+    }
+}
+
+fn unresolved_link_kind(target: &str) -> &'static str {
+    if target.ends_with(".base") {
+        "base"
+    } else if target.contains('.') {
+        "resource"
+    } else {
+        "note"
+    }
+}
+
+fn parse_note_template_names(properties: &Value) -> Vec<String> {
+    properties
+        .get("templates")
+        .and_then(Value::as_array)
+        .map(|templates| {
+            templates
+                .iter()
+                .filter_map(Value::as_str)
+                .filter_map(parse_pure_wikilink_name)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_pure_wikilink_name(input: &str) -> Option<String> {
+    let trimmed = input.trim();
+    let leading_ws = input.len().saturating_sub(input.trim_start().len());
+    let trailing_ws = input.len().saturating_sub(input.trim_end().len());
+    let expected_start = leading_ws;
+    let expected_end = input.len().saturating_sub(trailing_ws);
+
+    let mut tokens = scan_link_tokens(input, ScanContext::FrontmatterString).into_iter();
+    let token = tokens.next()?;
+    if tokens.next().is_some() {
+        return None;
+    }
+    if token.kind != LinkKind::WikiLink {
+        return None;
+    }
+    if token.full_span.start != expected_start || token.full_span.end != expected_end {
+        return None;
+    }
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    Some(token.parsed.normalized_target)
+}
+
+fn collect_property_schemas(
+    base_dir: &Path,
+    template_names: &[String],
+) -> std::collections::HashMap<String, PropertySchemaInfo> {
+    let mut schemas = std::collections::HashMap::new();
+
+    for template_name in template_names {
+        let Ok(template) = TemplateDocument::load(base_dir, template_name) else {
+            continue;
+        };
+
+        let required_fields: std::collections::HashSet<String> =
+            template.required_fields().into_iter().collect();
+        let property_definitions = template.schema_properties();
+
+        let mut field_names = Vec::new();
+        if let Some(property_definitions) = property_definitions {
+            field_names.extend(property_definitions.keys().cloned());
+        }
+        for required in &required_fields {
+            if !field_names.contains(required) {
+                field_names.push(required.clone());
+            }
+        }
+
+        for field_name in field_names {
+            if schemas.contains_key(&field_name) {
+                continue;
+            }
+
+            let is_required = required_fields.contains(&field_name);
+            let definition = property_definitions.and_then(|props| props.get(&field_name));
+            let field_type = definition
+                .and_then(Value::as_object)
+                .and_then(|field| field.get("type"))
+                .and_then(Value::as_str)
+                .map(String::from);
+            let format = definition
+                .and_then(Value::as_object)
+                .and_then(|field| field.get("format"))
+                .and_then(Value::as_str)
+                .map(String::from);
+            let target = definition
+                .and_then(Value::as_object)
+                .and_then(|field| field.get("target"))
+                .and_then(Value::as_str)
+                .map(String::from);
+            let enum_values = definition
+                .and_then(Value::as_object)
+                .and_then(|field| field.get("enum"))
+                .and_then(Value::as_array)
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(String::from)
+                        .collect::<Vec<_>>()
+                });
+            let description = definition
+                .and_then(Value::as_object)
+                .and_then(|field| field.get("description"))
+                .and_then(Value::as_str)
+                .map(String::from);
+
+            schemas.insert(
+                field_name,
+                PropertySchemaInfo {
+                    template_name: template.name().unwrap_or(template_name).to_string(),
+                    required: is_required,
+                    field_type,
+                    format,
+                    target,
+                    enum_values,
+                    description,
+                },
+            );
+        }
+    }
+
+    schemas
+}
+
+fn load_note_frontmatter_order(base_dir: &Path, note: &Note) -> Result<Vec<String>, WebError> {
+    let note_path = base_dir.join(&note.path);
+    let content = fs::read_to_string(&note_path).map_err(|err| {
+        WebError::Io(format!(
+            "failed to read note '{}' for frontmatter order: {}",
+            note.path, err
+        ))
+    })?;
+
+    Ok(extract_top_level_frontmatter_keys(&content))
+}
+
+fn extract_top_level_frontmatter_keys(content: &str) -> Vec<String> {
+    let mut lines = content.lines();
+    let Some(first_line) = lines.next() else {
+        return Vec::new();
+    };
+    if first_line.trim() != "---" {
+        return Vec::new();
+    }
+
+    let mut keys = Vec::new();
+    for line in lines {
+        if line.is_empty()
+            || line.starts_with(' ')
+            || line.starts_with('\t')
+            || line.starts_with('#')
+            || line.starts_with('-')
+        {
+            continue;
+        }
+
+        if line.trim() == "---" {
+            break;
+        }
+
+        let Some((key, _)) = line.split_once(':') else {
+            continue;
+        };
+
+        let key = key.trim();
+        if key.is_empty() {
+            continue;
+        }
+
+        let normalized = key
+            .strip_prefix('"')
+            .and_then(|key| key.strip_suffix('"'))
+            .or_else(|| {
+                key.strip_prefix('\'')
+                    .and_then(|key| key.strip_suffix('\''))
+            })
+            .unwrap_or(key);
+
+        if !keys.iter().any(|existing| existing == normalized) {
+            keys.push(normalized.to_string());
+        }
+    }
+
+    keys
+}
+
+fn property_schema_value(schema: &PropertySchemaInfo) -> Value {
+    let mut value = JsonMap::new();
+    value.insert(
+        "template".to_string(),
+        Value::String(schema.template_name.clone()),
+    );
+    value.insert("required".to_string(), Value::Bool(schema.required));
+    if let Some(field_type) = &schema.field_type {
+        value.insert("type".to_string(), Value::String(field_type.clone()));
+    }
+    if let Some(format) = &schema.format {
+        value.insert("format".to_string(), Value::String(format.clone()));
+    }
+    if let Some(target) = &schema.target {
+        value.insert("target".to_string(), Value::String(target.clone()));
+    }
+    if let Some(enum_values) = &schema.enum_values {
+        value.insert(
+            "enum".to_string(),
+            Value::Array(enum_values.iter().cloned().map(Value::String).collect()),
+        );
+    }
+    if let Some(description) = &schema.description {
+        value.insert(
+            "description".to_string(),
+            Value::String(description.clone()),
+        );
+    }
+    Value::Object(value)
 }
 
 fn transform_markdown_preserving_code<F>(
@@ -800,6 +1436,14 @@ fn handle_connection(
             200,
             "OK",
             "text/markdown; charset=utf-8",
+            body.as_bytes(),
+            cache_control,
+        ),
+        Ok(WebResponse::Json(body)) => write_response(
+            &mut stream,
+            200,
+            "OK",
+            "application/json; charset=utf-8",
             body.as_bytes(),
             cache_control,
         ),

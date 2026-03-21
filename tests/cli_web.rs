@@ -4,6 +4,7 @@ use common::{
     TestVault, assert_cli_error, assert_cli_success, docsify_shell_stub,
     docsify_shell_stub_with_homepage, http_get, pick_free_port, stderr_contains, stdout_contains,
 };
+use serde_json::Value as JsonValue;
 use std::fs;
 
 fn create_home_note(vault: &TestVault) {
@@ -12,6 +13,10 @@ fn create_home_note(vault: &TestVault) {
 
 fn create_base_homepage(vault: &TestVault, file_name: &str) {
     vault.create_file(file_name, "views:\n  - type: table\n    name: Demo\n");
+}
+
+fn parse_cli_json(output: &std::process::Output) -> JsonValue {
+    serde_json::from_slice(&output.stdout).expect("stdout should be valid JSON")
 }
 
 #[test]
@@ -101,6 +106,346 @@ fn test_web_get_returns_cli_failure_for_miss_and_bad_path() {
 
     assert_cli_error(&missing);
     assert_cli_error(&bad);
+}
+
+#[test]
+fn test_web_note_route_without_fields_returns_markdown_body() {
+    let vault = TestVault::new();
+    vault.create_note("host", "Plain markdown body\n");
+
+    let output = vault.web_get("/host.md");
+
+    assert_cli_success(&output);
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "Plain markdown body"
+    );
+}
+
+#[test]
+fn test_web_note_fields_mode_only_supports_markdown_note_routes() {
+    let vault = TestVault::new();
+    vault.create_note("host", "Host\n");
+    vault.create_file(
+        "views/tasks.base",
+        "views:\n  - type: table\n    name: Tasks\n",
+    );
+    vault.create_file("assets/image.png", "png-bytes");
+    vault.create_file("index.html", &docsify_shell_stub());
+    let port = pick_free_port();
+    let _server = vault.spawn_web_server("127.0.0.1", port);
+
+    let markdown = http_get(port, "/host.md?fields=properties");
+    let base = http_get(port, "/views/tasks.base?fields=properties");
+    let resource = http_get(port, "/assets/image.png?fields=properties");
+
+    assert_eq!(markdown.status_code, 200);
+    assert_eq!(
+        markdown.headers.get("content-type").map(String::as_str),
+        Some("application/json; charset=utf-8")
+    );
+    assert_eq!(base.status_code, 400);
+    assert_eq!(resource.status_code, 400);
+}
+
+#[test]
+fn test_web_note_fields_mode_validates_requested_fields_and_query_params() {
+    let vault = TestVault::new();
+    vault.create_note("host", "Host\n");
+    vault.create_file("index.html", &docsify_shell_stub());
+    let port = pick_free_port();
+    let _server = vault.spawn_web_server("127.0.0.1", port);
+
+    for path in [
+        "/host.md?fields=properties",
+        "/host.md?fields=links",
+        "/host.md?fields=properties,links",
+    ] {
+        let response = http_get(port, path);
+        assert_eq!(response.status_code, 200, "path: {}", path);
+        assert_eq!(
+            response.headers.get("content-type").map(String::as_str),
+            Some("application/json; charset=utf-8"),
+            "path: {}",
+            path
+        );
+    }
+
+    for path in [
+        "/host.md?fields=unknown",
+        "/host.md?foo=bar",
+        "/host.md?fields=",
+        "/host.md?fields=properties,",
+        "/host.md?fields=properties,,links",
+        "/host.md?fields=%20properties%20",
+    ] {
+        let response = http_get(port, path);
+        assert_eq!(response.status_code, 400, "path: {}", path);
+    }
+}
+
+#[test]
+fn test_web_note_metadata_mode_returns_expected_response_envelope() {
+    let vault = TestVault::new();
+    vault.create_note_in_subdir("people", "alice", "---\ndescription: Test\n---\nBody\n");
+
+    let properties = parse_cli_json(&vault.web_get("/people/alice.md?fields=properties"));
+    let links = parse_cli_json(&vault.web_get("/people/alice.md?fields=links"));
+    let both = parse_cli_json(&vault.web_get("/people/alice.md?fields=properties,links"));
+
+    for value in [&properties, &links, &both] {
+        assert_eq!(value["file"]["path"], "people/alice.md");
+        assert_eq!(value["file"]["name"], "alice");
+    }
+
+    assert!(properties.get("properties").is_some());
+    assert!(properties.get("links").is_none());
+    assert!(links.get("links").is_some());
+    assert!(links.get("properties").is_none());
+    assert!(both.get("properties").is_some());
+    assert!(both.get("links").is_some());
+}
+
+#[test]
+fn test_web_note_metadata_properties_returns_ordered_semantic_fields() {
+    let vault = TestVault::new();
+    vault.create_note(
+        "host",
+        "---\nz_last: 1\nalpha:\n  - x\n  - 2\nmiddle:\n  reviewer: Bob\nbeta: null\n---\nBody\n",
+    );
+
+    let output = vault.web_get("/host.md?fields=properties");
+
+    assert_cli_success(&output);
+    let json = parse_cli_json(&output);
+    let fields = json["properties"]["fields"].as_array().unwrap();
+    let keys: Vec<_> = fields
+        .iter()
+        .map(|field| field["key"].as_str().unwrap())
+        .collect();
+    assert_eq!(keys, vec!["z_last", "alpha", "middle", "beta"]);
+    assert_eq!(fields[0]["value"]["kind"], "scalar");
+    assert_eq!(fields[1]["value"]["kind"], "list");
+    assert_eq!(fields[2]["value"]["kind"], "object");
+    assert_eq!(fields[3]["value"]["kind"], "null");
+}
+
+#[test]
+fn test_web_note_metadata_properties_resolves_frontmatter_wikilinks() {
+    let vault = TestVault::new();
+    vault.create_note_in_subdir("people", "alice", "Alice\n");
+    vault.create_note_in_subdir("projects", "apollo", "Apollo\n");
+    vault.create_note(
+        "host",
+        "---\nmanager: \"Owner [[alice|Alice A.]] ok\"\nrelated:\n  - \"[[apollo]]\"\nmeta:\n  reviewer: \"[[missing-reviewer]]\"\n---\nBody\n",
+    );
+
+    let output = vault.web_get("/host.md?fields=properties");
+
+    assert_cli_success(&output);
+    let json = parse_cli_json(&output);
+    let fields = json["properties"]["fields"].as_array().unwrap();
+
+    let manager = fields
+        .iter()
+        .find(|field| field["key"] == "manager")
+        .unwrap();
+    let manager_segments = manager["value"]["segments"].as_array().unwrap();
+    assert_eq!(manager["value"]["kind"], "rich_text");
+    assert_eq!(manager_segments[0]["type"], "text");
+    assert_eq!(manager_segments[1]["type"], "wikilink");
+    assert_eq!(manager_segments[1]["target"], "alice");
+    assert_eq!(manager_segments[1]["text"], "Alice A.");
+    assert_eq!(manager_segments[1]["href"], "/people/alice.md");
+    assert_eq!(manager_segments[1]["exists"], true);
+
+    let related = fields
+        .iter()
+        .find(|field| field["key"] == "related")
+        .unwrap();
+    assert_eq!(related["value"]["kind"], "list");
+    assert_eq!(
+        related["value"]["items"][0]["segments"][0]["href"],
+        "/projects/apollo.md"
+    );
+
+    let meta = fields.iter().find(|field| field["key"] == "meta").unwrap();
+    let nested = meta["value"]["fields"].as_array().unwrap();
+    assert_eq!(nested[0]["key"], "reviewer");
+    assert_eq!(
+        nested[0]["value"]["segments"][0]["target"],
+        "missing-reviewer"
+    );
+    assert_eq!(nested[0]["value"]["segments"][0]["exists"], false);
+    assert!(nested[0]["value"]["segments"][0].get("href").is_none());
+}
+
+#[test]
+fn test_web_note_metadata_properties_includes_template_schema_enrichment() {
+    let vault = TestVault::new();
+    vault.create_file(
+        "templates/template_a.md",
+        r#"---
+_schema:
+  properties:
+    owner:
+      type: text
+      format: link
+      target: person
+      description: Owner from template A
+  required:
+    - owner
+---
+"#,
+    );
+    vault.create_file(
+        "templates/template_b.md",
+        r#"---
+_schema:
+  properties:
+    owner:
+      type: number
+      description: Owner from template B
+---
+"#,
+    );
+    vault.create_note(
+        "host",
+        "---\ntemplates:\n  - \"[[template_a]]\"\n  - \"[[template_b]]\"\nowner: \"[[alice]]\"\n---\nBody\n",
+    );
+    vault.create_note("alice", "Alice\n");
+
+    let output = vault.web_get("/host.md?fields=properties");
+
+    assert_cli_success(&output);
+    let json = parse_cli_json(&output);
+    let owner = json["properties"]["fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|field| field["key"] == "owner")
+        .unwrap();
+
+    assert_eq!(owner["schema"]["template"], "template_a");
+    assert_eq!(owner["schema"]["required"], true);
+    assert_eq!(owner["schema"]["type"], "text");
+    assert_eq!(owner["schema"]["format"], "link");
+    assert_eq!(owner["schema"]["target"], "person");
+    assert_eq!(owner["schema"]["description"], "Owner from template A");
+}
+
+#[test]
+fn test_web_note_metadata_properties_does_not_invent_schema_type_for_ordinary_field() {
+    let vault = TestVault::new();
+    vault.create_file(
+        "templates/template_a.md",
+        r#"---
+_schema:
+  properties:
+    owner:
+      description: Owner without explicit type
+---
+"#,
+    );
+    vault.create_note(
+        "host",
+        "---\ntemplates:\n  - \"[[template_a]]\"\nowner: \"[[alice]]\"\n---\nBody\n",
+    );
+    vault.create_note("alice", "Alice\n");
+
+    let output = vault.web_get("/host.md?fields=properties");
+
+    assert_cli_success(&output);
+    let json = parse_cli_json(&output);
+    let owner = json["properties"]["fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|field| field["key"] == "owner")
+        .unwrap();
+
+    assert_eq!(owner["schema"]["template"], "template_a");
+    assert_eq!(
+        owner["schema"]["description"],
+        "Owner without explicit type"
+    );
+    assert!(owner["schema"].get("type").is_none());
+}
+
+#[test]
+fn test_web_note_metadata_links_returns_resolved_and_unresolved_targets() {
+    let vault = TestVault::new();
+    vault.create_note_in_subdir("people", "alice", "Alice\n");
+    vault.create_file(
+        "views/tasks.base",
+        "views:\n  - type: table\n    name: Tasks\n",
+    );
+    vault.create_file("assets/image.png", "png-bytes");
+    vault.create_note(
+        "host",
+        "[[alice]]\n[[tasks.base]]\n[[missing-note]]\n![[image.png]]\n",
+    );
+
+    let output = vault.web_get("/host.md?fields=links");
+
+    assert_cli_success(&output);
+    let json = parse_cli_json(&output);
+    let links = json["links"].as_array().unwrap();
+
+    let alice = links
+        .iter()
+        .find(|entry| entry["target"] == "alice")
+        .unwrap();
+    assert_eq!(alice["kind"], "note");
+    assert_eq!(alice["exists"], true);
+    assert_eq!(alice["href"], "/people/alice.md");
+
+    let base = links
+        .iter()
+        .find(|entry| entry["target"] == "tasks.base")
+        .unwrap();
+    assert_eq!(base["kind"], "base");
+    assert_eq!(base["exists"], true);
+    assert_eq!(base["href"], "/views/tasks.base");
+
+    let image = links
+        .iter()
+        .find(|entry| entry["target"] == "image.png")
+        .unwrap();
+    assert_eq!(image["kind"], "resource");
+    assert_eq!(image["exists"], true);
+    assert_eq!(image["href"], "/assets/image.png");
+
+    let missing = links
+        .iter()
+        .find(|entry| entry["target"] == "missing-note")
+        .unwrap();
+    assert_eq!(missing["kind"], "note");
+    assert_eq!(missing["exists"], false);
+    assert!(missing.get("href").is_none());
+}
+
+#[test]
+fn test_web_get_matches_web_serve_for_note_metadata_mode() {
+    let vault = TestVault::new();
+    vault.create_note(
+        "host",
+        "---\ndescription: Test\nfriend: \"[[alice]]\"\n---\nBody\n",
+    );
+    vault.create_note("alice", "Alice\n");
+    vault.create_file("index.html", &docsify_shell_stub());
+    let port = pick_free_port();
+    let _server = vault.spawn_web_server("127.0.0.1", port);
+
+    let cli = vault.web_get("/host.md?fields=properties,links");
+    let http = http_get(port, "/host.md?fields=properties,links");
+
+    assert_cli_success(&cli);
+    assert_eq!(http.status_code, 200);
+    assert_eq!(
+        serde_json::from_slice::<JsonValue>(&cli.stdout).unwrap(),
+        serde_json::from_slice::<JsonValue>(&http.body).unwrap()
+    );
 }
 
 #[test]

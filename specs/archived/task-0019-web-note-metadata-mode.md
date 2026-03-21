@@ -1,7 +1,7 @@
 ---
 id: task-0019
 title: "实现 web note metadata mode"
-status: active
+status: completed
 design: design-013
 boundaries:
   allowed:
@@ -11,7 +11,7 @@ boundaries:
     - "README.md"
     - "ARCHITECTURE.md"
     - "docs/design-docs/draft/design-013-web-note-metadata-sidebar.md"
-    - "specs/active/task-0019-web-note-metadata-mode.md"
+    - "specs/archived/task-0019-web-note-metadata-mode.md"
     - "tests/cli_web.rs"
     - "tests/common/**"
   forbidden_patterns:

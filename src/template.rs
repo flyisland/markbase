@@ -58,6 +58,34 @@ impl TemplateDocument {
         self.location.as_deref()
     }
 
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    pub fn schema_properties(&self) -> Option<&Map<String, Value>> {
+        self.frontmatter
+            .get("_schema")
+            .and_then(Value::as_object)
+            .and_then(|schema| schema.get("properties"))
+            .and_then(Value::as_object)
+    }
+
+    pub fn required_fields(&self) -> Vec<String> {
+        self.frontmatter
+            .get("_schema")
+            .and_then(Value::as_object)
+            .and_then(|schema| schema.get("required"))
+            .and_then(Value::as_array)
+            .map(|required| {
+                required
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(String::from)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     pub fn render_for_describe(&self) -> Result<String, Box<dyn std::error::Error>> {
         render_document(&self.frontmatter, &self.body)
     }

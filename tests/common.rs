@@ -10,6 +10,7 @@ use std::time::Duration;
 use tempfile::TempDir;
 
 static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
+static PORT_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub fn docsify_shell_stub() -> String {
     docsify_shell_stub_with_homepage("/HOME.md")
@@ -321,6 +322,17 @@ pub fn stderr_contains(output: &Output, text: &str) -> bool {
 }
 
 pub fn pick_free_port() -> u16 {
+    let process_offset = (u64::from(std::process::id()) % 500) * 20;
+    let base = 20_000 + process_offset;
+
+    for _ in 0..10_000 {
+        let candidate = (base + PORT_COUNTER.fetch_add(1, Ordering::SeqCst)) as u16;
+        if let Ok(listener) = TcpListener::bind(("127.0.0.1", candidate)) {
+            drop(listener);
+            return candidate;
+        }
+    }
+
     TcpListener::bind(("127.0.0.1", 0))
         .unwrap()
         .local_addr()

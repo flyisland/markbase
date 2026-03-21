@@ -149,6 +149,8 @@ Serve the vault in the browser:
 ```bash
 markbase web serve --homepage /HOME.md
 markbase web serve --cache-control "public, max-age=60"
+markbase web get /entities/person/alice.md  # print final web Markdown body
+markbase web get /entities/person/alice.md?fields=properties,links
 ```
 
 ## Command Overview
@@ -219,7 +221,76 @@ That is why `note verify` matters so much. It is the mechanism that catches drif
 
 `web serve` gives a browser-friendly view of the same vault. By default it listens on `127.0.0.1:3000`. Routes are path-based externally, while note logic inside markbase still follows Obsidian-style name-based identity.
 
-`markbase web get <canonical-url>` prints the final Markdown body for one canonical route. Each web request uses a request-scoped DuckDB handle, and route miss returns `404 Not Found`.
+For both exported and dynamic modes:
+
+- requesting `/` returns `index.html`
+- requesting `/index.html` returns the same docsify entry HTML
+- the docsify entry HTML keeps internal `.md` and `.base` document links inside docsify
+- the browser entry HTML upgrades Obsidian-style callouts, including foldable
+  `[!type]+` and `[!type]-`, in the browser UI
+- binary resource URLs such as images and attachments continue to resolve
+  directly
+
+By default, `web serve` returns `Cache-Control: no-store, no-cache,
+must-revalidate` plus matching legacy no-cache headers on every response. Pass
+`--cache-control <value>` to override that header for all responses served by
+the process.
+
+Web routing is path-based and derived from indexed `file.path`, but internal
+rendering still resolves Markdown notes and `.base` targets by name. The
+canonical note or resource URL is always `/<file.path>` with browser-safe
+percent-encoding.
+
+Each `web serve` request refreshes the index before route resolution and uses a
+request-scoped DuckDB handle. For Markdown notes and direct `.base` targets
+without query parameters, the server returns docsify/marked-renderable
+Markdown rather than an HTML shell. For binary resources, it returns raw bytes
+with the corresponding `Content-Type`.
+
+Canonical Markdown note routes also support a metadata mode via `?fields=...`:
+
+- `?fields=properties`
+- `?fields=links`
+- `?fields=properties,links`
+
+In metadata mode, the same canonical `.md` route returns
+`application/json; charset=utf-8` instead of Markdown. The response always
+includes a `file` object and only includes the requested top-level fields
+beyond that.
+
+Metadata mode is currently supported only for canonical Markdown note routes:
+
+- `.md?fields=...` returns JSON metadata
+- `.base?fields=...` returns `400 Bad Request`
+- binary resource routes with `fields` return `400 Bad Request`
+- unknown query parameters, unknown field names, and malformed `fields` syntax
+  return `400 Bad Request`
+
+The server-side Markdown pipeline:
+
+- reuses note-render semantics for recursive `![[note]]` expansion, `.base`
+  expansion, soft-failure placeholders, and quote-container preservation
+- rewrites `[[note]]` links to canonical path-based Markdown links
+- rewrites non-Markdown `![[...]]` resource embeds to standard Markdown images
+  or links
+- removes `%%comment%%` from normal Markdown body content
+- preserves fenced code blocks and inline code spans literally
+- leaves unresolved wikilinks, unresolved resource embeds, selector-based note
+  embeds, and block-target note embeds as literal source text in v1
+
+`markbase web get <canonical-url>` prints the same payload that `web serve`
+returns for the same route:
+
+- Markdown body for ordinary `.md` and `.base` routes
+- JSON metadata for `.md?fields=...`
+
+If the canonical URL resolves to a binary resource, `web get` exits with an
+explanatory failure instead of streaming bytes.
+
+HTTP miss and bad-path behavior:
+
+- route miss returns `404 Not Found`
+- invalid percent-decoding returns `400 Bad Request`
 
 `web init-docsify` writes a single `index.html` and is not required for normal browser use. The browser entry HTML upgrades Obsidian-style callouts in the frontend while preserving the backend Markdown contract.
 
