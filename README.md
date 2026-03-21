@@ -441,13 +441,15 @@ markbase web get /entities/person/alice.md  # print final web Markdown body
 ```
 
 Web routing is path-based and derived from indexed `file.path`, but internal
-note rendering still resolves Markdown notes by note name. The canonical note
-or resource URL is always `/<file.path>` with browser-safe percent-encoding.
+rendering still resolves Markdown notes and `.base` targets by name. The
+canonical note or resource URL is always `/<file.path>` with browser-safe
+percent-encoding.
 
 Each `web serve` request refreshes the index before route resolution and uses a
-request-scoped DuckDB handle. For Markdown notes, the server returns
-docsify/marked-renderable Markdown rather than an HTML shell. For non-Markdown
-resources, it returns raw bytes with the corresponding `Content-Type`.
+request-scoped DuckDB handle. For Markdown notes and direct `.base` targets,
+the server returns docsify/marked-renderable Markdown rather than an HTML
+shell. For binary resources, it returns raw bytes with the corresponding
+`Content-Type`.
 
 The server-side Markdown pipeline:
 
@@ -462,9 +464,9 @@ The server-side Markdown pipeline:
   embeds, and block-target note embeds as literal source text in v1
 
 `markbase web get <canonical-url>` prints the same Markdown body that
-`web serve` returns for a Markdown note route. If the canonical URL resolves to
-a binary resource, `web get` exits with an explanatory failure instead of
-streaming bytes.
+`web serve` returns for a Markdown note or `.base` route. If the canonical URL
+resolves to a binary resource, `web get` exits with an explanatory failure
+instead of streaming bytes.
 
 HTTP miss and bad-path behavior:
 

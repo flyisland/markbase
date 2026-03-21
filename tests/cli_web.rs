@@ -127,6 +127,24 @@ fn test_web_render_mode_base_output_defaults_to_markdown_table() {
 }
 
 #[test]
+fn test_web_route_renders_base_targets_as_markdown() {
+    let vault = TestVault::new();
+    vault.create_note("task-open", "---\nstatus: open\n---\n");
+    vault.create_file(
+        "All Opputunities Logs.base",
+        "views:\n  - type: table\n    name: Open Tasks\n    filters:\n      and:\n        - status == \"open\"\n    order:\n      - file.name\n",
+    );
+
+    let output = vault.web_get("/All%20Opputunities%20Logs.base");
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("| name |"));
+    assert!(stdout.contains("| [task-open](/task-open.md) |"));
+    assert!(!stdout.contains("views:"));
+}
+
+#[test]
 fn test_web_render_mode_reuses_recursive_note_and_base_expansion() {
     let vault = TestVault::new();
     vault.create_note("task-open", "---\nstatus: open\n---\n");
@@ -341,11 +359,18 @@ fn test_web_serve_cli_surface_matches_docs() {
 fn test_web_get_matches_web_serve_for_note_targets() {
     let vault = TestVault::new();
     vault.create_note_in_subdir("entities/person", "alice", "[[alice]]\n");
+    vault.create_note("task-open", "---\nstatus: open\n---\n");
+    vault.create_file(
+        "tasks.base",
+        "views:\n  - type: table\n    name: Open Tasks\n    filters:\n      and:\n        - status == \"open\"\n    order:\n      - file.name\n",
+    );
     let port = pick_free_port();
     let _server = vault.spawn_web_server("127.0.0.1", port);
 
     let cli_output = vault.web_get("/entities/person/alice.md");
     let http_response = http_get(port, "/entities/person/alice.md");
+    let base_cli_output = vault.web_get("/tasks.base");
+    let base_http_response = http_get(port, "/tasks.base");
 
     assert_cli_success(&cli_output);
     assert_eq!(http_response.status_code, 200);
@@ -353,6 +378,14 @@ fn test_web_get_matches_web_serve_for_note_targets() {
         String::from_utf8_lossy(&cli_output.stdout),
         String::from_utf8_lossy(&http_response.body)
     );
+
+    assert_cli_success(&base_cli_output);
+    assert_eq!(base_http_response.status_code, 200);
+    assert_eq!(
+        String::from_utf8_lossy(&base_cli_output.stdout),
+        String::from_utf8_lossy(&base_http_response.body)
+    );
+    assert!(String::from_utf8_lossy(&base_http_response.body).contains("| name |"));
 }
 
 #[test]

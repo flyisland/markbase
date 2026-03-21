@@ -101,7 +101,7 @@ This layer exists so user query ergonomics can evolve without leaking raw schema
 
 - `src/web/` owns canonical `file.path` route resolution, request-scoped index and DB lifecycle, HTTP serving, and web-targeted OFM normalization.
 - The web layer reuses `src/renderer/` for note semantics instead of implementing a second note-embed or `.base` execution path.
-- Web note routes return translated Markdown bodies; web resource routes return raw bytes with a derived content type.
+- Web `.md` and `.base` routes return translated Markdown bodies; binary resource routes return raw bytes with a derived content type.
 
 ## 5. Core Invariants
 

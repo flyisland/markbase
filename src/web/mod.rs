@@ -16,7 +16,7 @@ pub const DEFAULT_PORT: u16 = 3000;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedNoteRoute {
     pub file_path: String,
-    pub note_name: String,
+    pub render_target_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -226,7 +226,7 @@ fn render_request(
                 let rendered = render_note_to_string(
                     base_dir,
                     db,
-                    &note.note_name,
+                    &note.render_target_name,
                     &RenderOptions {
                         format: RenderFormat::Table,
                         dry_run: false,
@@ -268,10 +268,10 @@ fn resolve_decoded_path(
             ))
         })?;
 
-    if note.ext == "md" {
+    if note.ext == "md" || note.ext == "base" {
         return Ok(RouteTarget::Note(ResolvedNoteRoute {
             file_path: note.path,
-            note_name: note.name,
+            render_target_name: note.name,
         }));
     }
 

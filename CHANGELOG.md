@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-03-21
+
+### Added
+
+- **Web note view interface** - Added `markbase web serve` for canonical path-based HTTP note and resource delivery, plus `markbase web get <canonical-url>` for inspecting the final web Markdown body without a browser.
+- **Canonical web routing** - Browser-facing note and resource routes now resolve by indexed `file.path`, percent-encode emitted URLs, refresh the index per request, and use a request-scoped DuckDB handle.
+- **Web Markdown normalization** - The web pipeline now rewrites live wikilinks to canonical Markdown links, rewrites non-Markdown resource embeds to standard images or links, strips `%%comment%%`, preserves fenced and inline code literally, and keeps unresolved/deferred syntax as literal source text.
+
+### Changed
+
+- **Web render mode** - Renderer output now has a dedicated web mode that reuses recursive note embed and `.base` semantics, preserves quote containers, and defaults `.base` sections to Markdown table output instead of CLI JSON fences.
+- **Web delivery documentation** - README, ARCHITECTURE, design docs, exec plan, and task specs now record the delivered web note view contract and archive the completed implementation plan.
+
 ## [0.7.2] - 2026-03-20
 
 ### Changed
@@ -187,6 +200,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Note renaming with link updates
 - Multiple output formats (table, json, list)
 
+[0.8.0]: https://github.com/flyisland/markbase/compare/0.7.2...0.8.0
+[0.7.2]: https://github.com/flyisland/markbase/compare/0.7.1...0.7.2
+[0.7.1]: https://github.com/flyisland/markbase/compare/0.7.0...0.7.1
 [0.7.0]: https://github.com/flyisland/markbase/compare/0.6.2...0.7.0
 [0.6.2]: https://github.com/flyisland/markbase/compare/0.6.1...0.6.2
 [0.6.1]: https://github.com/flyisland/markbase/compare/0.6.0...0.6.1

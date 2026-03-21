@@ -52,7 +52,7 @@ Browser
 ### Layering Principles
 
 - `markbase` is a content translation and resource delivery service, not an HTML application server.
-- `markbase web serve` returns translated Markdown for note routes and raw bytes for resource routes.
+- `markbase web serve` returns translated Markdown for `.md` and `.base` render targets, and raw bytes for binary resource routes.
 - `markbase` does not generate or serve a docsify shell, static site shell, or any other HTML entrypoint in v1.
 - `docsify` is a replaceable frontend consumer. Its job is Markdown-to-HTML rendering, not vault-aware note semantics.
 - Vault-aware behavior such as wikilink resolution, recursive note expansion, `.base` execution, and canonical URL generation belongs on the markbase side.
@@ -558,8 +558,8 @@ The `web get` contract is:
 
 At minimum, the server-facing HTTP surface must expose:
 
-- canonical vault-path note routes derived directly from `file.path` and returning translated Markdown
-- canonical vault-path resource routes derived directly from `file.path` and returning raw file bytes
+- canonical vault-path `.md` and `.base` routes derived directly from `file.path` and returning translated Markdown
+- canonical vault-path binary resource routes derived directly from `file.path` and returning raw file bytes
 
 The v1 public CLI surface is:
 
@@ -603,7 +603,7 @@ The implementation should add coverage for:
 - route misses return `404 Not Found`
 - image resources map to Markdown images and PDF resources map to standard links
 - canonical resource routes return raw bytes with the correct `Content-Type`
-- `markbase web get <canonical-url>` returns the same Markdown body as `markbase web serve` would return for note targets
+- `markbase web get <canonical-url>` returns the same Markdown body as `markbase web serve` would return for `.md` and `.base` targets
 - `markbase web get <canonical-url>` refuses to stream binary resource targets and exits with an explanatory message
 
 ## Assumptions
