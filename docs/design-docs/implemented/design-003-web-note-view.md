@@ -1,7 +1,7 @@
 ---
 id: design-003
 title: "Web Note View"
-status: candidate
+status: implemented
 module: web
 ---
 
@@ -561,7 +561,18 @@ At minimum, the server-facing HTTP surface must expose:
 - canonical vault-path note routes derived directly from `file.path` and returning translated Markdown
 - canonical vault-path resource routes derived directly from `file.path` and returning raw file bytes
 
-Exact CLI flags, bind defaults, and cache policy are intentionally deferred until a later task spec.
+The v1 public CLI surface is:
+
+```bash
+markbase web serve [--bind <addr>] [--port <port>]
+```
+
+The v1 defaults are:
+
+- bind address: `127.0.0.1`
+- port: `3000`
+
+Cache policy remains intentionally deferred.
 
 ## Testing And Acceptance
 
@@ -583,6 +594,7 @@ The implementation should add coverage for:
 - quote-container preservation keeps blank lines and nested quote depth inside the container
 - soft-failure placeholder comments also preserve quote-container structure
 - comments are removed from output
+- OFM normalization preserves fenced code blocks and inline code spans as literal examples
 - heading-selector and block-selector note embeds remain literal output in v1
 - raw wikilink syntax does not remain in the final response for P0-supported notes
 - wikilink conversion never emits bare relative href targets derived only from note names
@@ -590,6 +602,7 @@ The implementation should add coverage for:
 - unresolved wikilinks remain literal source text
 - route misses return `404 Not Found`
 - image resources map to Markdown images and PDF resources map to standard links
+- canonical resource routes return raw bytes with the correct `Content-Type`
 - `markbase web get <canonical-url>` returns the same Markdown body as `markbase web serve` would return for note targets
 - `markbase web get <canonical-url>` refuses to stream binary resource targets and exits with an explanatory message
 

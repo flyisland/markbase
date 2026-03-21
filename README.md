@@ -380,11 +380,12 @@ If a `.base` embed appears inline with surrounding text, markbase expands the
 embed and keeps the surrounding text in output rather than requiring the embed
 to occupy the entire line by itself.
 
-If the embed appears inside a blockquote, list item, or callout body, markbase
-still expands it, but the emitted Base block does not preserve that container
-prefix on every output line. In practice, the rendered block may break out of
-the original container structure. If you need predictable Markdown structure,
-keep `.base` embeds on ordinary body lines.
+If a live note or `.base` embed appears inside a blockquote or callout body,
+markbase preserves that quote container line-by-line during expansion,
+including blank lines and nested quote depth. List items remain outside the
+supported live-embed container contract: note and `.base` embeds inside list
+items stay literal output, even when quote or callout syntax appears on the
+same logical line.
 
 For `-o table`, each rendered Base view becomes a compact Markdown table:
 
@@ -428,6 +429,47 @@ Supported filters: `link(this)`, `link("name")`, `file.hasLink(this.file)`,
 
 Warnings (unsupported filters, missing embedded notes, missing base files) go to stderr.
 Exit code is non-zero only on hard errors (e.g. note not found).
+
+### `web`
+
+Serve canonical path-based browser routes or inspect the final web Markdown body.
+
+```bash
+markbase web serve                           # listen on 127.0.0.1:3000
+markbase web serve --bind 127.0.0.1 --port 4000
+markbase web get /entities/person/alice.md  # print final web Markdown body
+```
+
+Web routing is path-based and derived from indexed `file.path`, but internal
+note rendering still resolves Markdown notes by note name. The canonical note
+or resource URL is always `/<file.path>` with browser-safe percent-encoding.
+
+Each `web serve` request refreshes the index before route resolution and uses a
+request-scoped DuckDB handle. For Markdown notes, the server returns
+docsify/marked-renderable Markdown rather than an HTML shell. For non-Markdown
+resources, it returns raw bytes with the corresponding `Content-Type`.
+
+The server-side Markdown pipeline:
+
+- reuses note-render semantics for recursive `![[note]]` expansion, `.base`
+  expansion, soft-failure placeholders, and quote-container preservation
+- rewrites `[[note]]` links to canonical path-based Markdown links
+- rewrites non-Markdown `![[...]]` resource embeds to standard Markdown images
+  or links
+- removes `%%comment%%` from normal Markdown body content
+- preserves fenced code blocks and inline code spans literally
+- leaves unresolved wikilinks, unresolved resource embeds, selector-based note
+  embeds, and block-target note embeds as literal source text in v1
+
+`markbase web get <canonical-url>` prints the same Markdown body that
+`web serve` returns for a Markdown note route. If the canonical URL resolves to
+a binary resource, `web get` exits with an explanatory failure instead of
+streaming bytes.
+
+HTTP miss and bad-path behavior:
+
+- route miss returns `404 Not Found`
+- invalid percent-decoding returns `400 Bad Request`
 
 ### `template`
 

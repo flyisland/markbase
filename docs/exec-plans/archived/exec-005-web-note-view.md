@@ -1,14 +1,14 @@
 ---
 id: exec-005
 title: "Web Note View"
-status: active
+status: completed
 design-doc: design-003
 parallel_safe_verified: false
 ---
 
 ## Goal
 
-按 [design-003-web-note-view.md](../../design-docs/candidate/design-003-web-note-view.md) 为 markbase 建立第一版 web note view 交付路径，并先修正当前 renderer 与 active 设计不一致的 quote-container 行为。
+按 [design-003-web-note-view.md](../../design-docs/implemented/design-003-web-note-view.md) 为 markbase 建立第一版 web note view 交付路径，并先修正当前 renderer 与 active 设计不一致的 quote-container 行为。
 
 这个计划的目标不是笼统地“加一个 web server”，而是按现有模块边界分阶段交付以下能力：
 
@@ -23,19 +23,19 @@ parallel_safe_verified: false
 
 ### Phase 1: 渲染语义纠偏
 
-- [ ] task-0014: 修正 quote-container preservation，使 callout / blockquote 中的 live note embed 与 `.base` embed 展开后逐行保留 quote prefix、blank line 和 nested depth，list item 仍保持 literal output
+- [x] task-0014: 修正 quote-container preservation，使 callout / blockquote 中的 live note embed 与 `.base` embed 展开后逐行保留 quote prefix、blank line 和 nested depth，list item 仍保持 literal output
 
 ### Phase 2: Canonical Web Routing
 
-- [ ] task-0015: 建立按 `file.path` 解析的 canonical web route 和 request-scoped index / DB lifecycle，供 `web serve` 与 `web get` 共享
+- [x] task-0015: 建立按 `file.path` 解析的 canonical web route 和 request-scoped index / DB lifecycle，供 `web serve` 与 `web get` 共享
 
 ### Phase 3: Web Render Mode
 
-- [ ] task-0016: 在 renderer 中增加 web 输出模式，复用既有 render 语义并将 `.base` 默认输出切换为 Markdown table
+- [x] task-0016: 在 renderer 中增加 web 输出模式，复用既有 render 语义并将 `.base` 默认输出切换为 Markdown table
 
 ### Phase 4: OFM Normalization And Public Interface
 
-- [ ] task-0017: 增加服务端 OFM normalization、resource rewrite、`web serve` / `web get` 对外接口、README / ARCHITECTURE 更新和最终验收测试
+- [x] task-0017: 增加遵守 Markdown body/code-context 边界的服务端 OFM normalization、resource delivery / content-type 合同、`web serve` / `web get` 对外接口、README / ARCHITECTURE 更新和最终验收测试
 
 ## Execution Mode
 
@@ -59,7 +59,7 @@ task-0014 -> task-0015 -> task-0016 -> task-0017
 原因：这不是 web server 的局部实现细节，而是当前 renderer 行为已经与 active 设计文档不一致。
 
 - [design-002-render.md](../../design-docs/implemented/design-002-render.md) 已将 quote-container preservation 定义为 render contract
-- [design-003-web-note-view.md](../../design-docs/candidate/design-003-web-note-view.md) 将 callouts 视为 P0，并明确容器保留是服务端责任
+- [design-003-web-note-view.md](../../design-docs/implemented/design-003-web-note-view.md) 将 callouts 视为 P0，并明确容器保留是服务端责任
 - 如果把修正留到 web 层做补丁，会造成 CLI render 与 web render 拥有两套 embed 语义
 
 因此，必须先在 renderer 层纠偏，再让 web 交付复用这套语义。
@@ -85,6 +85,8 @@ task-0014 -> task-0015 -> task-0016 -> task-0017
 - 2026-03-16: 建立 `exec-005` 初稿，明确这是一个跨 renderer、route resolution、HTTP surface 和文档合同的串行交付
 - 2026-03-16: 将 quote-container preservation 修正前置为 `task-0014`，作为整个 web note view 的基础前置条件
 - 2026-03-21: rebase `main` 后迁移到受控文档体系，并将 task 编号重排为 `task-0014` 至 `task-0017`
+- 2026-03-21: 验证 `task-0014` 对应的 renderer 行为与测试已落地，完成状态迁移，后续进入 `task-0015`
+- 2026-03-21: 完成 canonical routing、web render mode、OFM normalization、HTTP/resource contract 与文档收口，执行计划归档
 
 ## Definition of Done
 
@@ -102,16 +104,19 @@ task-0014 -> task-0015 -> task-0016 -> task-0017
    - `[[note#Heading]]` 无 alias 时显示为 `note > Heading`
    - `[[note#^blockid]]` 无 alias 时显示为 `note`
    - 两者有 alias 时都优先显示 alias
-10. 非 Markdown `![[...]]` 资源 embed 被重写为标准 Markdown image 或 link，并能按 canonical route 获取
-11. `%%comment%%` 被从 web 输出中移除
-12. unresolved wikilink 和 unresolved resource embed 在 v1 仍保持 literal source text
-13. selector-based note embeds 和 block-target note embeds 在 v1 仍保持 literal output
-14. `markbase web get <canonical-url>` 对 note target 返回与 `markbase web serve` 相同的 Markdown body
-15. `markbase web get <canonical-url>` 不会流式输出 binary resource，而是按设计返回解释性失败
-16. HTTP route miss 返回 `404 Not Found`，不可解码 HTTP 路径返回 `400 Bad Request`
-17. `markbase web get <canonical-url>` 对 miss/bad path 返回与 route-resolution contract 一致的 CLI failure，但不要求复用 HTTP 状态码字面输出
-18. README、ARCHITECTURE、相关设计文档和回归测试与最终实现一致
-19. `cargo test`、`cargo clippy -- -D warnings`、`cargo fmt --check` 通过
+10. OFM normalization 只作用于普通 Markdown body content；fenced code block 与 inline code span 中的 `[[...]]`、`![[...]]`、`%%comment%%` 等示例文本保持 literal output
+11. 非 Markdown `![[...]]` 资源 embed 被重写为标准 Markdown image 或 link，并能按 canonical route 获取
+12. canonical resource route 对 attachment 返回原始 bytes，且响应 `Content-Type` 与资源类型一致
+13. `%%comment%%` 被从 web 输出中移除
+14. unresolved wikilink 和 unresolved resource embed 在 v1 仍保持 literal source text
+15. selector-based note embeds 和 block-target note embeds 在 v1 仍保持 literal output
+16. `markbase web serve` 的 v1 public CLI surface、bind defaults 和 override flags 在设计、README、测试中被明确锁定
+17. `markbase web get <canonical-url>` 对 note target 返回与 `markbase web serve` 相同的 Markdown body
+18. `markbase web get <canonical-url>` 不会流式输出 binary resource，而是按设计返回解释性失败
+19. HTTP route miss 返回 `404 Not Found`，不可解码 HTTP 路径返回 `400 Bad Request`
+20. `markbase web get <canonical-url>` 对 miss/bad path 返回与 route-resolution contract 一致的 CLI failure，但不要求复用 HTTP 状态码字面输出
+21. README、ARCHITECTURE、相关设计文档和回归测试与最终实现一致
+22. `cargo test`、`cargo clippy -- -D warnings`、`cargo fmt --check` 通过
 
 ## Blocking Rules
 

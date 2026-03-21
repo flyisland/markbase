@@ -1,7 +1,7 @@
 ---
 id: task-0016
 title: "为 renderer 增加 web 输出模式"
-status: active
+status: completed
 exec-plan: exec-005
 phase: 3
 boundaries:

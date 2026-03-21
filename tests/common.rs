@@ -1,8 +1,12 @@
 #![allow(dead_code)]
 
+use std::collections::HashMap;
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
-use std::process::{Command, Output};
+use std::process::{Child, Command, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 use tempfile::TempDir;
 
 static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -177,6 +181,44 @@ impl TestVault {
         args.extend(names.iter().copied());
         self.run_cli(&args)
     }
+
+    pub fn web_get(&self, canonical_url: &str) -> Output {
+        self.run_cli(&["web", "get", canonical_url])
+    }
+
+    pub fn spawn_web_server(&self, bind: &str, port: u16) -> TestServer {
+        let binary_path = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.join("markbase")))
+            .unwrap_or_else(|| PathBuf::from("target/release/markbase"));
+
+        let cmd_path = if binary_path.exists() {
+            binary_path
+        } else {
+            PathBuf::from("target/debug/markbase")
+        };
+
+        let child = Command::new(&cmd_path)
+            .args([
+                "--base-dir",
+                &self.path.to_string_lossy(),
+                "web",
+                "serve",
+                "--bind",
+                bind,
+                "--port",
+                &port.to_string(),
+            ])
+            .env_remove("MARKBASE_BASE_DIR")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("failed to spawn web server");
+
+        wait_for_port(bind, port);
+
+        TestServer { child, port }
+    }
 }
 
 impl Default for TestVault {
@@ -211,6 +253,93 @@ pub fn stdout_contains(output: &Output, text: &str) -> bool {
 pub fn stderr_contains(output: &Output, text: &str) -> bool {
     let stderr = String::from_utf8_lossy(&output.stderr);
     stderr.contains(text)
+}
+
+pub fn pick_free_port() -> u16 {
+    TcpListener::bind(("127.0.0.1", 0))
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
+}
+
+pub struct TestServer {
+    child: Child,
+    pub port: u16,
+}
+
+impl Drop for TestServer {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+pub struct HttpResponse {
+    pub status_code: u16,
+    pub headers: HashMap<String, String>,
+    pub body: Vec<u8>,
+}
+
+pub fn http_get(port: u16, path: &str) -> HttpResponse {
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    let request = format!(
+        "GET {} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n\r\n",
+        path, port
+    );
+    stream.write_all(request.as_bytes()).unwrap();
+
+    let mut response = Vec::new();
+    let mut buffer = [0_u8; 4096];
+    loop {
+        match stream.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(read) => response.extend_from_slice(&buffer[..read]),
+            Err(err) if err.kind() == std::io::ErrorKind::ConnectionReset => break,
+            Err(err) => panic!("failed to read HTTP response: {}", err),
+        }
+    }
+    parse_http_response(&response)
+}
+
+fn wait_for_port(bind: &str, port: u16) {
+    for _ in 0..50 {
+        if TcpStream::connect((bind, port)).is_ok() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    panic!("web server did not start listening on {}:{}", bind, port);
+}
+
+fn parse_http_response(raw: &[u8]) -> HttpResponse {
+    let header_end = raw
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .expect("missing HTTP header terminator");
+    let (header_bytes, body_bytes) = raw.split_at(header_end + 4);
+    let header_text = String::from_utf8_lossy(header_bytes);
+    let mut lines = header_text.split("\r\n").filter(|line| !line.is_empty());
+    let status_line = lines.next().unwrap();
+    let status_code = status_line
+        .split_whitespace()
+        .nth(1)
+        .unwrap()
+        .parse()
+        .unwrap();
+
+    let mut headers = HashMap::new();
+    for line in lines {
+        if let Some((name, value)) = line.split_once(':') {
+            headers.insert(name.trim().to_ascii_lowercase(), value.trim().to_string());
+        }
+    }
+
+    HttpResponse {
+        status_code,
+        headers,
+        body: body_bytes.to_vec(),
+    }
 }
 
 pub fn parse_index_stats(output: &Output) -> IndexStats {

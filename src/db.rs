@@ -131,6 +131,16 @@ impl Database {
         Ok(notes)
     }
 
+    pub fn get_note_by_path(&self, path: &str) -> Result<Option<Note>, Box<dyn std::error::Error>> {
+        let mut stmt = self.conn.prepare("SELECT * FROM notes WHERE path = ?")?;
+        let mut rows = stmt.query(params![path])?;
+
+        match rows.next()? {
+            Some(row) => Ok(Some(self.row_to_note(row)?)),
+            None => Ok(None),
+        }
+    }
+
     pub fn get_all_notes(&self) -> Result<Vec<Note>, Box<dyn std::error::Error>> {
         let mut stmt = self.conn.prepare("SELECT * FROM notes")?;
         let mut rows = stmt.query([])?;

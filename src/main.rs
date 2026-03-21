@@ -13,6 +13,7 @@ mod resolver;
 mod scanner;
 mod template;
 mod verifier;
+mod web;
 
 use clap::{ArgAction, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
@@ -125,6 +126,11 @@ enum Commands {
         #[command(subcommand)]
         command: TemplateCommands,
     },
+    #[command(about = "Serve and inspect web note views")]
+    Web {
+        #[command(subcommand)]
+        command: WebCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -183,6 +189,23 @@ enum TemplateCommands {
     Describe {
         #[arg(help = "Template name (without .md extension)")]
         name: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum WebCommands {
+    #[command(about = "Serve canonical path-based web routes over HTTP")]
+    Serve {
+        #[arg(long = "bind", default_value = web::DEFAULT_BIND_ADDR)]
+        bind: String,
+
+        #[arg(long = "port", default_value_t = web::DEFAULT_PORT)]
+        port: u16,
+    },
+    #[command(about = "Render the canonical web response body for one route")]
+    Get {
+        #[arg(help = "Canonical vault-shaped URL path such as /entities/person/alice.md")]
+        canonical_url: String,
     },
 }
 
@@ -430,6 +453,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 let opts = renderer::RenderOptions {
                     format: render_format,
                     dry_run,
+                    mode: renderer::RenderMode::Cli,
                 };
 
                 if let Err(e) = renderer::render_note(&base_dir, &db, &name, &opts) {
@@ -453,6 +477,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             TemplateCommands::Describe { name } => {
                 let content = describe::describe_template(&base_dir, &name)?;
                 println!("{}", content);
+            }
+        },
+        Commands::Web { command } => match command {
+            WebCommands::Serve { bind, port } => {
+                web::serve(&base_dir, &db_path, compute_backlinks, &bind, port)?;
+            }
+            WebCommands::Get { canonical_url } => {
+                let body = web::get(&base_dir, &db_path, compute_backlinks, &canonical_url)?;
+                print!("{}", body);
             }
         },
     }
@@ -702,6 +735,37 @@ mod tests {
             }
         } else {
             panic!("Expected Template command");
+        }
+    }
+
+    #[test]
+    fn test_web_serve_command_defaults() {
+        let cli = Cli::parse_from(["markbase", "web", "serve"]);
+        if let Commands::Web { command } = cli.command {
+            match command {
+                WebCommands::Serve { bind, port } => {
+                    assert_eq!(bind, web::DEFAULT_BIND_ADDR);
+                    assert_eq!(port, web::DEFAULT_PORT);
+                }
+                _ => panic!("Expected Serve command"),
+            }
+        } else {
+            panic!("Expected Web command");
+        }
+    }
+
+    #[test]
+    fn test_web_get_command_parses_canonical_url() {
+        let cli = Cli::parse_from(["markbase", "web", "get", "/entities/person/alice.md"]);
+        if let Commands::Web { command } = cli.command {
+            match command {
+                WebCommands::Get { canonical_url } => {
+                    assert_eq!(canonical_url, "/entities/person/alice.md");
+                }
+                _ => panic!("Expected Get command"),
+            }
+        } else {
+            panic!("Expected Web command");
         }
     }
 }

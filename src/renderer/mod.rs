@@ -20,9 +20,16 @@ pub enum RenderFormat {
     Table,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderMode {
+    Cli,
+    Web,
+}
+
 pub struct RenderOptions {
     pub format: RenderFormat,
     pub dry_run: bool,
+    pub mode: RenderMode,
 }
 
 #[derive(Debug, Clone)]
@@ -37,6 +44,17 @@ pub fn render_note(
     name: &str,
     opts: &RenderOptions,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let rendered = render_note_to_string(base_dir, db, name, opts)?;
+    print!("{}", rendered);
+    Ok(())
+}
+
+pub fn render_note_to_string(
+    base_dir: &Path,
+    db: &Database,
+    name: &str,
+    opts: &RenderOptions,
+) -> Result<String, Box<dyn std::error::Error>> {
     validate_render_target_name(name)?;
 
     let target = lookup_render_target(db, name)?
@@ -58,16 +76,26 @@ pub fn render_note(
         // For .base files, execute its views directly (as if it's embedded)
         // The base name includes the extension
         let base_name = &target.this.name;
-        render_base_embed(base_name, None, base_dir, db, &target.this, opts);
+        Ok(render_base_embed_to_string(
+            base_name,
+            None,
+            base_dir,
+            db,
+            &target.this,
+            opts,
+        ))
     } else {
         let body = parse_markdown_body(&content)?;
         let mut note_stack = vec![target.this.name.clone()];
-        let rendered_body =
-            render_markdown_body(&body, base_dir, db, &target.this, opts, &mut note_stack);
-        print!("{}", rendered_body);
+        Ok(render_markdown_body(
+            &body,
+            base_dir,
+            db,
+            &target.this,
+            opts,
+            &mut note_stack,
+        ))
     }
-
-    Ok(())
 }
 
 fn lookup_render_target(
@@ -243,37 +271,34 @@ fn execute_and_render(
                 }
             };
 
-            format!(
-                "<!-- start: [markbase] rendered from {} -->\n\n> **{}**\n\n{}\n<!-- end: [markbase] rendered from {} -->\n\n",
-                embed_name, view_name, rendered, embed_name
-            )
+            match opts.mode {
+                RenderMode::Cli => format!(
+                    "<!-- start: [markbase] rendered from {} -->\n\n> **{}**\n\n{}\n<!-- end: [markbase] rendered from {} -->\n\n",
+                    embed_name, view_name, rendered, embed_name
+                ),
+                RenderMode::Web => {
+                    if rendered.is_empty() {
+                        String::new()
+                    } else {
+                        format!("{}\n\n", rendered)
+                    }
+                }
+            }
         }
         Err(e) => {
             eprintln!(
                 "WARN: query failed for view '{}' in '{}': {}",
                 view_name, embed_name, e
             );
-            format!(
-                "<!-- start: [markbase] rendered from {} -->\n\n> **{}**\n\n<!-- end: [markbase] rendered from {} -->\n\n",
-                embed_name, view_name, embed_name
-            )
+            match opts.mode {
+                RenderMode::Cli => format!(
+                    "<!-- start: [markbase] rendered from {} -->\n\n> **{}**\n\n<!-- end: [markbase] rendered from {} -->\n\n",
+                    embed_name, view_name, embed_name
+                ),
+                RenderMode::Web => String::new(),
+            }
         }
     }
-}
-
-/// Main driver for rendering base embeds
-fn render_base_embed(
-    embed_name: &str,
-    view_selector: Option<&str>,
-    base_dir: &Path,
-    db: &Database,
-    this: &ThisContext,
-    opts: &RenderOptions,
-) {
-    print!(
-        "{}",
-        render_base_embed_to_string(embed_name, view_selector, base_dir, db, this, opts)
-    );
 }
 
 fn render_base_embed_to_string(
@@ -528,10 +553,10 @@ fn append_replacement(
 
     output.push_str(replacement);
 
-    if replace_end == token.full_span.end
-        && replace_end < body.len()
-        && !body[replace_end..].starts_with('\n')
+    if replace_end < body.len()
         && !output.ends_with('\n')
+        && ((replace_end == token.full_span.end && !body[replace_end..].starts_with('\n'))
+            || replace_end > token.full_span.end)
     {
         output.push('\n');
     }

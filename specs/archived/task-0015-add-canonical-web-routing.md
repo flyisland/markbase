@@ -1,7 +1,7 @@
 ---
 id: task-0015
 title: "建立 canonical web 路由与请求级生命周期"
-status: active
+status: completed
 exec-plan: exec-005
 phase: 2
 boundaries:
@@ -9,13 +9,13 @@ boundaries:
     - "src/main.rs"
     - "src/web/**"
     - "src/db.rs"
+    - "README.md"
+    - "ARCHITECTURE.md"
     - "tests/cli_web.rs"
     - "tests/common/**"
   forbidden_patterns:
     - "specs/**"
     - "src/renderer/**"
-    - "README.md"
-    - "ARCHITECTURE.md"
 completion_criteria:
   - id: "cc-001"
     scenario: "canonical note route 按 `file.path` 解析到内部 note name"
@@ -55,6 +55,7 @@ completion_criteria:
 - `web serve` 与 `web get` 必须复用同一套 route resolution 和 request lifecycle 核心
 - HTTP 侧的 404 与 400 是 route contract，不通过 in-band Markdown warning 表示
 - `web get` 复用相同的 route resolution 结果，但它是 CLI inspection helper；miss/bad path 只要求返回与 route-resolution contract 一致的 CLI failure，不要求复用 HTTP 状态码字面输出
+- 如果该阶段已经引入可直接调用的 `web serve` / `web get` CLI surface，则必须同步更新 README / ARCHITECTURE 记录当前已落地的 request lifecycle 与 route contract；若仅落共享内部入口和测试钩子，则 public interface 细节继续由 `task-0017` 锁定
 
 ## Boundaries
 
@@ -63,6 +64,8 @@ completion_criteria:
 - src/main.rs
 - src/web/**
 - src/db.rs
+- README.md
+- ARCHITECTURE.md
 - tests/cli_web.rs
 - tests/common/**
 

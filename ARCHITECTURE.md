@@ -37,6 +37,7 @@ Database-backed reads
   -> resolver.rs   resolves note names and aliases
   -> verifier.rs   validates notes against template schema
   -> renderer/     expands .base embeds and renders output
+  -> web/          resolves canonical routes and serves web-facing markdown/resources
 
 Filesystem-backed reads
   -> describe.rs   shows template content
@@ -96,6 +97,12 @@ This layer exists so user query ergonomics can evolve without leaking raw schema
 - `src/describe.rs` renders template content for inspection.
 - `src/output.rs` and `src/renderer/output.rs` provide shared output formatting paths.
 
+### 4.7 Web delivery
+
+- `src/web/` owns canonical `file.path` route resolution, request-scoped index and DB lifecycle, HTTP serving, and web-targeted OFM normalization.
+- The web layer reuses `src/renderer/` for note semantics instead of implementing a second note-embed or `.base` execution path.
+- Web note routes return translated Markdown bodies; web resource routes return raw bytes with a derived content type.
+
 ## 5. Core Invariants
 
 These are system-wide contracts. If a change breaks one of them, it is an architectural change, not a local refactor.
@@ -140,6 +147,13 @@ These are system-wide contracts. If a change breaks one of them, it is an archit
 
 This rule must stay consistent across query and renderer filter translation.
 
+### 5.7 Web routes are path-based externally and name-based internally
+
+- Canonical browser routes resolve by vault-relative `file.path`.
+- Once a Markdown note route is resolved, rendering still invokes the existing note-name-based render pipeline using `file.name`.
+- Path-based web URLs are an external delivery contract only; they do not weaken the core invariant that note-facing identity inside markbase remains path-free.
+- Web requests refresh the index before route resolution and close their DuckDB handle after the request is produced.
+
 ## 6. Dependency Boundaries
 
 These rules keep the codebase legible to both humans and agents.
@@ -151,6 +165,7 @@ These rules keep the codebase legible to both humans and agents.
 - `scanner.rs` may depend on `extractor.rs` and `db.rs`.
 - `creator.rs`, `describe.rs`, and `verifier.rs` may depend on `template.rs`.
 - `renderer/mod.rs` may depend on `renderer/filter.rs`, `renderer/output.rs`, `db.rs`, and extractor constants.
+- `web/` may depend on `db.rs`, `scanner.rs`, `renderer/`, `link_syntax.rs`, and shared validation helpers.
 
 ### Discouraged directions
 
@@ -179,6 +194,12 @@ Some rules are important enough that they should have one implementation or one 
 
 - `src/query/mod.rs`, `src/output.rs`, and `src/renderer/output.rs` may format different command surfaces, but they should not invent conflicting meanings for the same conceptual fields.
 - In particular, agent-facing structured output and human-facing table output should remain stable enough that callers can rely on them.
+
+### 7.4 Web normalization and routing
+
+- `src/web/` must reuse `src/link_syntax.rs` for live wikilink and embed parsing rather than introducing a second parser.
+- Web markdown generation must reuse renderer semantics for recursive note expansion, `.base` expansion, and placeholder behavior.
+- Canonical web route lookup uses `file.path`, but link rewrite and render execution must continue to respect the existing name-based note identity model.
 
 ### 7.4 Validation of note-facing names
 
@@ -211,6 +232,7 @@ When changing one part of the system, inspect the neighboring contracts as well.
 - Template behavior: update `src/template.rs`, `src/creator.rs`, `src/describe.rs`, `src/verifier.rs`, and `docs/design-docs/implemented/design-006-template-system.md`.
 - Note creation behavior: update `src/creator.rs`, `src/template.rs`, `docs/design-docs/implemented/design-011-note-creation.md`, `docs/design-docs/implemented/design-006-template-system.md`, and `README.md`.
 - Render pipeline behavior: update `src/renderer/`, `docs/design-docs/implemented/design-002-render.md`, and render tests.
+- Web delivery behavior: update `src/web/`, `src/renderer/` when web output shape changes, `docs/design-docs/implemented/design-003-web-note-view.md`, `README.md`, `ARCHITECTURE.md`, and web-related tests.
 
 ## 11. Documentation Role
 

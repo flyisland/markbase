@@ -1,7 +1,7 @@
 ---
 id: task-0014
 title: "修正 embed 展开后的 quote-container 保留"
-status: active
+status: completed
 exec-plan: exec-005
 phase: 1
 boundaries:

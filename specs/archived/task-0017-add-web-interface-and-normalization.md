@@ -1,7 +1,7 @@
 ---
 id: task-0017
 title: "完成 OFM normalization 与 web 对外接口"
-status: active
+status: completed
 exec-plan: exec-005
 phase: 4
 boundaries:
@@ -11,7 +11,7 @@ boundaries:
     - "src/renderer/**"
     - "README.md"
     - "ARCHITECTURE.md"
-    - "docs/design-docs/candidate/design-003-web-note-view.md"
+    - "docs/design-docs/implemented/design-003-web-note-view.md"
     - "tests/cli_web.rs"
     - "tests/cli_note.rs"
     - "tests/common/**"
@@ -35,12 +35,21 @@ completion_criteria:
     scenario: "comments 被移除，deferred syntax 继续 literal passthrough"
     test: "test_web_output_removes_comments_and_preserves_deferred_syntax"
   - id: "cc-006"
+    scenario: "normalization 只作用于 Markdown body，不改写 code context"
+    test: "test_web_output_preserves_code_fence_and_inline_code_literals"
+  - id: "cc-007"
+    scenario: "resource route 返回原始 bytes 且 content type 正确"
+    test: "test_web_resource_route_streams_bytes_with_correct_content_type"
+  - id: "cc-008"
+    scenario: "`web serve` 的 public CLI surface 与默认 bind 行为被锁定"
+    test: "test_web_serve_cli_surface_matches_docs"
+  - id: "cc-009"
     scenario: "`web get` 对 note target 返回与 `web serve` 相同的 Markdown body"
     test: "test_web_get_matches_web_serve_for_note_targets"
-  - id: "cc-007"
+  - id: "cc-010"
     scenario: "`web get` 对 binary resource 拒绝流式输出并返回解释性失败"
     test: "test_web_get_refuses_binary_resource_targets"
-  - id: "cc-008"
+  - id: "cc-011"
     scenario: "README 与 ARCHITECTURE 对 web interface 的合同与实现一致"
     test: "test_web_interface_behavior_matches_docs"
 ---
@@ -60,8 +69,11 @@ completion_criteria:
   - block link 有 alias 时显示 alias，无 alias 时显示 `note`
 - resource embed rewrite 仅覆盖 v1 已定义的非 Markdown、非 `.base` 资源：图片转 Markdown image，PDF 与其他附件转标准 link
 - unresolved wikilink 和 unresolved resource embed 在 v1 继续保持 literal source text
+- OFM normalization 只处理普通 Markdown body content；fenced code block 与 inline code span 中的示例语法保持 literal，不做 rewrite 或 comment stripping
 - `%%comment%%` 在 web 输出中被移除；`==highlight==`、Mermaid、footnotes、math、selector-based note embed、block-target note embed 继续按 design-003 的 v1 边界处理
+- canonical resource route 对 note 以外的 attachment 返回原始 bytes，且 `Content-Type` 必须与资源类型一致
 - `markbase web serve` 返回 note Markdown 或 resource bytes；markbase 不负责 docsify shell 或 HTML entrypoint
+- `markbase web serve` 的 v1 public surface 在本任务锁定为 `markbase web serve [--bind <addr>] [--port <port>]`；默认监听 `127.0.0.1:3000`
 - `markbase web get <canonical-url>` 仅用于 inspection：note target 输出最终 Markdown body，binary resource target 返回解释性失败而不是流式输出 bytes
 - README 只描述用户可见命令和行为；ARCHITECTURE 负责补充 web layer 的系统边界与请求生命周期角色
 - 若最终实现与 `design-003` 局部表述存在冲突，应在同一任务中同步回写文档与测试，保持单一合同
@@ -75,7 +87,7 @@ completion_criteria:
 - src/renderer/**
 - README.md
 - ARCHITECTURE.md
-- docs/design-docs/candidate/design-003-web-note-view.md
+- docs/design-docs/implemented/design-003-web-note-view.md
 - tests/cli_web.rs
 - tests/cli_note.rs
 - tests/common/**
@@ -127,6 +139,27 @@ completion_criteria:
 当   通过最终 web path 输出
 那么 comments 被移除
 并且 deferred selector/block syntax 继续按字面输出
+
+场景: normalization 只作用于 Markdown body，不改写 code context
+测试: test_web_output_preserves_code_fence_and_inline_code_literals
+假设 note body 中的 fenced code block 或 inline code span 含有 `[[note-a]]`、`![[image.png]]` 或 `%%comment%%`
+当   通过最终 web path 输出
+那么 这些 code context 中的文本仍保持字面示例
+并且 rewrite 与 comment stripping 只发生在普通 Markdown body content
+
+场景: resource route 返回原始 bytes 且 content type 正确
+测试: test_web_resource_route_streams_bytes_with_correct_content_type
+假设 canonical URL 指向图片、PDF 或其他 indexed attachment
+当   通过 `web serve` 请求该资源路径
+那么 响应体返回原始文件 bytes
+并且 `Content-Type` 与资源类型一致
+
+场景: `web serve` 的 public CLI surface 与默认 bind 行为被锁定
+测试: test_web_serve_cli_surface_matches_docs
+假设 v1 对外命令为 `markbase web serve [--bind <addr>] [--port <port>]`
+当   用户不传 `--bind` 与 `--port`
+那么 服务默认监听 `127.0.0.1:3000`
+并且 README、ARCHITECTURE 与 CLI 测试对该 public surface 的描述一致
 
 场景: `web get` 对 note target 返回与 `web serve` 相同的 Markdown body
 测试: test_web_get_matches_web_serve_for_note_targets
