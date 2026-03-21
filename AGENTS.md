@@ -25,16 +25,19 @@ Before making non-trivial changes, read these in order:
 1. `ARCHITECTURE.md`
 2. `docs/guidelines/core-beliefs.md`
 3. `docs/design-docs/implemented/design-009-document-system.md`
-4. Relevant active design docs listed in `Task Navigation` below
-5. Relevant files under `docs/exec-plans/active/` and `specs/active/` when the task is covered there
-6. `README.md` if user-visible behavior may change
-7. `docs/references/` only when an active document explicitly points there or historical context is required
+4. `specs/project.md` and `specs/org.md`
+5. Relevant active design docs listed in `Task Navigation` below
+6. Relevant files under `docs/exec-plans/active/` and `specs/active/` when the task is covered there
+7. `README.md` if user-visible behavior may change
+8. `docs/references/` only when an active document explicitly points there or historical context is required
 
 ## Core Documents
 
 - `ARCHITECTURE.md`: system map, boundaries, invariants, and shared-logic rules
 - `docs/guidelines/core-beliefs.md`: project-specific engineering beliefs for choosing between valid implementations
 - `docs/design-docs/implemented/design-009-document-system.md`: managed-document rules, lifecycle states, and directory layout
+- `specs/project.md`: repository-wide technical constraints
+- `specs/org.md`: organization-level constraints for this repo
 - `README.md`: user-facing behavior and command contract
 - `docs/design-docs/implemented/design-010-query-subsystem.md`: active query command and field-translation contract
 - `docs/design-docs/implemented/design-011-note-creation.md`: active `note new` command contract
