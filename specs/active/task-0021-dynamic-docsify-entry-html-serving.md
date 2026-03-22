@@ -22,31 +22,31 @@ boundaries:
     - "docs/design-docs/draft/design-014-docsify-note-sidebar-ui.md"
 completion_criteria:
   - id: "cc-000"
-    scenario: "`web serve` CLI surface 支持可选 `--homepage <canonical-url>`"
+    scenario: "`web serve` CLI surface 支持可选 `--homepage <homepage-ref>`"
     test: "test_web_serve_command_parses_optional_homepage"
   - id: "cc-001"
-    scenario: "`web serve` 在存在且版本匹配的导出 `index.html` 时继续直接使用该文件"
+    scenario: "`web serve` 未传 `--homepage` 时，仅在存在且版本匹配的导出 `index.html` 下继续启动"
     test: "test_web_serve_uses_exported_entry_html_when_version_matches"
   - id: "cc-002"
-    scenario: "导出 `index.html` 版本不匹配时，`web serve` 不再拒绝启动，而是回退到动态 docsify entry HTML"
-    test: "test_web_serve_falls_back_to_dynamic_entry_html_when_exported_version_is_stale"
+    scenario: "`web serve` 未传 `--homepage` 且导出 `index.html` 不可用时，返回解释性失败"
+    test: "test_web_serve_requires_usable_exported_entry_html_when_homepage_is_not_provided"
   - id: "cc-003"
-    scenario: "缺少导出 `index.html` 时，`web serve --homepage <canonical-url>` 可直接动态提供浏览器入口"
+    scenario: "传入 `--homepage` 时，`web serve` 始终进入 dynamic mode，并在存在导出 `index.html` 时明确告警忽略它"
     test: "test_web_serve_can_dynamically_serve_entry_html_without_exported_index"
   - id: "cc-004"
-    scenario: "缺少可用导出 `index.html` 且也没有可用 homepage source 时，`web serve` 返回解释性失败"
-    test: "test_web_serve_requires_homepage_source_when_no_usable_entry_html_exists"
+    scenario: "`--homepage` 可接受 note name、file.path、canonical URL，并统一解析为存在的 canonical URL"
+    test: "test_web_homepage_input_resolves_to_existing_canonical_url"
   - id: "cc-005"
     scenario: "动态 docsify entry HTML 与 `web init-docsify` 对同一 homepage 生成的 `index.html` 完全一致"
     test: "test_web_dynamic_entry_html_matches_init_docsify_output_byte_for_byte"
   - id: "cc-006"
     scenario: "导出 `index.html` 与动态 docsify entry HTML 都携带可解析的 homepage metadata"
-    test: "test_web_entry_html_embeds_homepage_metadata_for_runtime_reuse"
+    test: "test_web_entry_html_embeds_homepage_metadata"
   - id: "cc-007"
-    scenario: "当导出 `index.html` 存在但不再可直接使用时，`web serve` 明确规定 homepage source 优先级"
-    test: "test_web_serve_dynamic_homepage_source_precedence_is_explicit"
+    scenario: "`--homepage` 只允许最终解析到 `.md` 或 `.base` 目标"
+    test: "test_web_homepage_input_rejects_non_document_targets"
   - id: "cc-008"
-    scenario: "`web serve` 启动时为三种 entry HTML 模式输出清晰 INFO 信息"
+    scenario: "`web serve` 启动时为 static / dynamic-ignore-exported 两类模式输出清晰 INFO/WARN 信息"
     test: "test_web_serve_logs_clear_entry_html_mode_info"
   - id: "cc-009"
     scenario: "`/` 与 `/index.html` 在动态模式下都返回相同 docsify entry HTML"
@@ -55,7 +55,7 @@ completion_criteria:
     scenario: "动态 entry HTML 不回退既有 docsify 前端能力"
     test: "test_web_dynamic_entry_html_preserves_docsify_frontend_contract"
   - id: "cc-011"
-    scenario: "`web init-docsify` 仍保留为显式导出命令，但文档定位变为导出/调试工具"
+    scenario: "`web init-docsify` 仍保留为显式导出命令，但 help / 文档定位变为非必须的导出/调试工具"
     test: "doc review"
 ---
 
@@ -77,28 +77,28 @@ completion_criteria:
 
 ## Decisions
 
-- `web serve` 的浏览器入口优先语义从“必须先有导出 `index.html`”改为“优先提供 docsify entry HTML；导出文件只是可复用输入之一”
+- `web serve` 的浏览器入口语义改为显式双模式：
+  1. 未传 `--homepage` 时，只允许复用现有导出 `index.html`
+  2. 传入 `--homepage` 时，始终动态生成 docsify entry HTML
 - `web init-docsify` 继续保留，但在产品定位上主要用于显式导出、调试、对比最终 HTML，以及高级用户手工修改导出物
 - `web serve` 与 `web init-docsify` 必须复用同一个 docsify entry HTML renderer；不得维护两套生成路径
-- `web serve` CLI surface 新增可选 `--homepage <canonical-url>`，仅用于 dynamic mode 的 homepage source
+- `web serve` CLI surface 新增可选 `--homepage <homepage-ref>`，仅用于 dynamic mode 的 homepage source
+- `web init-docsify --homepage` 与 `web serve --homepage` 都接受三种输入：
+  1. note name
+  2. vault-relative `file.path`
+  3. canonical URL
+- homepage 输入必须先解析到真实存在的 `.md` 或 `.base` 目标，再统一 canonicalize 为 `/<file.path>`；普通资源文件不得作为 homepage
 - 对于同一个 homepage 与同一个当前二进制版本，动态返回的 entry HTML 与 `web init-docsify` 写出的 `index.html` 必须字节级一致
-- `web init-docsify` 生成的 `index.html` 必须继续包含 `markbase` version / git metadata，并新增一个稳定、可解析的 homepage metadata marker，供 `web serve` 读取
-- `web serve` 的 entry HTML source 优先级固定为：
-  1. 存在且版本匹配的导出 `index.html`
-  2. CLI `--homepage <canonical-url>` 提供的显式 homepage
-  3. 存在但版本不匹配的导出 `index.html` 中嵌入的 homepage metadata
-- 若存在且版本匹配的导出 `index.html`，`web serve` 直接使用该文件内容；即使同时传了 `--homepage` 也不做运行时重渲染，而是输出 INFO 说明导出文件优先
-- 若导出 `index.html` 存在但版本不匹配，`web serve` 不得拒绝启动；它应忽略该旧文件内容，改用当前版本动态生成的 docsify entry HTML
-- 若导出 `index.html` 不存在，且 CLI 传入 `--homepage`，`web serve` 直接动态生成 docsify entry HTML
-- 若导出 `index.html` 不存在且未传 `--homepage`，`web serve` 返回解释性失败，提示用户传入 `--homepage` 或先执行 `web init-docsify`
-- 若导出 `index.html` 存在但既版本不匹配又缺少可解析 homepage metadata，且 CLI 也未传 `--homepage`，`web serve` 返回解释性失败
+- `web init-docsify` 生成的 `index.html` 必须继续包含 `markbase` version / git metadata，并继续包含稳定、可解析的 homepage metadata marker
+- 若未传 `--homepage`，`web serve` 仅尝试使用现有导出 `index.html`；若该文件不存在、缺少版本 marker、或版本不匹配，则命令必须报错退出
+- 若传入 `--homepage`，`web serve` 必须直接动态生成 docsify entry HTML；若 `<base-dir>/index.html` 存在，则输出 `WARN` 说明发现了该文件但本次不会使用它
 - 动态模式下，请求 `/` 与 `/index.html` 必须返回相同 docsify entry HTML；不得让一个路径走动态返回、另一个路径走 404 或磁盘 miss
 - `web get` 仍是 shell-independent inspection command；本任务不改变 `web get` 合同
 - 动态 / 导出两种 entry HTML 模式都必须保留现有 docsify 前端合同：内部 `.md` / `.base` 导航、resource URL 直连、callout UI、版本 footer
-- `web serve` 启动时至少要区分三类 INFO：
-  1. 使用版本匹配的导出 `index.html`
-  2. 因缺少导出 `index.html` 而动态生成 docsify entry HTML
-  3. 因导出 `index.html` 版本不匹配而忽略旧文件并动态生成 docsify entry HTML
+- `web init-docsify` help 与 README 必须强调：它不是浏览器使用前的必需步骤，主要面向导出/调试/高级用户修改导出物
+- `web serve` 启动时至少要区分两类日志：
+  1. `INFO` 使用版本匹配的导出 `index.html`
+  2. `INFO` 动态生成 docsify entry HTML；若发现现有导出文件则额外输出 `WARN` 说明忽略原因
 
 ## Boundaries
 
@@ -125,45 +125,43 @@ completion_criteria:
 
 ## Completion Criteria
 
-场景: `web serve` CLI surface 支持可选 `--homepage <canonical-url>`
+场景: `web serve` CLI surface 支持可选 `--homepage <homepage-ref>`
 测试: test_web_serve_command_parses_optional_homepage
-假设 用户执行 `markbase web serve --homepage /HOME.md`
+假设 用户执行 `markbase web serve --homepage HOME`
 当   CLI 解析参数
 那么 命令接受该可选参数
 并且 该参数不会破坏既有 `web serve` options 的解析合同
 
-场景: `web serve` 在存在且版本匹配的导出 `index.html` 时继续直接使用该文件
+场景: `web serve` 未传 `--homepage` 时，仅在存在且版本匹配的导出 `index.html` 下继续启动
 测试: test_web_serve_uses_exported_entry_html_when_version_matches
 假设 `<base-dir>/index.html` 已由当前版本 `web init-docsify` 导出
 当   用户执行 `markbase web serve`
 那么 `web serve` 继续使用该导出文件作为 docsify entry HTML
-并且 不会因为 dynamic mode 存在而重渲染不同内容
-当   用户执行 `markbase web serve --homepage /OTHER.md`
-那么 `web serve` 仍继续使用该导出文件
-并且 `--homepage` 不会覆盖版本匹配导出文件中已固定的 homepage
+并且 不会在运行时重渲染不同内容
 
-场景: 导出 `index.html` 版本不匹配时，`web serve` 不再拒绝启动，而是回退到动态 docsify entry HTML
-测试: test_web_serve_falls_back_to_dynamic_entry_html_when_exported_version_is_stale
-假设 `<base-dir>/index.html` 存在，但其中嵌入的 `markbase` version 与当前二进制不匹配
-当   用户执行 `markbase web serve`
-那么 命令不会因 version mismatch 失败
-并且 会忽略旧文件内容并返回当前版本动态生成的 docsify entry HTML
+场景: `web serve` 未传 `--homepage` 且导出 `index.html` 不可用时，返回解释性失败
+测试: test_web_serve_requires_usable_exported_entry_html_when_homepage_is_not_provided
+假设 用户执行 `markbase web serve`
+并且 `<base-dir>/index.html` 缺失、缺少版本 marker、或版本不匹配
+当   命令尝试启动浏览器入口
+那么 命令失败退出
+并且 stderr 明确说明：未传 `--homepage` 时只允许使用现有导出 `index.html`
 
-场景: 缺少导出 `index.html` 时，`web serve --homepage <canonical-url>` 可直接动态提供浏览器入口
+场景: 传入 `--homepage` 时，`web serve` 始终进入 dynamic mode，并在存在导出 `index.html` 时明确告警忽略它
 测试: test_web_serve_can_dynamically_serve_entry_html_without_exported_index
-假设 `<base-dir>/index.html` 不存在
-并且 用户执行 `markbase web serve --homepage /HOME.md`
+假设 用户执行 `markbase web serve --homepage HOME`
 当   浏览器请求 `/` 或 `/index.html`
 那么 server 返回动态生成的 docsify entry HTML
 并且 无需先执行 `web init-docsify`
+当   `<base-dir>/index.html` 已存在
+那么 stderr 输出 `WARN` 说明发现该文件但因为提供了 `--homepage` 所以不会使用它
 
-场景: 缺少可用导出 `index.html` 且也没有可用 homepage source 时，`web serve` 返回解释性失败
-测试: test_web_serve_requires_homepage_source_when_no_usable_entry_html_exists
-假设 `<base-dir>/index.html` 不存在
-并且 用户未传 `--homepage`
-当   执行 `markbase web serve`
-那么 命令启动失败
-并且 stderr 明确提示需要传入 `--homepage` 或先执行 `markbase web init-docsify --homepage <canonical-url>`
+场景: `--homepage` 可接受 note name、file.path、canonical URL，并统一解析为存在的 canonical URL
+测试: test_web_homepage_input_resolves_to_existing_canonical_url
+假设 用户分别传入 `HOME`、`areas/home/HOME.md`、`/areas/home/HOME.md`
+当   `web serve --homepage ...` 或 `web init-docsify --homepage ...` 解析输入
+那么 三者都被解析到同一个真实存在的 canonical URL
+并且 最终写入 / 动态返回的 docsify entry HTML 中只出现 canonical URL 形式
 
 场景: 动态 docsify entry HTML 与 `web init-docsify` 对同一 homepage 生成的 `index.html` 完全一致
 测试: test_web_dynamic_entry_html_matches_init_docsify_output_byte_for_byte
@@ -173,25 +171,25 @@ completion_criteria:
 并且 不允许仅“语义等价但文本不同”
 
 场景: 导出 `index.html` 与动态 docsify entry HTML 都携带可解析的 homepage metadata
-测试: test_web_entry_html_embeds_homepage_metadata_for_runtime_reuse
+测试: test_web_entry_html_embeds_homepage_metadata
 假设 当前版本可生成 docsify entry HTML
 当   检查导出文件与动态返回结果
 那么 两者都包含稳定的 homepage metadata marker
-并且 `web serve` 可在 stale exported file fallback 时读取该 marker
 
-场景: 当导出 `index.html` 存在但不再可直接使用时，`web serve` 明确规定 homepage source 优先级
-测试: test_web_serve_dynamic_homepage_source_precedence_is_explicit
-假设 同时存在 stale exported `index.html` 与 CLI `--homepage`
-当   `web serve` 进入 dynamic mode
-那么 CLI `--homepage` 优先于旧文件中嵌入的 homepage metadata
-并且 若无 CLI `--homepage`，才回退读取旧文件中的 homepage metadata
+场景: `--homepage` 只允许最终解析到 `.md` 或 `.base` 目标
+测试: test_web_homepage_input_rejects_non_document_targets
+假设 用户传入指向图片、PDF 或其他非 `.md` / `.base` 资源的 note name、file.path、或 canonical URL
+当   `web serve --homepage ...` 或 `web init-docsify --homepage ...` 解析输入
+那么 命令失败退出
+并且 stderr 说明 homepage 仅支持 `.md` / `.base`
 
-场景: `web serve` 启动时为三种 entry HTML 模式输出清晰 INFO 信息
+场景: `web serve` 启动时为 static / dynamic-ignore-exported 两类模式输出清晰 INFO/WARN 信息
 测试: test_web_serve_logs_clear_entry_html_mode_info
-假设 用户分别遇到版本匹配导出文件、缺少导出文件、导出文件版本不匹配三种情况
+假设 用户分别遇到版本匹配导出文件、以及传入 `--homepage` 且磁盘已存在导出文件两种情况
 当   执行 `markbase web serve`
-那么 stderr 中都有清晰且可区分的 INFO 提示
+那么 stderr 中都有清晰且可区分的 `INFO` / `WARN` 提示
 并且 提示中明确说明当前使用的是 exported entry HTML 还是 dynamic entry HTML
+并且 dynamic 情况下若发现导出文件存在，会明确说明“存在但忽略”
 
 场景: `/` 与 `/index.html` 在动态模式下都返回相同 docsify entry HTML
 测试: test_web_dynamic_entry_html_serves_root_and_index_routes_consistently
@@ -207,9 +205,9 @@ completion_criteria:
 那么 这些前端合同保持不变
 并且 不会因为切到 dynamic mode 而退化为旧版模板或缺少插件逻辑
 
-场景: `web init-docsify` 仍保留为显式导出命令，但文档定位变为导出/调试工具
+场景: `web init-docsify` 仍保留为显式导出命令，但 help / 文档定位变为非必须的导出/调试工具
 测试: doc review
 假设 `design-012-patch-02` 已实现
-当   检查 README、ARCHITECTURE 与 design docs
+当   检查 README、ARCHITECTURE、design docs 与 CLI help
 那么 文档明确说明 `web serve` dynamic entry HTML 是默认浏览器入口
-并且 `web init-docsify` 的定位已降为导出/调试工具，而不是强前置安装步骤
+并且 `web init-docsify` 的定位已降为非必须的导出/调试工具，而不是强前置安装步骤

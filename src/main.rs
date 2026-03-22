@@ -203,6 +203,12 @@ enum WebCommands {
         port: u16,
 
         #[arg(
+            long = "homepage",
+            help = "Dynamic homepage target as note name, vault-relative file.path, or canonical URL; when provided, web serve ignores base-dir/index.html and generates entry HTML at runtime"
+        )]
+        homepage: Option<String>,
+
+        #[arg(
             long = "cache-control",
             help = "Set the Cache-Control header for all web responses (default: no-store, no-cache, must-revalidate)"
         )]
@@ -213,12 +219,14 @@ enum WebCommands {
         #[arg(help = "Canonical vault-shaped URL path such as /entities/person/alice.md")]
         canonical_url: String,
     },
-    #[command(about = "Generate a docsify browser shell at base-dir/index.html")]
+    #[command(
+        about = "Export docsify entry HTML for debugging or advanced customization; not required for normal browser use"
+    )]
     InitDocsify {
         #[arg(
             long = "homepage",
             required = true,
-            help = "Canonical route loaded by docsify, such as /HOME.md or /All%20Logs.base"
+            help = "Homepage target as note name, vault-relative file.path, or canonical URL; must resolve to a .md or .base document"
         )]
         homepage: String,
 
@@ -501,6 +509,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             WebCommands::Serve {
                 bind,
                 port,
+                homepage,
                 cache_control,
             } => {
                 web::serve(
@@ -509,6 +518,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     compute_backlinks,
                     &bind,
                     port,
+                    homepage.as_deref(),
                     cache_control.as_deref(),
                 )?;
             }
@@ -517,7 +527,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 print!("{}", body);
             }
             WebCommands::InitDocsify { homepage, force } => {
-                let path = web::init_docsify(&base_dir, &homepage, force)?;
+                let path =
+                    web::init_docsify(&base_dir, &db_path, compute_backlinks, &homepage, force)?;
                 let relative_path = path.strip_prefix(&base_dir).unwrap_or(path.as_path());
                 println!("{}", relative_path.display());
             }
@@ -780,10 +791,12 @@ mod tests {
                 WebCommands::Serve {
                     bind,
                     port,
+                    homepage,
                     cache_control,
                 } => {
                     assert_eq!(bind, web::DEFAULT_BIND_ADDR);
                     assert_eq!(port, web::DEFAULT_PORT);
+                    assert_eq!(homepage, None);
                     assert_eq!(cache_control, None);
                 }
                 _ => panic!("Expected Serve command"),
@@ -807,11 +820,44 @@ mod tests {
                 WebCommands::Serve {
                     bind,
                     port,
+                    homepage,
                     cache_control,
                 } => {
                     assert_eq!(bind, web::DEFAULT_BIND_ADDR);
                     assert_eq!(port, web::DEFAULT_PORT);
+                    assert_eq!(homepage, None);
                     assert_eq!(cache_control.as_deref(), Some("public, max-age=60"));
+                }
+                _ => panic!("Expected Serve command"),
+            }
+        } else {
+            panic!("Expected Web command");
+        }
+    }
+
+    #[test]
+    fn test_web_serve_command_parses_optional_homepage() {
+        let cli = Cli::parse_from([
+            "markbase",
+            "web",
+            "serve",
+            "--homepage",
+            "/HOME.md",
+            "--port",
+            "4000",
+        ]);
+        if let Commands::Web { command } = cli.command {
+            match command {
+                WebCommands::Serve {
+                    bind,
+                    port,
+                    homepage,
+                    cache_control,
+                } => {
+                    assert_eq!(bind, web::DEFAULT_BIND_ADDR);
+                    assert_eq!(port, 4000);
+                    assert_eq!(homepage.as_deref(), Some("/HOME.md"));
+                    assert_eq!(cache_control, None);
                 }
                 _ => panic!("Expected Serve command"),
             }

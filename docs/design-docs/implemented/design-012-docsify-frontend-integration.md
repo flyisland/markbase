@@ -16,7 +16,7 @@ This document defines how markbase should support docsify as an explicit,
 optional frontend for browsing markbase web output in a browser.
 
 The goal is not to turn markbase into a full HTML application server. The goal
-is to give users a supported way to install a lightweight docsify shell that
+is to give users a supported docsify entry HTML that
 works correctly with markbase's web output and can evolve to cover
 presentation-layer concerns such as callout styling.
 
@@ -26,10 +26,10 @@ presentation-layer concerns such as callout styling.
 
 - `markbase web serve` returns Markdown for `.md` and `.base` routes
 - binary resources are returned as raw bytes
-- markbase does not own a docsify shell or HTML entrypoint in v1
+- markbase does not own a docsify entry HTML file or HTML entrypoint in v1
 
 That contract is sufficient for raw content serving, but users still need a
-frontend shell to browse the content comfortably.
+frontend entry HTML to browse the content comfortably.
 
 Ad hoc manual placement of an `index.html` in the vault root has three
 problems:
@@ -48,8 +48,8 @@ HTML from the vault.
 This design covers:
 
 - an explicit `markbase web init-docsify` command
-- where docsify shell files should be generated
-- how the generated shell should consume markbase web output
+- where docsify entry HTML should be generated
+- how the generated entry HTML should consume markbase web output
 - how internal link handling should work for docsify
 - which presentation concerns belong to docsify rather than to the markbase
   backend
@@ -62,10 +62,10 @@ This design does not cover:
 
 ## Design Goals
 
-- Keep docsify installation explicit and user-triggered.
+- Keep docsify export explicit and user-triggered when users want a disk artifact.
 - Preserve the current markbase backend boundary: Markdown and resource bytes
   remain the primary HTTP contract.
-- Make the generated docsify shell work with current markbase web output,
+- Make the generated docsify entry HTML work with current markbase web output,
   including absolute internal links emitted by the backend.
 - Establish a supported home for future frontend-only concerns such as callout
   presentation, Mermaid rendering, sidebar behavior, and search.
@@ -82,18 +82,18 @@ This design does not cover:
 
 ## Core Decision
 
-Markbase should provide an explicit initialization command:
+Markbase should provide an explicit export command:
 
 ```bash
 markbase web init-docsify
 ```
 
-This command generates a minimal docsify shell into the current base-dir so the
-shell is directly reachable as `/index.html` from the existing `web serve`
-root.
+This command generates a minimal docsify entry HTML file into the current
+base-dir so the exported file is directly reachable as `/index.html` from the
+existing `web serve` root.
 
-The shell is optional. Users who do not want docsify should not pay any cost or
-see any generated files outside explicit initialization.
+The exported file is optional. Users who do not want a disk copy should still
+be able to browse via `web serve` dynamic entry HTML without generating files.
 
 ## Chosen Direction
 
@@ -135,7 +135,7 @@ Reasons:
 
 - users already expect a browsable entrypoint at the web root
 - `http://127.0.0.1:3000/index.html` is simpler than a tool-owned nested path
-- docsify shell installation should optimize for direct use, not hidden storage
+- docsify entry HTML export should optimize for direct use, not hidden storage
 - overwrite risk is still controlled by explicit command invocation plus
   `--force`
 
@@ -144,40 +144,53 @@ Reasons:
 The initial command surface should be small:
 
 ```bash
-markbase web init-docsify --homepage <canonical-url>
+markbase web init-docsify --homepage <homepage-ref>
 markbase web init-docsify --force
 ```
 
 ### Behavior
 
 - create the target directory if needed
-- write the docsify shell file at `<base-dir>/index.html`
+- write the docsify entry HTML file at `<base-dir>/index.html`
 - refuse to overwrite an existing `index.html` unless `--force` is provided
 - require users to specify an initial homepage route via `--homepage`
-- embed the generating `markbase` version and git commit/time into the shell's
+- embed the generating `markbase` version and git commit/time into the entry HTML's
   HTML metadata and visible footer
+- position the command as a non-required export/debug tool for advanced users,
+  not as a mandatory browser setup step
 
 ### Homepage Input
 
-`--homepage` should accept the same canonical route shape that `markbase web
-get` and `markbase web serve` already understand, for example:
+`--homepage` should accept one of these forms:
+
+- note name, such as `HOME` or `All Opputunities Logs.base`
+- vault-relative `file.path`, such as `entities/person/alice.md`
+- canonical URL, such as `/entities/person/alice.md`
+
+The command must resolve the input to one existing `.md` or `.base` target and
+then canonicalize it to the stable browser route `/<file.path>`.
+
+Examples:
 
 ```text
+/HOME.md
 /All%20Opputunities%20Logs.base
 /entities/person/alice.md
+All Opputunities Logs.base
+entities/person/alice.md
 ```
 
 In the first implementation, `--homepage` is required.
 
 The command must not guess a homepage from arbitrary vault contents and must not
 invent implicit defaults such as `/README.md` or a generated placeholder home.
-Requiring an explicit homepage keeps the installed docsify shell aligned with
+Requiring an explicit homepage keeps the exported docsify entry HTML aligned with
 the user's actual navigation intent and avoids turning a fallback default into a
 hidden product contract.
 
 ## Serving Model
 
-After initialization, users should be able to keep using:
+Users should be able to keep using:
 
 ```bash
 markbase web serve
@@ -193,33 +206,38 @@ For docsify-first browsing, the frontend integration should also define a root
 entry behavior:
 
 - when the browser requests `/`, markbase should serve the generated
-  `/index.html` shell instead of treating `/` as a canonical vault document
+  `/index.html` entry HTML instead of treating `/` as a canonical vault document
   route
-- this root-to-index behavior exists to make the docsify shell directly
+- this root-to-index behavior exists to make the docsify entry HTML directly
   enterable from the site root and does not change canonical note or resource
   routing rules under `design-003`
 
 This works because markbase already serves non-Markdown files as raw resources.
-The docsify shell remains just another served asset at the vault root, while
+The docsify entry HTML remains just another served asset at the vault root, while
 markbase continues to act as the content server for Markdown and attachments.
 
-Because the supported browser entrypoint is now the generated docsify shell,
-`markbase web serve` should treat the presence of `<base-dir>/index.html` as a
-startup prerequisite for user-facing browser mode. If the shell has not been
-initialized yet, `web serve` should fail fast with an explanatory message that
-directs the user to run:
+`web serve` is now the default browser entrypoint. Its behavior is explicitly
+split into two modes:
 
-```bash
-markbase web init-docsify --homepage <canonical-url>
-```
+- without `--homepage`, it reuses the existing exported `<base-dir>/index.html`
+- with `--homepage`, it dynamically returns the same docsify entry HTML that
+  `web init-docsify` would export for the resolved homepage
 
-This keeps browser-serving behavior honest: the command should not report a
-ready web experience when the supported browser entrypoint does not exist.
+This means:
 
-`web serve` should also reject a shell whose embedded `markbase` version does
-not match the serving binary. This keeps the browser shell contract aligned
-with the implementation that is serving Markdown and resources, and avoids
-silent drift after users upgrade the CLI without regenerating `index.html`.
+- without `--homepage`, `web serve` requires `<base-dir>/index.html` to exist
+  and its embedded `markbase` version to match the serving binary
+- without `--homepage`, a stale or malformed exported `index.html` is a hard
+  startup error
+- with `--homepage`, `web serve` dynamically generates the entry HTML even if
+  exported `index.html` already exists
+- with `--homepage`, finding an existing exported `index.html` should produce a
+  warning that the file exists but will not be used for this run
+- dynamic entry HTML and exported `index.html` must come from one shared
+  rendering path and remain byte-for-byte identical for the same homepage and
+  binary version
+- `web init-docsify` remains available as an explicit export/debugging tool for
+  users who want to inspect or hand-edit the generated entry HTML
 
 `markbase web get` remains a backend inspection tool and does not depend on the
 presence of `index.html`.
@@ -228,7 +246,7 @@ This preserves the backend boundary from `design-003`:
 
 - markbase still serves Markdown and resource bytes
 - docsify remains a frontend consumer
-- the new command only installs the shell; it does not change the web server
+- the new command only installs or exports entry HTML; it does not change the web server
   into an HTML app framework
 
 ## URL Handling
@@ -247,14 +265,14 @@ its HTML shell when those links are clicked.
 
 ### Initial docsify solution
 
-The generated docsify shell should include a small frontend plugin that adapts
+The generated docsify entry HTML should include a small frontend plugin that adapts
 markbase-emitted internal document links for docsify navigation.
 
 In the first version, that plugin should:
 
 - inspect rendered links inside the docsify app container
 - identify markbase internal document routes such as `.md` and `.base`
-- rewrite those hrefs so that clicking them stays inside the docsify shell
+- rewrite those hrefs so that clicking them stays inside the docsify entry HTML
 - leave binary resource URLs untouched so images and attachments still resolve
   directly
 
@@ -314,23 +332,23 @@ The active responsibility split is:
 - the backend keeps the original callout marker line in Markdown output
 - the backend does not generate dedicated callout HTML and does not add a
   docsify-specific callout rewrite pass
-- the docsify shell recognizes callout marker syntax after Markdown has been
+- the docsify entry HTML recognizes callout marker syntax after Markdown has been
   rendered to HTML
-- the docsify shell applies callout UI, fold/unfold interaction, and styling
+- the docsify entry HTML applies callout UI, fold/unfold interaction, and styling
 
 This keeps vault-aware semantics on the backend and presentation behavior in the
 frontend shell.
 
 ## Foldable Callout Support
 
-The docsify shell supports these Obsidian-compatible marker forms:
+The docsify entry HTML supports these Obsidian-compatible marker forms:
 
 - `[!type]` for non-foldable callouts
 - `[!type]+` for foldable callouts expanded by default
 - `[!type]-` for foldable callouts collapsed by default
 
 Trailing text on the marker line becomes the visible title. When the marker line
-has no trailing title text, the shell derives a stable default title from the
+has no trailing title text, the entry HTML derives a stable default title from the
 callout type.
 
 Nested callouts remain supported because the backend preserves nested
@@ -347,10 +365,10 @@ The preferred DOM representation is:
 
 ## Frontend Upgrade Strategy
 
-The generated docsify shell upgrades callouts after Markdown has been rendered
+The generated docsify entry HTML upgrades callouts after Markdown has been rendered
 to HTML.
 
-The shell plugin:
+The entry HTML plugin:
 
 - scans rendered `blockquote` elements inside the docsify app container
 - detects a leading Obsidian callout marker line
@@ -372,7 +390,7 @@ generated file:
 <base-dir>/index.html
 ```
 
-Repository implementation may use template or asset files to maintain the shell
+Repository implementation may use template or asset files to maintain the entry HTML
 HTML, JS, and CSS more clearly, but the generated output contract remains a
 single-file browser entrypoint. This separates repository maintainability from
 the user-facing installation shape.
@@ -415,7 +433,7 @@ installation work.
 
 ## Future Frontend Responsibilities
 
-The generated docsify shell is also the right place to host future
+The generated docsify entry HTML is also the right place to host future
 presentation-only behaviors, for example:
 
 - callout styling for `> [!info]` and related blocks
@@ -433,14 +451,14 @@ This design should be considered implemented only when all of the following are
 true:
 
 1. `markbase web init-docsify` exists and is documented
-2. the command writes a minimal docsify shell at `<base-dir>/index.html`
+2. the command writes a minimal docsify entry HTML file at `<base-dir>/index.html`
 3. the command has explicit overwrite behavior and does not silently replace an
    existing `index.html` without `--force`
-4. `markbase web serve` fails with an explanatory setup error when
-   `<base-dir>/index.html` is missing
-5. opening `/` or `/index.html` renders the generated shell and configured
+4. `markbase web serve` can either reuse exported `index.html` or dynamically
+   generate the same docsify entry HTML at runtime
+5. opening `/` or `/index.html` renders the selected entry HTML and configured
    homepage route
-6. clicking internal `.md` and `.base` links stays inside the docsify shell
+6. clicking internal `.md` and `.base` links stays inside the docsify entry HTML
 7. binary resource links continue to resolve as direct resources
 8. README and ARCHITECTURE document the docsify integration boundary
 
@@ -448,8 +466,8 @@ true:
 
 1. Should `init-docsify` generate only `index.html` at first, or should it also
    generate a small local CSS file for callout styling scaffolding?
-2. Should the generated shell keep using docsify CDN assets by default, or
+2. Should the generated entry HTML keep using docsify CDN assets by default, or
    should markbase eventually support vendored frontend assets?
 3. Should markbase later add a companion command such as
-   `markbase web open-docsify` for convenience, or is shell generation alone
+   `markbase web open-docsify` for convenience, or is entry HTML generation alone
    sufficient?

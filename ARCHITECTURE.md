@@ -102,9 +102,9 @@ This layer exists so user query ergonomics can evolve without leaking raw schema
 - `src/web/` owns canonical `file.path` route resolution, request-scoped index and DB lifecycle, HTTP serving, and web-targeted OFM normalization.
 - The web layer reuses `src/renderer/` for note semantics instead of implementing a second note-embed or `.base` execution path.
 - Web `.md` and `.base` routes return translated Markdown bodies; binary resource routes return raw bytes with a derived content type.
-- `src/web/` also owns docsify shell initialization for the supported browser entrypoint at `base-dir/index.html`.
-- The generated docsify shell owns frontend-only internal-link adaptation, resource URL normalization, callout UI upgrades, and embedded shell metadata such as the generating `markbase` version and git commit/time; the backend web contract remains Markdown and resource bytes rather than callout-specific HTML.
-- `web serve` is the user-facing browser surface and therefore requires the docsify shell to exist before startup, and requires that shell's embedded `markbase` version to match the serving binary; `web get` remains the shell-independent inspection command.
+- `src/web/` owns docsify entry HTML generation for the supported browser entrypoint at `/` and `base-dir/index.html`.
+- The generated docsify entry HTML owns frontend-only internal-link adaptation, resource URL normalization, callout UI upgrades, and embedded metadata such as the generating `markbase` version, homepage, and git commit/time; the backend web contract remains Markdown and resource bytes rather than callout-specific HTML.
+- `web serve` is the user-facing browser surface. Without `--homepage` it only reuses exported `base-dir/index.html`; with `--homepage` it resolves that input to an existing `.md` or `.base` target and dynamically renders the same browser entry HTML at runtime. `web init-docsify` remains the non-required export/debug tool and `web get` remains the entry-HTML-independent inspection command.
 
 ## 5. Core Invariants
 

@@ -1,10 +1,18 @@
 mod common;
 
 use common::{
-    TestVault, assert_cli_error, assert_cli_success, docsify_shell_stub, http_get, pick_free_port,
-    stderr_contains, stdout_contains,
+    TestVault, assert_cli_error, assert_cli_success, docsify_shell_stub,
+    docsify_shell_stub_with_homepage, http_get, pick_free_port, stderr_contains, stdout_contains,
 };
 use std::fs;
+
+fn create_home_note(vault: &TestVault) {
+    vault.create_note("HOME", "# Home\n");
+}
+
+fn create_base_homepage(vault: &TestVault, file_name: &str) {
+    vault.create_file(file_name, "views:\n  - type: table\n    name: Demo\n");
+}
 
 #[test]
 fn test_web_route_resolves_note_path_to_internal_note_name() {
@@ -428,12 +436,25 @@ fn test_web_serve_cli_surface_matches_docs() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("--bind"));
     assert!(stdout.contains("--port"));
+    assert!(stdout.contains("--homepage"));
     assert!(stdout.contains("--cache-control"));
 
     let readme = include_str!("../README.md");
     assert!(readme.contains("markbase web serve"));
+    assert!(readme.contains("markbase web serve --homepage /HOME.md"));
     assert!(readme.contains("markbase web serve --cache-control"));
     assert!(readme.contains("127.0.0.1:3000"));
+}
+
+#[test]
+fn test_web_init_docsify_help_positions_command_as_optional_export_tool() {
+    let vault = TestVault::new();
+    let output = vault.run_cli(&["web", "init-docsify", "--help"]);
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("not required for normal browser use"));
+    assert!(stdout.contains("note name, vault-relative file.path, or canonical URL"));
 }
 
 #[test]
@@ -507,6 +528,7 @@ fn test_web_init_docsify_requires_homepage() {
 #[test]
 fn test_web_init_docsify_writes_index_html_to_base_dir_root() {
     let vault = TestVault::new();
+    create_home_note(&vault);
 
     let output = vault.web_init_docsify("/HOME.md");
 
@@ -519,6 +541,7 @@ fn test_web_init_docsify_writes_index_html_to_base_dir_root() {
 #[test]
 fn test_web_init_docsify_writes_single_file_shell_output() {
     let vault = TestVault::new();
+    create_home_note(&vault);
 
     let output = vault.web_init_docsify("/HOME.md");
 
@@ -528,12 +551,15 @@ fn test_web_init_docsify_writes_single_file_shell_output() {
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
         .collect::<Vec<_>>();
     entries.sort();
-    assert_eq!(entries, vec!["index.html"]);
+    assert!(entries.contains(&"index.html".to_string()));
+    assert!(!entries.iter().any(|name| name.ends_with(".css")));
+    assert!(!entries.iter().any(|name| name.ends_with(".js")));
 }
 
 #[test]
 fn test_web_init_docsify_refuses_overwrite_without_force() {
     let vault = TestVault::new();
+    create_home_note(&vault);
     let index_path = vault.path.join("index.html");
     fs::write(&index_path, "old").unwrap();
 
@@ -555,6 +581,7 @@ fn test_web_init_docsify_refuses_overwrite_without_force() {
 #[test]
 fn test_web_init_docsify_embeds_configured_homepage() {
     let vault = TestVault::new();
+    create_base_homepage(&vault, "All Opputunities Logs.base");
 
     let output = vault.web_init_docsify("/All%20Opputunities%20Logs.base");
 
@@ -566,6 +593,7 @@ fn test_web_init_docsify_embeds_configured_homepage() {
 #[test]
 fn test_web_init_docsify_embeds_markbase_build_metadata_in_shell() {
     let vault = TestVault::new();
+    create_home_note(&vault);
 
     let output = vault.web_init_docsify("/HOME.md");
 
@@ -580,54 +608,109 @@ fn test_web_init_docsify_embeds_markbase_build_metadata_in_shell() {
 }
 
 #[test]
-fn test_web_serve_requires_docsify_index_html() {
-    let vault = TestVault::new();
-
-    let output = vault.run_cli(&["web", "serve"]);
-
-    assert_cli_error(&output);
+fn test_web_serve_requires_usable_exported_entry_html_when_homepage_is_not_provided() {
+    let missing_vault = TestVault::new();
+    let missing = missing_vault.run_cli(&["web", "serve"]);
+    assert_cli_error(&missing);
     assert!(stderr_contains(
-        &output,
-        "Run `markbase web init-docsify --homepage <canonical-url>` first."
+        &missing,
+        "was started without `--homepage`, so it can only reuse the exported docsify entry HTML"
     ));
+    assert!(stderr_contains(&missing, "does not exist"));
+
+    let stale_vault = TestVault::new();
+    create_home_note(&stale_vault);
+    assert_cli_success(&stale_vault.web_init_docsify("/HOME.md"));
+    let index_path = stale_vault.path.join("index.html");
+    let html = fs::read_to_string(&index_path).unwrap();
+    fs::write(
+        &index_path,
+        html.replace(
+            &format!(
+                "<!-- markbase-shell-version: {} -->",
+                env!("MARKBASE_BUILD_VERSION")
+            ),
+            "<!-- markbase-shell-version: 0.0.0-test -->",
+        ),
+    )
+    .unwrap();
+
+    let stale = stale_vault.run_cli(&["web", "serve"]);
+    assert_cli_error(&stale);
+    assert!(stderr_contains(
+        &stale,
+        "can only reuse the exported docsify entry HTML"
+    ));
+    assert!(stderr_contains(&stale, "0.0.0-test"));
 }
 
 #[test]
-fn test_web_serve_rejects_docsify_shell_generated_by_different_markbase_version() {
+fn test_web_serve_uses_exported_entry_html_when_version_matches() {
     let vault = TestVault::new();
+    create_home_note(&vault);
     assert_cli_success(&vault.web_init_docsify("/HOME.md"));
 
-    let index_path = vault.path.join("index.html");
-    let html = fs::read_to_string(&index_path).unwrap();
-    let tampered = html.replace(
-        &format!(
-            "<!-- markbase-shell-version: {} -->",
-            env!("MARKBASE_BUILD_VERSION")
-        ),
-        "<!-- markbase-shell-version: 0.0.0-test -->",
+    let port = pick_free_port();
+    let _server = vault.spawn_web_server("127.0.0.1", port);
+
+    let response = http_get(port, "/");
+
+    assert_eq!(response.status_code, 200);
+    let body = String::from_utf8_lossy(&response.body);
+    assert!(body.contains("homepage: \"/HOME.md\""));
+    assert_eq!(
+        response.headers.get("content-type").unwrap(),
+        "text/html; charset=utf-8"
     );
-    fs::write(&index_path, tampered).unwrap();
+}
 
-    let output = vault.run_cli(&["web", "serve"]);
+#[test]
+fn test_web_serve_can_dynamically_serve_entry_html_without_exported_index() {
+    let vault = TestVault::new();
+    create_home_note(&vault);
 
-    assert_cli_error(&output);
-    assert!(stderr_contains(
-        &output,
-        "was generated by markbase 0.0.0-test"
-    ));
-    assert!(stderr_contains(
-        &output,
-        "Re-run `markbase web init-docsify --homepage <canonical-url> --force` before serving."
-    ));
+    let port = pick_free_port();
+    let server = vault.spawn_web_server_with_homepage("127.0.0.1", port, "HOME");
+
+    let response = http_get(port, "/");
+
+    assert_eq!(response.status_code, 200);
+    let body = String::from_utf8_lossy(&response.body);
+    assert!(body.contains("window.$docsify"));
+    assert!(body.contains("homepage: \"/HOME.md\""));
+    assert!(
+        server
+            .stderr_contents()
+            .contains("INFO: serving dynamic docsify entry HTML for homepage '/HOME.md'.")
+    );
+}
+
+#[test]
+fn test_web_serve_with_homepage_ignores_existing_exported_entry_html() {
+    let vault = TestVault::new();
+    create_home_note(&vault);
+    vault.create_file("index.html", &docsify_shell_stub_with_homepage("/OLD.md"));
+
+    let port = pick_free_port();
+    let server = vault.spawn_web_server_with_homepage("127.0.0.1", port, "HOME");
+
+    let response = http_get(port, "/");
+    let body = String::from_utf8_lossy(&response.body);
+    assert!(body.contains("homepage: \"/HOME.md\""));
+    assert!(!body.contains("<body>shell</body>"));
+    assert!(
+        server
+            .stderr_contents()
+            .contains("will not be used because `--homepage` requested dynamic mode")
+    );
 }
 
 #[test]
 fn test_web_root_serves_generated_index_html() {
     let vault = TestVault::new();
-    assert_cli_success(&vault.web_init_docsify("/HOME.md"));
-
+    create_home_note(&vault);
     let port = pick_free_port();
-    let _server = vault.spawn_web_server("127.0.0.1", port);
+    let _server = vault.spawn_web_server_with_homepage("127.0.0.1", port, "/HOME.md");
 
     let response = http_get(port, "/");
 
@@ -648,9 +731,162 @@ fn test_web_root_serves_generated_index_html() {
 }
 
 #[test]
+fn test_web_dynamic_entry_html_matches_init_docsify_output_byte_for_byte() {
+    let vault = TestVault::new();
+    create_home_note(&vault);
+    let port = pick_free_port();
+    let _server = vault.spawn_web_server_with_homepage("127.0.0.1", port, "/HOME.md");
+
+    let dynamic_response = http_get(port, "/");
+    assert_eq!(dynamic_response.status_code, 200);
+
+    let output = vault.web_init_docsify("HOME");
+    assert_cli_success(&output);
+
+    let exported = fs::read(vault.path.join("index.html")).unwrap();
+    assert_eq!(dynamic_response.body, exported);
+}
+
+#[test]
+fn test_web_entry_html_embeds_homepage_metadata() {
+    let vault = TestVault::new();
+    create_home_note(&vault);
+    assert_cli_success(&vault.web_init_docsify("HOME"));
+
+    let exported = fs::read_to_string(vault.path.join("index.html")).unwrap();
+    assert!(exported.contains("<!-- markbase-docsify-homepage: \"/HOME.md\" -->"));
+    assert!(
+        exported.contains(
+            "<meta\n      name=\"markbase-docsify-homepage\"\n      content=\"/HOME.md\""
+        )
+    );
+
+    fs::remove_file(vault.path.join("index.html")).unwrap();
+    let port = pick_free_port();
+    let _server = vault.spawn_web_server_with_homepage("127.0.0.1", port, "HOME");
+    let dynamic = http_get(port, "/");
+    let dynamic_html = String::from_utf8_lossy(&dynamic.body);
+    assert!(dynamic_html.contains("<!-- markbase-docsify-homepage: \"/HOME.md\" -->"));
+}
+
+#[test]
+fn test_web_homepage_input_resolves_to_existing_canonical_url() {
+    let vault = TestVault::new();
+    vault.create_note_in_subdir("areas/home", "HOME", "# Home\n");
+
+    assert_cli_success(&vault.web_init_docsify("HOME"));
+    let html_from_name = fs::read_to_string(vault.path.join("index.html")).unwrap();
+    assert!(html_from_name.contains("homepage: \"/areas/home/HOME.md\""));
+
+    assert_cli_success(&vault.web_init_docsify_force("areas/home/HOME.md"));
+    let html_from_path = fs::read_to_string(vault.path.join("index.html")).unwrap();
+    assert!(html_from_path.contains("homepage: \"/areas/home/HOME.md\""));
+
+    let port = pick_free_port();
+    let _server = vault.spawn_web_server_with_homepage("127.0.0.1", port, "/areas/home/HOME.md");
+    let response = http_get(port, "/");
+    let body = String::from_utf8_lossy(&response.body);
+    assert!(body.contains("homepage: \"/areas/home/HOME.md\""));
+}
+
+#[test]
+fn test_web_homepage_input_rejects_non_document_targets() {
+    let vault = TestVault::new();
+    vault.create_file("assets/image.png", "png");
+
+    let init_output = vault.web_init_docsify("assets/image.png");
+    assert_cli_error(&init_output);
+    assert!(stderr_contains(
+        &init_output,
+        "Homepage only supports `.md` and `.base` targets."
+    ));
+
+    let serve_output = vault.run_cli(&["web", "serve", "--homepage", "assets/image.png"]);
+    assert_cli_error(&serve_output);
+    assert!(stderr_contains(
+        &serve_output,
+        "Homepage only supports `.md` and `.base` targets."
+    ));
+}
+
+#[test]
+fn test_web_serve_logs_clear_entry_html_mode_info() {
+    let exported_vault = TestVault::new();
+    create_home_note(&exported_vault);
+    assert_cli_success(&exported_vault.web_init_docsify("HOME"));
+    let exported_port = pick_free_port();
+    let exported_server = exported_vault.spawn_web_server("127.0.0.1", exported_port);
+
+    let dynamic_vault = TestVault::new();
+    create_home_note(&dynamic_vault);
+    dynamic_vault.create_file("index.html", &docsify_shell_stub());
+    let dynamic_port = pick_free_port();
+    let dynamic_server =
+        dynamic_vault.spawn_web_server_with_homepage("127.0.0.1", dynamic_port, "HOME");
+
+    assert!(
+        exported_server
+            .stderr_contents()
+            .contains("INFO: using exported docsify entry HTML")
+    );
+    assert!(
+        dynamic_server
+            .stderr_contents()
+            .contains("INFO: serving dynamic docsify entry HTML for homepage '/HOME.md'.")
+    );
+    assert!(
+        dynamic_server
+            .stderr_contents()
+            .contains("WARN: exported docsify entry HTML")
+    );
+}
+
+#[test]
+fn test_web_dynamic_entry_html_serves_root_and_index_routes_consistently() {
+    let vault = TestVault::new();
+    create_home_note(&vault);
+    let port = pick_free_port();
+    let _server = vault.spawn_web_server_with_homepage("127.0.0.1", port, "/HOME.md");
+
+    let root = http_get(port, "/");
+    let index = http_get(port, "/index.html");
+
+    assert_eq!(root.status_code, 200);
+    assert_eq!(index.status_code, 200);
+    assert_eq!(root.body, index.body);
+    assert_eq!(
+        root.headers.get("content-type").unwrap(),
+        "text/html; charset=utf-8"
+    );
+    assert_eq!(
+        index.headers.get("content-type").unwrap(),
+        "text/html; charset=utf-8"
+    );
+}
+
+#[test]
+fn test_web_dynamic_entry_html_preserves_docsify_frontend_contract() {
+    let vault = TestVault::new();
+    create_home_note(&vault);
+    let port = pick_free_port();
+    let _server = vault.spawn_web_server_with_homepage("127.0.0.1", port, "/HOME.md");
+
+    let response = http_get(port, "/");
+    let html = String::from_utf8_lossy(&response.body);
+    assert!(html.contains("externalLinkTarget: \"_self\""));
+    assert!(
+        html.contains("noCompileLinks: [\"/.*\\\\.md(?:[?#].*)?\", \"/.*\\\\.base(?:[?#].*)?\"]")
+    );
+    assert!(html.contains("function normalizeDocsifyDom() {"));
+    assert!(html.contains("function upgradeCalloutsDom() {"));
+    assert!(html.contains("Generated by markbase"));
+}
+
+#[test]
 fn test_web_init_docsify_plugin_rewrites_internal_document_links() {
     let vault = TestVault::new();
-    assert_cli_success(&vault.web_init_docsify("/HOME.md"));
+    create_home_note(&vault);
+    assert_cli_success(&vault.web_init_docsify("HOME"));
 
     let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
     assert!(html.contains("externalLinkTarget: \"_self\""));
@@ -674,7 +910,8 @@ fn test_web_init_docsify_plugin_rewrites_internal_document_links() {
 #[test]
 fn test_web_init_docsify_includes_callout_upgrade_plugin() {
     let vault = TestVault::new();
-    assert_cli_success(&vault.web_init_docsify("/HOME.md"));
+    create_home_note(&vault);
+    assert_cli_success(&vault.web_init_docsify("HOME"));
 
     let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
     assert!(html.contains(".mb-callout {"));
@@ -688,7 +925,8 @@ fn test_web_init_docsify_includes_callout_upgrade_plugin() {
 #[test]
 fn test_web_init_docsify_callout_plugin_recognizes_foldable_markers() {
     let vault = TestVault::new();
-    assert_cli_success(&vault.web_init_docsify("/HOME.md"));
+    create_home_note(&vault);
+    assert_cli_success(&vault.web_init_docsify("HOME"));
 
     let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
     assert!(html.contains(
@@ -701,7 +939,8 @@ fn test_web_init_docsify_callout_plugin_recognizes_foldable_markers() {
 #[test]
 fn test_web_init_docsify_callout_plugin_uses_stable_default_titles() {
     let vault = TestVault::new();
-    assert_cli_success(&vault.web_init_docsify("/HOME.md"));
+    create_home_note(&vault);
+    assert_cli_success(&vault.web_init_docsify("HOME"));
 
     let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
     assert!(html.contains("const defaultCalloutTitles = {"));
@@ -714,7 +953,8 @@ fn test_web_init_docsify_callout_plugin_uses_stable_default_titles() {
 #[test]
 fn test_web_init_docsify_callout_plugin_uses_details_summary() {
     let vault = TestVault::new();
-    assert_cli_success(&vault.web_init_docsify("/HOME.md"));
+    create_home_note(&vault);
+    assert_cli_success(&vault.web_init_docsify("HOME"));
 
     let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
     assert!(html.contains("document.createElement(metadata.foldable ? \"details\" : \"div\")"));
@@ -730,7 +970,8 @@ fn test_web_init_docsify_callout_plugin_uses_details_summary() {
 #[test]
 fn test_web_init_docsify_callout_plugin_renders_title_icons() {
     let vault = TestVault::new();
-    assert_cli_success(&vault.web_init_docsify("/HOME.md"));
+    create_home_note(&vault);
+    assert_cli_success(&vault.web_init_docsify("HOME"));
 
     let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
     assert!(html.contains("const calloutIconSvg = {"));
@@ -743,7 +984,8 @@ fn test_web_init_docsify_callout_plugin_renders_title_icons() {
 #[test]
 fn test_web_init_docsify_callout_plugin_preserves_nested_callouts() {
     let vault = TestVault::new();
-    assert_cli_success(&vault.web_init_docsify("/HOME.md"));
+    create_home_note(&vault);
+    assert_cli_success(&vault.web_init_docsify("HOME"));
 
     let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
     assert!(html.contains("function calloutDepth(blockquote) {"));
@@ -770,7 +1012,8 @@ fn test_web_init_docsify_callout_plugin_preserves_backend_markdown_contract() {
 #[test]
 fn test_web_init_docsify_callout_changes_do_not_regress_navigation_plugin() {
     let vault = TestVault::new();
-    assert_cli_success(&vault.web_init_docsify("/HOME.md"));
+    create_home_note(&vault);
+    assert_cli_success(&vault.web_init_docsify("HOME"));
 
     let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
     assert!(
@@ -783,7 +1026,8 @@ fn test_web_init_docsify_callout_changes_do_not_regress_navigation_plugin() {
 #[test]
 fn test_web_init_docsify_plugin_leaves_binary_resource_urls_untouched() {
     let vault = TestVault::new();
-    assert_cli_success(&vault.web_init_docsify("/HOME.md"));
+    create_home_note(&vault);
+    assert_cli_success(&vault.web_init_docsify("HOME"));
 
     let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
     assert!(html.contains("if (!(path.endsWith(\".md\") || path.endsWith(\".base\"))) return;"));
@@ -795,8 +1039,9 @@ fn test_web_init_docsify_callout_docs_match_behavior() {
     let readme = fs::read_to_string("README.md").unwrap();
     let architecture = fs::read_to_string("ARCHITECTURE.md").unwrap();
 
-    assert!(readme.contains("shell upgrades Obsidian-style callouts"));
+    assert!(readme.contains("browser entry HTML upgrades Obsidian-style callouts"));
     assert!(readme.contains("single `index.html`"));
+    assert!(readme.contains("required for normal browser use"));
     assert!(architecture.contains("callout UI"));
     assert!(architecture.contains("frontend-only"));
 }

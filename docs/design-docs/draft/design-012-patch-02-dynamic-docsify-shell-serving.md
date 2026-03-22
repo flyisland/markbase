@@ -1,33 +1,34 @@
 ---
 id: design-012-patch-02
-title: "Dynamic Docsify Shell Serving"
+title: "Dynamic Docsify Entry HTML Serving"
 status: draft
 parent: design-012
 module: web-frontend
 ---
 
-# Dynamic Docsify Shell Serving
+# Dynamic Docsify Entry HTML Serving
 
 **Status:** Draft  
 **Target:** `design-012` frontend integration follow-up
 
 ## Purpose
 
-This patch records a future-facing follow-up to `design-012`: instead of
-requiring `markbase web init-docsify` to generate `<base-dir>/index.html`,
-`markbase web serve` could dynamically return the supported docsify entry HTML
-at request time while preserving the current explicit export path.
+This patch records a follow-up to `design-012`: instead of requiring users to
+pre-generate `<base-dir>/index.html`, `markbase web serve` can dynamically
+return the supported docsify entry HTML when the user explicitly requests
+dynamic mode via `--homepage`, while still preserving the explicit export path.
 
-This patch is exploratory only. It does not change the current implemented
-contract in `design-012`.
+This patch defines the follow-up contract that makes dynamic docsify entry HTML
+the default browser path while preserving explicit export.
 
 ## Current State
 
 `design-012` defines the current model:
 
-- users explicitly run `markbase web init-docsify --homepage <canonical-url>`
-- markbase writes a single `index.html` into the base-dir root
-- `markbase web serve` refuses to start unless that entry HTML exists
+- users explicitly run `markbase web init-docsify --homepage <homepage-ref>`
+- markbase writes a single docsify entry HTML file as `index.html` into the
+  base-dir root
+- `markbase web serve` used to refuse to start unless that entry HTML existed
 - the generated entry HTML is version-checked against the serving binary
 
 That model keeps docsify entry HTML installation explicit and gives users a
@@ -36,20 +37,19 @@ version-locked.
 
 ## Proposed Alternative
 
-Under this alternative, `markbase web serve` would own the docsify entry HTML
-directly:
+Under this alternative, `markbase web serve` owns the docsify entry HTML
+selection directly:
 
 - `markbase web init-docsify` remains available as an explicit entry HTML
   export command
-- `markbase web serve` first checks whether `<base-dir>/index.html` already
-  exists
-- if `index.html` exists, `web serve` uses that exported entry HTML after
-  verifying that its embedded `markbase` version matches the serving binary
-- if `index.html` exists but its embedded `markbase` version does not match
-  the serving binary, `web serve` must not fail startup; it should log a clear
-  message and fall back to dynamically generated docsify entry HTML
-- if `index.html` does not exist, `web serve` dynamically generates the same
-  docsify entry HTML from the current binary's built-in templates
+- `markbase web serve` has two explicit modes:
+  1. without `--homepage`, it only reuses existing exported `index.html`
+  2. with `--homepage`, it always dynamically generates docsify entry HTML
+- when `web serve` runs without `--homepage`, `<base-dir>/index.html` must
+  exist and its embedded `markbase` version must match the serving binary
+- when `web serve` runs with `--homepage`, any existing `<base-dir>/index.html`
+  is not used; the server logs a warning that the exported file was found but
+  ignored because dynamic mode was requested
 - requesting `/` returns the selected entry HTML
 - requesting `/index.html` returns the same entry HTML content
 
@@ -59,10 +59,21 @@ init-docsify` export must both call the same shared entry-HTML rendering path,
 so that the HTML returned dynamically is identical to the HTML that
 `init-docsify` would write for the same homepage and binary version.
 
+Homepage input should not be limited to canonical URLs. Both
+`web serve --homepage` and `web init-docsify --homepage` should accept:
+
+- note names
+- vault-relative `file.path`
+- canonical URLs
+
+The implementation must resolve those forms to one existing `.md` or `.base`
+target before entry HTML generation, then canonicalize the result back to the
+stable `/<file.path>` route used by the browser entry HTML.
+
 This means browser usage has two supported paths:
 
 1. explicit exported entry HTML via `init-docsify`
-2. dynamic fallback entry HTML when no exported entry HTML is present
+2. explicit dynamic entry HTML via `web serve --homepage <homepage-ref>`
 
 Under this patch's preferred direction, these two paths are not equal in
 product positioning:
@@ -72,14 +83,13 @@ product positioning:
 - advanced users may also use `init-docsify` when they intentionally want to
   inspect or manually modify the exported `index.html`
 
-In both cases, `web serve` should print a clear `INFO` message at startup so
+In both cases, `web serve` should print clear startup logs so
 users can immediately tell which mode is active:
 
 - using installed `index.html` after version validation
-- ignoring an installed but stale `index.html` and dynamically serving the
-  built-in docsify entry HTML instead
-- or dynamically serving the built-in docsify entry HTML because no
-  `index.html` exists
+- dynamically serving the built-in docsify entry HTML
+- warning when an installed `index.html` was found but ignored because
+  `--homepage` explicitly requested dynamic mode
 
 The backend Markdown and resource contracts from `design-003` and `design-012`
 would remain unchanged. Only the docsify entry HTML delivery model would
@@ -87,10 +97,10 @@ change.
 
 ## Expected Benefits
 
-- zero docsify entry HTML installation step for users
-- no stale `index.html` after CLI upgrades
-- no explicit entry-HTML version mismatch state to manage
-- simpler first-run experience for browser usage
+- no required docsify entry HTML installation step for normal browser use
+- explicit and debuggable separation between static reuse mode and dynamic mode
+- simpler first-run experience for browser usage when users provide homepage
+  explicitly
 
 ## Expected Costs
 
@@ -113,13 +123,18 @@ If this direction is ever implemented, these constraints should hold:
 - the dynamically served entry HTML must be identical to the entry HTML
   produced by
   `markbase web init-docsify` for the same inputs
-- an installed but version-mismatched `index.html` must not block browser
-  startup; it should be ignored in favor of dynamic entry HTML
+- when `--homepage` is not provided, an installed but version-mismatched
+  `index.html` must still block startup because static reuse mode was
+  explicitly selected
+- when `--homepage` is provided, any installed `index.html` must be ignored in
+  favor of dynamic entry HTML
 - the implementation must use one shared entry-HTML renderer rather than
   separate "serve-time entry HTML" and "export-time entry HTML" codepaths
 - entry HTML metadata such as `markbase` version and git information should
   still be
   exposed in the returned HTML
+- homepage inputs must resolve only to existing `.md` or `.base` targets, not
+  binary resources
 - the dynamic entry HTML must preserve the current docsify behaviors already
   defined in `design-012`, including internal link adaptation, resource
   normalization, and callout UI
@@ -133,7 +148,7 @@ There are two plausible migration shapes:
    serve` supports both exported-entry-HTML mode and dynamic-entry-HTML
    fallback mode.
 
-The second path is the currently preferred direction in this draft because it
+The second path is the chosen direction because it
 preserves a static export mode for debugging and offline inspection while also
 making `web serve` dynamic entry HTML the default browser path instead of
 requiring users to pre-generate `index.html` before first browser use.
@@ -155,8 +170,9 @@ alternative is not acceptable.
 
 ## Decision Status
 
-No change is approved.
+Selected for implementation via `task-0021`.
 
-Current implementation remains the explicit single-file docsify entry HTML
-model in `design-012`. This patch exists only to preserve the alternative for
-future evaluation as a possible follow-up to that design.
+The merged steady-state contract should live in `design-012`. This patch
+records the follow-up direction that makes dynamic docsify entry HTML the
+default browser path while retaining `web init-docsify` as the explicit
+export/debug tool.

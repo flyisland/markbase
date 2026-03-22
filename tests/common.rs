@@ -12,9 +12,14 @@ use tempfile::TempDir;
 static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub fn docsify_shell_stub() -> String {
+    docsify_shell_stub_with_homepage("/HOME.md")
+}
+
+pub fn docsify_shell_stub_with_homepage(homepage: &str) -> String {
     format!(
-        "<!-- markbase-shell-version: {} -->\n<!doctype html><html><body>shell</body></html>\n",
-        env!("MARKBASE_BUILD_VERSION")
+        "<!-- markbase-shell-version: {} -->\n<!-- markbase-docsify-homepage: {:?} -->\n<!doctype html><html><body>shell</body></html>\n",
+        env!("MARKBASE_BUILD_VERSION"),
+        homepage
     )
 }
 
@@ -202,7 +207,16 @@ impl TestVault {
     }
 
     pub fn spawn_web_server(&self, bind: &str, port: u16) -> TestServer {
-        self.spawn_web_server_with_cache_control(bind, port, None)
+        self.spawn_web_server_with_options(bind, port, None, None)
+    }
+
+    pub fn spawn_web_server_with_homepage(
+        &self,
+        bind: &str,
+        port: u16,
+        homepage: &str,
+    ) -> TestServer {
+        self.spawn_web_server_with_options(bind, port, None, Some(homepage))
     }
 
     pub fn spawn_web_server_with_cache_control(
@@ -210,6 +224,16 @@ impl TestVault {
         bind: &str,
         port: u16,
         cache_control: Option<&str>,
+    ) -> TestServer {
+        self.spawn_web_server_with_options(bind, port, cache_control, None)
+    }
+
+    pub fn spawn_web_server_with_options(
+        &self,
+        bind: &str,
+        port: u16,
+        cache_control: Option<&str>,
+        homepage: Option<&str>,
     ) -> TestServer {
         let binary_path = std::env::current_exe()
             .ok()
@@ -233,20 +257,32 @@ impl TestVault {
             "--port",
             &port.to_string(),
         ]);
+        if let Some(homepage) = homepage {
+            command.args(["--homepage", homepage]);
+        }
         if let Some(cache_control) = cache_control {
             command.args(["--cache-control", cache_control]);
         }
 
+        let stderr_path = self
+            .path
+            .join(format!(".markbase-web-serve-{}.stderr", port));
+        let stderr_file = std::fs::File::create(&stderr_path).expect("failed to create stderr log");
+
         let child = command
             .env_remove("MARKBASE_BASE_DIR")
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::from(stderr_file))
             .spawn()
             .expect("failed to spawn web server");
 
         wait_for_port(bind, port);
 
-        TestServer { child, port }
+        TestServer {
+            child,
+            port,
+            stderr_path,
+        }
     }
 }
 
@@ -295,12 +331,20 @@ pub fn pick_free_port() -> u16 {
 pub struct TestServer {
     child: Child,
     pub port: u16,
+    stderr_path: PathBuf,
 }
 
 impl Drop for TestServer {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+    }
+}
+
+impl TestServer {
+    pub fn stderr_contents(&self) -> String {
+        std::thread::sleep(Duration::from_millis(50));
+        std::fs::read_to_string(&self.stderr_path).unwrap_or_default()
     }
 }
 
@@ -311,28 +355,48 @@ pub struct HttpResponse {
 }
 
 pub fn http_get(port: u16, path: &str) -> HttpResponse {
-    let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
-    let request = format!(
-        "GET {} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n\r\n",
-        path, port
-    );
-    stream.write_all(request.as_bytes()).unwrap();
+    for attempt in 0..5 {
+        let Ok(mut stream) = TcpStream::connect(("127.0.0.1", port)) else {
+            if attempt < 4 {
+                std::thread::sleep(Duration::from_millis(50));
+                continue;
+            }
+            panic!("failed to connect to HTTP server on 127.0.0.1:{}", port);
+        };
+        let request = format!(
+            "GET {} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n\r\n",
+            path, port
+        );
+        stream.write_all(request.as_bytes()).unwrap();
 
-    let mut response = Vec::new();
-    let mut buffer = [0_u8; 4096];
-    loop {
-        match stream.read(&mut buffer) {
-            Ok(0) => break,
-            Ok(read) => response.extend_from_slice(&buffer[..read]),
-            Err(err) if err.kind() == std::io::ErrorKind::ConnectionReset => break,
-            Err(err) => panic!("failed to read HTTP response: {}", err),
+        let mut response = Vec::new();
+        let mut buffer = [0_u8; 4096];
+        loop {
+            match stream.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(read) => response.extend_from_slice(&buffer[..read]),
+                Err(err) if err.kind() == std::io::ErrorKind::ConnectionReset => break,
+                Err(err) => panic!("failed to read HTTP response: {}", err),
+            }
         }
+
+        if response.windows(4).any(|window| window == b"\r\n\r\n") {
+            return parse_http_response(&response);
+        }
+
+        if attempt < 4 {
+            std::thread::sleep(Duration::from_millis(50));
+            continue;
+        }
+
+        panic!("missing HTTP header terminator");
     }
-    parse_http_response(&response)
+
+    unreachable!("HTTP retry loop must return or panic");
 }
 
 fn wait_for_port(bind: &str, port: u16) {
-    for _ in 0..50 {
+    for _ in 0..200 {
         if TcpStream::connect((bind, port)).is_ok() {
             return;
         }

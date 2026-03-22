@@ -72,11 +72,30 @@ impl From<std::io::Error> for WebError {
 }
 
 enum WebResponse {
+    EntryHtml(String),
     Markdown(String),
     Resource {
         body: Vec<u8>,
         content_type: &'static str,
     },
+}
+
+enum DocsifyEntryHtmlMode {
+    Exported,
+    Dynamic {
+        ignored_exported_entry_html: bool,
+        homepage_canonical_url: String,
+    },
+}
+
+struct SelectedDocsifyEntryHtml {
+    html: String,
+    mode: DocsifyEntryHtmlMode,
+}
+
+struct ExportedDocsifyEntryHtml {
+    html: String,
+    version: Option<String>,
 }
 
 pub fn get(
@@ -85,7 +104,10 @@ pub fn get(
     compute_backlinks: bool,
     canonical_url: &str,
 ) -> Result<String, WebError> {
-    match render_request(base_dir, db_path, compute_backlinks, canonical_url)? {
+    match render_request(base_dir, db_path, compute_backlinks, canonical_url, None)? {
+        WebResponse::EntryHtml(_) => Err(WebError::BinaryResource(
+            "ERROR: `markbase web get` does not emit docsify entry HTML.".to_string(),
+        )),
         WebResponse::Markdown(body) => Ok(body),
         WebResponse::Resource { .. } => Err(WebError::BinaryResource(format!(
             "ERROR: canonical URL '{}' resolves to a binary resource; `markbase web get` does not stream resource bytes.",
@@ -100,10 +122,11 @@ pub fn serve(
     compute_backlinks: bool,
     bind: &str,
     port: u16,
+    homepage: Option<&str>,
     cache_control: Option<&str>,
 ) -> Result<(), WebError> {
-    ensure_docsify_shell_exists(base_dir)?;
-    ensure_docsify_shell_version_matches(base_dir)?;
+    let entry_html = select_docsify_entry_html(base_dir, db_path, compute_backlinks, homepage)?;
+    log_docsify_entry_html_mode(base_dir, &entry_html.mode);
     let cache_control = cache_control.unwrap_or(DEFAULT_CACHE_CONTROL);
     let listener = TcpListener::bind((bind, port))
         .map_err(|err| WebError::Io(format!("failed to bind {}:{}: {}", bind, port, err)))?;
@@ -115,9 +138,14 @@ pub fn serve(
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
-                if let Err(err) =
-                    handle_connection(stream, base_dir, db_path, compute_backlinks, cache_control)
-                {
+                if let Err(err) = handle_connection(
+                    stream,
+                    base_dir,
+                    db_path,
+                    compute_backlinks,
+                    &entry_html.html,
+                    cache_control,
+                ) {
                     eprintln!("WARN: web request failed: {}", err);
                 }
             }
@@ -130,27 +158,128 @@ pub fn serve(
     Ok(())
 }
 
-pub fn init_docsify(base_dir: &Path, homepage: &str, force: bool) -> Result<PathBuf, WebError> {
-    decode_canonical_path(homepage)?;
+pub fn init_docsify(
+    base_dir: &Path,
+    db_path: &Path,
+    compute_backlinks: bool,
+    homepage: &str,
+    force: bool,
+) -> Result<PathBuf, WebError> {
+    let homepage = resolve_homepage_reference(base_dir, db_path, compute_backlinks, homepage)?;
 
     let index_path = docsify_index_path(base_dir);
     if index_path.exists() && !force {
         return Err(WebError::Io(format!(
-            "ERROR: docsify shell already exists at '{}'. Re-run with --force to overwrite it.",
+            "ERROR: docsify entry HTML already exists at '{}'. Re-run with --force to overwrite it.",
             index_path.display()
         )));
     }
 
-    let shell = render_docsify_index(homepage);
+    let shell = render_docsify_index(&homepage);
     fs::write(&index_path, shell).map_err(|err| {
         WebError::Io(format!(
-            "failed to write docsify shell '{}': {}",
+            "failed to write docsify entry HTML '{}': {}",
             index_path.display(),
             err
         ))
     })?;
 
     Ok(index_path)
+}
+
+fn select_docsify_entry_html(
+    base_dir: &Path,
+    db_path: &Path,
+    compute_backlinks: bool,
+    homepage_override: Option<&str>,
+) -> Result<SelectedDocsifyEntryHtml, WebError> {
+    if let Some(homepage) = homepage_override {
+        let homepage_canonical =
+            resolve_homepage_reference(base_dir, db_path, compute_backlinks, homepage)?;
+        return Ok(SelectedDocsifyEntryHtml {
+            html: render_docsify_index(&homepage_canonical),
+            mode: DocsifyEntryHtmlMode::Dynamic {
+                ignored_exported_entry_html: docsify_index_path(base_dir).is_file(),
+                homepage_canonical_url: homepage_canonical,
+            },
+        });
+    }
+
+    let exported = read_exported_docsify_entry_html(base_dir)?;
+    match exported {
+        Some(exported) if exported.version.as_deref() == Some(MARKBASE_BUILD_VERSION) => {
+            return Ok(SelectedDocsifyEntryHtml {
+                html: exported.html,
+                mode: DocsifyEntryHtmlMode::Exported,
+            });
+        }
+        Some(exported) => {
+            let index_path = docsify_index_path(base_dir);
+            let exported_version = exported
+                .version
+                .as_deref()
+                .unwrap_or("missing markbase version metadata");
+            return Err(WebError::Io(format!(
+                "ERROR: `markbase web serve` was started without `--homepage`, so it can only reuse the exported docsify entry HTML '{}'. That file is not usable because its embedded markbase version is '{}', not '{}'. Re-run with `--homepage <homepage-ref>` for dynamic mode or refresh the exported file with `markbase web init-docsify --homepage <homepage-ref> --force`.",
+                index_path.display(),
+                exported_version,
+                MARKBASE_BUILD_VERSION
+            )));
+        }
+        None => {}
+    }
+
+    Err(WebError::Io(format!(
+        "ERROR: `markbase web serve` was started without `--homepage`, so it can only reuse the exported docsify entry HTML '{}'. That file does not exist. Pass `--homepage <homepage-ref>` for dynamic mode or run `markbase web init-docsify --homepage <homepage-ref>` first.",
+        docsify_index_path(base_dir).display()
+    )))
+}
+
+fn read_exported_docsify_entry_html(
+    base_dir: &Path,
+) -> Result<Option<ExportedDocsifyEntryHtml>, WebError> {
+    let index_path = docsify_index_path(base_dir);
+    if !index_path.is_file() {
+        return Ok(None);
+    }
+
+    let html = fs::read_to_string(&index_path).map_err(|err| {
+        WebError::Io(format!(
+            "failed to read docsify entry HTML '{}': {}",
+            index_path.display(),
+            err
+        ))
+    })?;
+
+    Ok(Some(ExportedDocsifyEntryHtml {
+        version: read_docsify_shell_version(&html).map(str::to_owned),
+        html,
+    }))
+}
+
+fn log_docsify_entry_html_mode(base_dir: &Path, mode: &DocsifyEntryHtmlMode) {
+    let index_path = docsify_index_path(base_dir);
+    match mode {
+        DocsifyEntryHtmlMode::Exported => eprintln!(
+            "INFO: using exported docsify entry HTML '{}'.",
+            index_path.display()
+        ),
+        DocsifyEntryHtmlMode::Dynamic {
+            ignored_exported_entry_html,
+            homepage_canonical_url,
+        } => {
+            eprintln!(
+                "INFO: serving dynamic docsify entry HTML for homepage '{}'.",
+                homepage_canonical_url
+            );
+            if *ignored_exported_entry_html {
+                eprintln!(
+                    "WARN: exported docsify entry HTML '{}' exists but will not be used because `--homepage` requested dynamic mode.",
+                    index_path.display()
+                );
+            }
+        }
+    }
 }
 
 pub fn with_request_context<T, F>(
@@ -171,6 +300,85 @@ where
     let decoded_path = decode_canonical_path(raw_path)?;
     let target = resolve_decoded_path(base_dir, &db, &decoded_path)?;
     f(&db, target)
+}
+
+fn with_indexed_database<T, F>(
+    base_dir: &Path,
+    db_path: &Path,
+    compute_backlinks: bool,
+    f: F,
+) -> Result<T, WebError>
+where
+    F: FnOnce(&Database) -> Result<T, WebError>,
+{
+    let db = Database::new(db_path)
+        .map_err(|err| WebError::Internal(format!("failed to open database: {}", err)))?;
+    scanner::index_directory_with_options(base_dir, &db, false, IndexOptions { compute_backlinks })
+        .map_err(|err| WebError::Internal(format!("failed to refresh index: {}", err)))?;
+    f(&db)
+}
+
+fn resolve_homepage_reference(
+    base_dir: &Path,
+    db_path: &Path,
+    compute_backlinks: bool,
+    homepage_ref: &str,
+) -> Result<String, WebError> {
+    with_indexed_database(base_dir, db_path, compute_backlinks, |db| {
+        let note = if homepage_ref.starts_with('/') {
+            let decoded = decode_canonical_path(homepage_ref)?;
+            db.get_note_by_path(&decoded)
+                .map_err(|err| WebError::Internal(format!("failed to resolve route: {}", err)))?
+                .ok_or_else(|| {
+                    WebError::NotFound(format!(
+                        "ERROR: homepage '{}' does not resolve to an indexed document.",
+                        homepage_ref
+                    ))
+                })?
+        } else if let Some(note) = db
+            .get_note_by_path(homepage_ref)
+            .map_err(|err| WebError::Internal(format!("failed to resolve route: {}", err)))?
+        {
+            note
+        } else {
+            resolve_homepage_note_name(db, homepage_ref)?
+        };
+
+        homepage_canonical_url_for_note(&note, homepage_ref)
+    })
+}
+
+fn resolve_homepage_note_name(db: &Database, homepage_ref: &str) -> Result<Note, WebError> {
+    let matches = db.get_notes_by_name(homepage_ref).map_err(|err| {
+        WebError::Internal(format!("failed to resolve '{}': {}", homepage_ref, err))
+    })?;
+
+    if matches.is_empty() {
+        return Err(WebError::NotFound(format!(
+            "ERROR: homepage '{}' does not resolve to an indexed document.",
+            homepage_ref
+        )));
+    }
+
+    if matches.len() > 1 {
+        return Err(WebError::Internal(format!(
+            "multiple indexed entries found for '{}'",
+            homepage_ref
+        )));
+    }
+
+    Ok(matches.into_iter().next().expect("matches is not empty"))
+}
+
+fn homepage_canonical_url_for_note(note: &Note, homepage_ref: &str) -> Result<String, WebError> {
+    if note.ext == "md" || note.ext == "base" {
+        return Ok(encode_canonical_path(&note.path));
+    }
+
+    Err(WebError::BinaryResource(format!(
+        "ERROR: homepage '{}' resolves to '{}', which is a binary resource. Homepage only supports `.md` and `.base` targets.",
+        homepage_ref, note.path
+    )))
 }
 
 pub fn decode_canonical_path(raw_path: &str) -> Result<String, WebError> {
@@ -254,7 +462,14 @@ fn render_request(
     db_path: &Path,
     compute_backlinks: bool,
     raw_path: &str,
+    docsify_entry_html: Option<&str>,
 ) -> Result<WebResponse, WebError> {
+    if let Some(entry_html) = docsify_entry_html
+        && is_docsify_entry_html_route(raw_path)
+    {
+        return Ok(WebResponse::EntryHtml(entry_html.to_string()));
+    }
+
     with_request_context(
         base_dir,
         db_path,
@@ -290,6 +505,14 @@ fn render_request(
             }
         },
     )
+}
+
+fn is_docsify_entry_html_route(raw_path: &str) -> bool {
+    let path_only = raw_path
+        .split_once('?')
+        .map(|(path, _)| path)
+        .unwrap_or(raw_path);
+    path_only == "/" || path_only == format!("/{}", DOCSIFY_INDEX_FILENAME)
 }
 
 fn resolve_decoded_path(
@@ -522,6 +745,7 @@ fn handle_connection(
     base_dir: &Path,
     db_path: &Path,
     compute_backlinks: bool,
+    docsify_entry_html: &str,
     cache_control: &str,
 ) -> Result<(), WebError> {
     stream
@@ -556,7 +780,21 @@ fn handle_connection(
         );
     }
 
-    match render_request(base_dir, db_path, compute_backlinks, path) {
+    match render_request(
+        base_dir,
+        db_path,
+        compute_backlinks,
+        path,
+        Some(docsify_entry_html),
+    ) {
+        Ok(WebResponse::EntryHtml(body)) => write_response(
+            &mut stream,
+            200,
+            "OK",
+            "text/html; charset=utf-8",
+            body.as_bytes(),
+            cache_control,
+        ),
         Ok(WebResponse::Markdown(body)) => write_response(
             &mut stream,
             200,
@@ -666,21 +904,10 @@ fn docsify_index_path(base_dir: &Path) -> PathBuf {
     base_dir.join(DOCSIFY_INDEX_FILENAME)
 }
 
-fn ensure_docsify_shell_exists(base_dir: &Path) -> Result<(), WebError> {
-    let index_path = docsify_index_path(base_dir);
-    if index_path.is_file() {
-        return Ok(());
-    }
-
-    Err(WebError::Io(format!(
-        "ERROR: docsify shell not found at '{}'. Run `markbase web init-docsify --homepage <canonical-url>` first.",
-        index_path.display()
-    )))
-}
-
 fn render_docsify_index(homepage: &str) -> String {
     let homepage_json =
         serde_json::to_string(homepage).expect("serializing docsify homepage should not fail");
+    let homepage_html = html_escape(homepage);
     let version_html = html_escape(MARKBASE_BUILD_VERSION);
     let commit_html = html_escape(MARKBASE_GIT_COMMIT);
     let commit_time_html = html_escape(MARKBASE_GIT_COMMIT_TIME);
@@ -688,39 +915,11 @@ fn render_docsify_index(homepage: &str) -> String {
         .replace("__MARKBASE_DOCSIFY_STYLE__", DOCSIFY_SHELL_STYLE)
         .replace("__MARKBASE_DOCSIFY_SCRIPT__", DOCSIFY_SHELL_SCRIPT)
         .replace("__MARKBASE_DOCSIFY_HOMEPAGE__", &homepage_json)
+        .replace("__MARKBASE_DOCSIFY_HOMEPAGE_JSON__", &homepage_json)
+        .replace("__MARKBASE_DOCSIFY_HOMEPAGE_HTML__", &homepage_html)
         .replace("__MARKBASE_BUILD_VERSION__", &version_html)
         .replace("__MARKBASE_GIT_COMMIT__", &commit_html)
         .replace("__MARKBASE_GIT_COMMIT_TIME__", &commit_time_html)
-}
-
-fn ensure_docsify_shell_version_matches(base_dir: &Path) -> Result<(), WebError> {
-    let index_path = docsify_index_path(base_dir);
-    let html = fs::read_to_string(&index_path).map_err(|err| {
-        WebError::Io(format!(
-            "failed to read docsify shell '{}': {}",
-            index_path.display(),
-            err
-        ))
-    })?;
-
-    let shell_version = read_docsify_shell_version(&html).ok_or_else(|| {
-        WebError::Io(format!(
-            "ERROR: docsify shell '{}' is missing a markbase version marker. Re-run `markbase web init-docsify --homepage <canonical-url> --force` with markbase {}.",
-            index_path.display(),
-            MARKBASE_BUILD_VERSION
-        ))
-    })?;
-
-    if shell_version == MARKBASE_BUILD_VERSION {
-        return Ok(());
-    }
-
-    Err(WebError::Io(format!(
-        "ERROR: docsify shell '{}' was generated by markbase {}, but `markbase web serve` is running markbase {}. Re-run `markbase web init-docsify --homepage <canonical-url> --force` before serving.",
-        index_path.display(),
-        shell_version,
-        MARKBASE_BUILD_VERSION
-    )))
 }
 
 fn read_docsify_shell_version(html: &str) -> Option<&str> {
