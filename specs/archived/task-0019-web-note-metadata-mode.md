@@ -10,7 +10,7 @@ boundaries:
     - "src/template.rs"
     - "README.md"
     - "ARCHITECTURE.md"
-    - "docs/design-docs/draft/design-013-web-note-metadata-sidebar.md"
+    - "docs/design-docs/implemented/design-013-web-note-metadata-mode.md"
     - "specs/archived/task-0019-web-note-metadata-mode.md"
     - "tests/cli_web.rs"
     - "tests/common/**"
@@ -94,8 +94,8 @@ query parameter 返回可单独测试的 metadata JSON。
 - src/template.rs
 - README.md
 - ARCHITECTURE.md
-- docs/design-docs/draft/design-013-web-note-metadata-sidebar.md
-- specs/active/task-0019-web-note-metadata-mode.md
+- docs/design-docs/implemented/design-013-web-note-metadata-mode.md
+- specs/archived/task-0019-web-note-metadata-mode.md
 - tests/cli_web.rs
 - tests/common/**
 

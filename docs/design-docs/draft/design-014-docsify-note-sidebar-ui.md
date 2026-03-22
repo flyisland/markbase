@@ -10,7 +10,7 @@ module: web-frontend
 ## Purpose
 
 This document defines the docsify-side presentation contract for the note
-metadata sidebar introduced by `design-013`.
+metadata sidebar powered by the backend metadata mode defined in `design-013`.
 
 It answers a frontend question, not a backend one:
 
@@ -22,10 +22,12 @@ It answers a frontend question, not a backend one:
 
 - `design-003` defines the backend web note delivery contract
 - `design-012` defines docsify shell installation and frontend integration
-- `design-013` defines the metadata route and JSON response contract
+- `design-013` defines the implemented metadata route and JSON response
+  contract
 
 This document intentionally does not redefine the metadata route shape. It
-consumes the semantic response defined in `design-013`.
+consumes the semantic response defined in `design-013` and owns the browser UI
+and fetch lifecycle above that contract.
 
 ## Scope
 
