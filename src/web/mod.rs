@@ -1406,15 +1406,34 @@ fn handle_connection(
     let path = parts.next().unwrap_or("/");
 
     if method != "GET" {
-        return write_response(
+        write_response(
             &mut stream,
             405,
             "Method Not Allowed",
             "text/plain; charset=utf-8",
             b"Method Not Allowed",
             cache_control,
-        );
+        )?;
+        eprintln!("ACCESS: {} {} {}", method, path, 405);
+        return Ok(());
     }
+
+    let mut respond = |status_code: u16,
+                       status_text: &str,
+                       content_type: &str,
+                       body: &[u8]|
+     -> Result<(), WebError> {
+        write_response(
+            &mut stream,
+            status_code,
+            status_text,
+            content_type,
+            body,
+            cache_control,
+        )?;
+        eprintln!("ACCESS: {} {} {}", method, path, status_code);
+        Ok(())
+    };
 
     match render_request(
         base_dir,
@@ -1423,56 +1442,36 @@ fn handle_connection(
         path,
         Some(docsify_entry_html),
     ) {
-        Ok(WebResponse::EntryHtml(body)) => write_response(
-            &mut stream,
-            200,
-            "OK",
-            "text/html; charset=utf-8",
-            body.as_bytes(),
-            cache_control,
-        ),
-        Ok(WebResponse::Markdown(body)) => write_response(
-            &mut stream,
-            200,
-            "OK",
-            "text/markdown; charset=utf-8",
-            body.as_bytes(),
-            cache_control,
-        ),
-        Ok(WebResponse::Json(body)) => write_response(
-            &mut stream,
+        Ok(WebResponse::EntryHtml(body)) => {
+            respond(200, "OK", "text/html; charset=utf-8", body.as_bytes())
+        }
+        Ok(WebResponse::Markdown(body)) => {
+            respond(200, "OK", "text/markdown; charset=utf-8", body.as_bytes())
+        }
+        Ok(WebResponse::Json(body)) => respond(
             200,
             "OK",
             "application/json; charset=utf-8",
             body.as_bytes(),
-            cache_control,
         ),
-        Ok(WebResponse::Resource { body, content_type }) => {
-            write_response(&mut stream, 200, "OK", content_type, &body, cache_control)
-        }
-        Err(WebError::BadPath(message)) => write_response(
-            &mut stream,
+        Ok(WebResponse::Resource { body, content_type }) => respond(200, "OK", content_type, &body),
+        Err(WebError::BadPath(message)) => respond(
             400,
             "Bad Request",
             "text/plain; charset=utf-8",
             message.as_bytes(),
-            cache_control,
         ),
-        Err(WebError::NotFound(message)) => write_response(
-            &mut stream,
+        Err(WebError::NotFound(message)) => respond(
             404,
             "Not Found",
             "text/plain; charset=utf-8",
             message.as_bytes(),
-            cache_control,
         ),
-        Err(err) => write_response(
-            &mut stream,
+        Err(err) => respond(
             500,
             "Internal Server Error",
             "text/plain; charset=utf-8",
             err.to_string().as_bytes(),
-            cache_control,
         ),
     }
 }

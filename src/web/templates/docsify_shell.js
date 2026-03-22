@@ -235,6 +235,62 @@
               }
             }
 
+            function parseDocsifyRouteHref(href) {
+              if (!href || !href.startsWith("#/")) return null;
+
+              try {
+                return new URL(href.slice(1), "https://markbase.invalid");
+              } catch (_error) {
+                return null;
+              }
+            }
+
+            function currentDocsifyRoutePath() {
+              const route = parseDocsifyRouteHref(window.location.hash || "");
+              return route ? route.pathname : null;
+            }
+
+            function normalizeDocsifyDocumentPath(pathname) {
+              if (!pathname) return null;
+              if (pathname.endsWith(".md")) return pathname.slice(0, -3);
+              if (pathname.endsWith(".base")) return pathname.slice(0, -5);
+              return pathname;
+            }
+
+            function scrollToDocsifySectionAnchor(anchorId) {
+              if (!anchorId) return false;
+
+              const target = document.getElementById(anchorId);
+              if (!target) return false;
+
+              target.scrollIntoView({ block: "start", behavior: "auto" });
+              return true;
+            }
+
+            function handleDocsifySectionLinkClick(event) {
+              if (event.defaultPrevented) return;
+              if (event.button !== 0) return;
+              if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+              const link = event.target.closest("a.section-link[href]");
+              if (!link) return;
+
+              const route = parseDocsifyRouteHref(link.getAttribute("href"));
+              if (!route) return;
+
+              const anchorId = route.searchParams.get("id");
+              if (!anchorId) return;
+
+              const currentPath = normalizeDocsifyDocumentPath(currentDocsifyRoutePath());
+              const targetPath = normalizeDocsifyDocumentPath(route.pathname);
+              if (!currentPath || !targetPath || targetPath !== currentPath) return;
+
+              if (!scrollToDocsifySectionAnchor(anchorId)) return;
+
+              event.preventDefault();
+              event.stopPropagation();
+              event.stopImmediatePropagation();
+            }
             function normalizeDocsifyDom() {
               document
                 .querySelectorAll(".markdown-section a[href], .sidebar a[href], nav a[href]")
@@ -279,6 +335,11 @@
                 attributes: true,
                 attributeFilter: ["href", "src", "data-origin", "open"],
               });
+            }
+
+            if (!window.__markbaseDocsifySectionLinkHandlerInstalled) {
+              window.__markbaseDocsifySectionLinkHandlerInstalled = true;
+              document.addEventListener("click", handleDocsifySectionLinkClick, true);
             }
 
             hook.doneEach(function () {

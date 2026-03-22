@@ -1187,6 +1187,24 @@ fn test_web_serve_logs_clear_entry_html_mode_info() {
 }
 
 #[test]
+fn test_web_serve_emits_access_logs_for_success_and_not_found() {
+    let vault = TestVault::new();
+    create_home_note(&vault);
+    let port = pick_free_port();
+    let server = vault.spawn_web_server_with_homepage("127.0.0.1", port, "/HOME.md");
+
+    let root = http_get(port, "/");
+    let missing = http_get(port, "/missing.md");
+
+    assert_eq!(root.status_code, 200);
+    assert_eq!(missing.status_code, 404);
+
+    let stderr = server.stderr_contents();
+    assert!(stderr.contains("ACCESS: GET / 200"));
+    assert!(stderr.contains("ACCESS: GET /missing.md 404"));
+}
+
+#[test]
 fn test_web_dynamic_entry_html_serves_root_and_index_routes_consistently() {
     let vault = TestVault::new();
     create_home_note(&vault);
@@ -1250,6 +1268,31 @@ fn test_web_init_docsify_plugin_rewrites_internal_document_links() {
     assert!(html.contains("a.setAttribute(\"href\", \"#\" + href)"));
     assert!(html.contains("a.removeAttribute(\"target\")"));
     assert!(html.contains("img.setAttribute(\"src\", original)"));
+}
+
+#[test]
+fn test_web_init_docsify_plugin_intercepts_same_page_section_links() {
+    let vault = TestVault::new();
+    create_home_note(&vault);
+    assert_cli_success(&vault.web_init_docsify("HOME"));
+
+    let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
+    assert!(html.contains("function parseDocsifyRouteHref(href) {"));
+    assert!(html.contains("function currentDocsifyRoutePath() {"));
+    assert!(html.contains("function normalizeDocsifyDocumentPath(pathname) {"));
+    assert!(html.contains("function scrollToDocsifySectionAnchor(anchorId) {"));
+    assert!(html.contains("function handleDocsifySectionLinkClick(event) {"));
+    assert!(html.contains("const link = event.target.closest(\"a.section-link[href]\");"));
+    assert!(html.contains("const anchorId = route.searchParams.get(\"id\");"));
+    assert!(html.contains("const targetPath = normalizeDocsifyDocumentPath(route.pathname);"));
+    assert!(
+        html.contains("if (!currentPath || !targetPath || targetPath !== currentPath) return;")
+    );
+    assert!(html.contains("target.scrollIntoView({ block: \"start\", behavior: \"auto\" });"));
+    assert!(html.contains("event.stopImmediatePropagation();"));
+    assert!(
+        html.contains("document.addEventListener(\"click\", handleDocsifySectionLinkClick, true);")
+    );
 }
 
 #[test]
