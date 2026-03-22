@@ -11,7 +11,7 @@ boundaries:
     - "docs/design-docs/implemented/design-012-docsify-frontend-integration.md"
     - "docs/design-docs/draft/design-012-patch-01-callout-ui-and-shell-authoring.md"
     - "docs/design-docs/obsolete/design-012-patch-01-callout-ui-and-shell-authoring.md"
-    - "specs/archived/task-0020-docsify-callout-ui-and-shell-authoring.md"
+    - "specs/archived/task-0020-docsify-callout-ui-shell.md"
     - "tests/cli_web.rs"
     - "tests/common/**"
   forbidden_patterns:
@@ -103,7 +103,7 @@ UI 支持，并把 shell 的仓库内维护方式从单个大型 Rust string 收
 - docs/design-docs/implemented/design-012-docsify-frontend-integration.md
 - docs/design-docs/draft/design-012-patch-01-callout-ui-and-shell-authoring.md
 - docs/design-docs/obsolete/design-012-patch-01-callout-ui-and-shell-authoring.md
-- specs/active/task-0020-docsify-callout-ui-and-shell-authoring.md
+- specs/active/task-0020-docsify-callout-ui-shell.md
 - tests/cli_web.rs
 - tests/common/**
 

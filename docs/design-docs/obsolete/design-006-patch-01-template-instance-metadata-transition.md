@@ -1,5 +1,5 @@
 ---
-id: design-006-patch-01-template-instance-metadata-transition
+id: design-006-patch-01
 title: "Template Instance Metadata Transition"
 status: obsolete:merged
 parent: design-006
