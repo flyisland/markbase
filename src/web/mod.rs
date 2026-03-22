@@ -1733,6 +1733,9 @@ mod tests {
         assert!(html.contains("flex-direction: column;"));
         assert!(html.contains("function upgradeCalloutsDom() {"));
         assert!(html.contains("function parseCalloutMetadata(firstParagraph) {"));
+        assert!(html.contains("function appendTextWithPreservedLineBreaks(target, text) {"));
+        assert!(html.contains("function appendNodeWithPreservedLineBreaks(target, node) {"));
+        assert!(html.contains("function buildFirstParagraphRemainderParagraph(firstParagraph) {"));
         assert!(html.contains("function defaultTitleForCallout(calloutType) {"));
         assert!(html.contains("function calloutDepth(blockquote) {"));
         assert!(html.contains("const foldMarkerSvg ="));

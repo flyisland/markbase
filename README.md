@@ -227,7 +227,8 @@ For both exported and dynamic modes:
 - requesting `/index.html` returns the same docsify entry HTML
 - the docsify entry HTML keeps internal `.md` and `.base` document links inside docsify
 - the browser entry HTML upgrades Obsidian-style callouts, including foldable
-  `[!type]+` and `[!type]-`, in the browser UI
+  `[!type]+` and `[!type]-`, in the browser UI while preserving multiline body structure
+  rendered from Markdown
 - binary resource URLs such as images and attachments continue to resolve
   directly
 
@@ -292,7 +293,7 @@ HTTP miss and bad-path behavior:
 - route miss returns `404 Not Found`
 - invalid percent-decoding returns `400 Bad Request`
 
-`web init-docsify` writes a single `index.html` and is not required for normal browser use. The browser entry HTML upgrades Obsidian-style callouts in the frontend while preserving the backend Markdown contract.
+`web init-docsify` writes a single `index.html` and is not required for normal browser use. The browser entry HTML upgrades Obsidian-style callouts in the frontend while preserving the backend Markdown contract and multiline callout body structure.
 
 ## Environment
 

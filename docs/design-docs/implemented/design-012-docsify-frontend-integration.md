@@ -334,7 +334,8 @@ The active responsibility split is:
   docsify-specific callout rewrite pass
 - the docsify entry HTML recognizes callout marker syntax after Markdown has been
   rendered to HTML
-- the docsify entry HTML applies callout UI, fold/unfold interaction, and styling
+- the docsify entry HTML applies callout UI, fold/unfold interaction, styling,
+  and multiline body preservation for rendered callout content
 
 This keeps vault-aware semantics on the backend and presentation behavior in the
 frontend entry HTML.
@@ -375,6 +376,8 @@ The entry HTML plugin:
 - derives callout type, foldable state, and title
 - replaces plain blockquote presentation with callout UI while preserving the
   rendered HTML body
+- preserves line breaks and sibling block structure from docsify's rendered
+  callout body instead of flattening multiline content into a single paragraph
 - processes nested matches from the inside out
 
 This DOM-upgrade approach is preferred over frontend Markdown pre-processing

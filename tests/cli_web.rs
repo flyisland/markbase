@@ -15,6 +15,25 @@ fn create_base_homepage(vault: &TestVault, file_name: &str) {
     vault.create_file(file_name, "views:\n  - type: table\n    name: Demo\n");
 }
 
+fn create_multiline_callout_note(vault: &TestVault, name: &str) {
+    vault.create_note(
+        name,
+        concat!(
+            "# Callout Demo\n\n",
+            "> [!agent-update]- Overwrite\n",
+            "> 优先基于 `web-search` skill 联网检索补写并定期刷新。\n",
+            "> 固定使用以下结构，且每个主项下必须继续使用子列表，避免把多个事实挤在同一行：\n",
+            "> `- 官网`\n",
+            "> `  - 官方首页：<官方首页 URL>`\n",
+            "> `- 信息来源`\n",
+            "> `  - <来源名称或页面标题>：<URL>`\n",
+            "> \n",
+            "> - 第一项\n",
+            "> - 第二项\n",
+        ),
+    );
+}
+
 fn parse_cli_json(output: &std::process::Output) -> JsonValue {
     serde_json::from_slice(&output.stdout).expect("stdout should be valid JSON")
 }
@@ -1383,6 +1402,47 @@ fn test_web_init_docsify_callout_plugin_preserves_nested_callouts() {
 }
 
 #[test]
+fn test_web_init_docsify_callout_plugin_preserves_multiline_body_structure() {
+    let vault = TestVault::new();
+    create_home_note(&vault);
+    assert_cli_success(&vault.web_init_docsify("HOME"));
+
+    let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
+    assert!(html.contains("function appendTextWithPreservedLineBreaks(target, text) {"));
+    assert!(html.contains("const textParts = text.split(/(\\r?\\n)/);"));
+    assert!(html.contains("target.appendChild(document.createElement(\"br\"));"));
+    assert!(html.contains("function buildFirstParagraphRemainderParagraph(firstParagraph) {"));
+    assert!(html.contains("trimBoundaryLineBreaks(paragraph);"));
+}
+
+#[test]
+fn test_web_init_docsify_callout_plugin_preserves_line_breaks_around_inline_code() {
+    let vault = TestVault::new();
+    create_home_note(&vault);
+    assert_cli_success(&vault.web_init_docsify("HOME"));
+
+    let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
+    assert!(html.contains("function appendNodeWithPreservedLineBreaks(target, node) {"));
+    assert!(html.contains("if (node.nodeType === Node.TEXT_NODE) {"));
+    assert!(html.contains("target.appendChild(node.cloneNode(true));"));
+    assert!(html.contains("appendNodeWithPreservedLineBreaks(paragraph, node);"));
+}
+
+#[test]
+fn test_web_init_docsify_callout_plugin_preserves_list_structure() {
+    let vault = TestVault::new();
+    create_home_note(&vault);
+    assert_cli_success(&vault.web_init_docsify("HOME"));
+
+    let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
+    assert!(html.contains("const body = document.createElement(\"div\");"));
+    assert!(html.contains("body.className = \"mb-callout-body\";"));
+    assert!(html.contains("let sibling = firstParagraph.nextSibling;"));
+    assert!(html.contains("body.appendChild(sibling);"));
+    assert!(html.contains("const nextSibling = sibling.nextSibling;"));
+}
+
+#[test]
 fn test_web_init_docsify_callout_plugin_preserves_backend_markdown_contract() {
     let vault = TestVault::new();
     vault.create_note("callout-demo", "> [!info]\n> Body\n");
@@ -1393,6 +1453,23 @@ fn test_web_init_docsify_callout_plugin_preserves_backend_markdown_contract() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("> [!info]"));
     assert!(stdout.contains("> Body"));
+    assert!(!stdout.contains("mb-callout"));
+    assert!(!stdout.contains("<details"));
+}
+
+#[test]
+fn test_web_init_docsify_callout_multiline_fix_preserves_backend_markdown_contract() {
+    let vault = TestVault::new();
+    create_multiline_callout_note(&vault, "callout-demo");
+
+    let output = vault.web_get("/callout-demo.md");
+
+    assert_cli_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("> [!agent-update]- Overwrite"));
+    assert!(stdout.contains("> `- 官网`"));
+    assert!(stdout.contains("> `  - 官方首页：<官方首页 URL>`"));
+    assert!(stdout.contains("> - 第一项"));
     assert!(!stdout.contains("mb-callout"));
     assert!(!stdout.contains("<details"));
 }
@@ -1412,6 +1489,22 @@ fn test_web_init_docsify_callout_changes_do_not_regress_navigation_plugin() {
 }
 
 #[test]
+fn test_web_init_docsify_callout_multiline_fix_does_not_regress_existing_frontend_contract() {
+    let vault = TestVault::new();
+    create_home_note(&vault);
+    assert_cli_success(&vault.web_init_docsify("HOME"));
+
+    let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
+    assert!(html.contains("document.createElement(metadata.foldable ? \"details\" : \"div\")"));
+    assert!(html.contains("titleIcon.innerHTML = iconSvgForCallout(metadata.calloutType)"));
+    assert!(html.contains("function calloutDepth(blockquote) {"));
+    assert!(
+        html.contains("noCompileLinks: [\"/.*\\\\.md(?:[?#].*)?\", \"/.*\\\\.base(?:[?#].*)?\"]")
+    );
+    assert!(html.contains("img.setAttribute(\"src\", original)"));
+}
+
+#[test]
 fn test_web_init_docsify_plugin_leaves_binary_resource_urls_untouched() {
     let vault = TestVault::new();
     create_home_note(&vault);
@@ -1426,10 +1519,18 @@ fn test_web_init_docsify_plugin_leaves_binary_resource_urls_untouched() {
 fn test_web_init_docsify_callout_docs_match_behavior() {
     let readme = fs::read_to_string("README.md").unwrap();
     let architecture = fs::read_to_string("ARCHITECTURE.md").unwrap();
+    let design = fs::read_to_string(
+        "docs/design-docs/implemented/design-012-docsify-frontend-integration.md",
+    )
+    .unwrap();
 
     assert!(readme.contains("browser entry HTML upgrades Obsidian-style callouts"));
+    assert!(readme.contains("multiline body structure"));
     assert!(readme.contains("single `index.html`"));
     assert!(readme.contains("required for normal browser use"));
     assert!(architecture.contains("callout UI"));
+    assert!(architecture.contains("multiline body preservation"));
     assert!(architecture.contains("frontend-only"));
+    assert!(design.contains("multiline body preservation"));
+    assert!(design.contains("flattening multiline content into a single paragraph"));
 }

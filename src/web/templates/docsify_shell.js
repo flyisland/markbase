@@ -109,26 +109,81 @@
               };
             }
 
-            function buildFirstParagraphRemainder(firstParagraph) {
-              const html = firstParagraph.innerHTML;
-              let splitIndex = html.indexOf("\n");
-              let splitLength = 1;
+            function appendTextWithPreservedLineBreaks(target, text) {
+              const textParts = text.split(/(\r?\n)/);
+              let justAppendedBreak = false;
 
-              if (splitIndex < 0) {
-                const brMatch = html.match(/<br\s*\/?>/i);
-                if (brMatch && typeof brMatch.index === "number") {
-                  splitIndex = brMatch.index;
-                  splitLength = brMatch[0].length;
+              textParts.forEach(function (part) {
+                if (!part) return;
+
+                if (/^\r?\n$/.test(part)) {
+                  target.appendChild(document.createElement("br"));
+                  justAppendedBreak = true;
+                  return;
                 }
+
+                target.appendChild(document.createTextNode(part));
+                justAppendedBreak = false;
+              });
+
+              return justAppendedBreak;
+            }
+
+            function appendNodeWithPreservedLineBreaks(target, node) {
+              if (node.nodeType === Node.TEXT_NODE) {
+                return appendTextWithPreservedLineBreaks(target, node.textContent || "");
               }
 
-              if (splitIndex < 0) return null;
+              if (node.nodeType === Node.ELEMENT_NODE && node.tagName === "BR") {
+                target.appendChild(document.createElement("br"));
+                return true;
+              }
 
-              const remainderHtml = html.slice(splitIndex + splitLength).trim();
-              if (!remainderHtml) return null;
+              target.appendChild(node.cloneNode(true));
+              return false;
+            }
 
+            function trimBoundaryLineBreaks(container) {
+              while (container.firstChild && container.firstChild.nodeName === "BR") {
+                container.removeChild(container.firstChild);
+              }
+
+              while (container.lastChild && container.lastChild.nodeName === "BR") {
+                container.removeChild(container.lastChild);
+              }
+            }
+
+            function buildFirstParagraphRemainderParagraph(firstParagraph) {
               const paragraph = document.createElement("p");
-              paragraph.innerHTML = remainderHtml;
+              let sawFirstLineBreak = false;
+
+              Array.from(firstParagraph.childNodes).forEach(function (node) {
+                if (sawFirstLineBreak) {
+                  appendNodeWithPreservedLineBreaks(paragraph, node);
+                  return;
+                }
+
+                if (node.nodeType === Node.TEXT_NODE) {
+                  const text = node.textContent || "";
+                  const match = text.match(/\r?\n/);
+                  if (!match || typeof match.index !== "number") return;
+
+                  sawFirstLineBreak = true;
+                  appendTextWithPreservedLineBreaks(
+                    paragraph,
+                    text.slice(match.index + match[0].length)
+                  );
+                  return;
+                }
+
+                if (node.nodeType === Node.ELEMENT_NODE && node.tagName === "BR") {
+                  sawFirstLineBreak = true;
+                }
+              });
+
+              if (!sawFirstLineBreak) return null;
+
+              trimBoundaryLineBreaks(paragraph);
               if (!(paragraph.textContent || "").trim()) return null;
               return paragraph;
             }
@@ -192,7 +247,7 @@
               const body = document.createElement("div");
               body.className = "mb-callout-body";
 
-              const remainderParagraph = buildFirstParagraphRemainder(firstParagraph);
+              const remainderParagraph = buildFirstParagraphRemainderParagraph(firstParagraph);
               if (remainderParagraph) {
                 body.appendChild(remainderParagraph);
               }
