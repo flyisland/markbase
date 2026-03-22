@@ -202,6 +202,17 @@ summary.mb-callout-title {
   line-height: 1.7;
 }
 
+section.content {
+  bottom: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.markdown-section {
+  flex: 1 0 auto;
+}
+
 .mb-shell-footer {
   color: #486581;
   display: flex;

@@ -1057,6 +1057,8 @@ mod tests {
             )
         );
         assert!(html.contains("function normalizeDocsifyDom() {"));
+        assert!(html.contains("function attachDocsifyFooter() {"));
+        assert!(html.contains("document.querySelector(\"section.content\")"));
         assert!(html.contains("new MutationObserver(function () {"));
         assert!(html.contains(
             ".querySelectorAll(\".markdown-section a[href], .sidebar a[href], nav a[href]\")"
@@ -1083,6 +1085,9 @@ mod tests {
     fn test_render_docsify_index_includes_callout_upgrade_assets() {
         let html = render_docsify_index("/HOME.md");
         assert!(html.contains(".mb-callout {"));
+        assert!(html.contains("section.content {"));
+        assert!(html.contains("min-height: 100vh;"));
+        assert!(html.contains("flex-direction: column;"));
         assert!(html.contains("function upgradeCalloutsDom() {"));
         assert!(html.contains("function parseCalloutMetadata(firstParagraph) {"));
         assert!(html.contains("function defaultTitleForCallout(calloutType) {"));

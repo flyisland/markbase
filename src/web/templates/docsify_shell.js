@@ -223,6 +223,18 @@
                 });
             }
 
+            function attachDocsifyFooter() {
+              const footer = document.querySelector(".mb-shell-footer");
+              if (!footer) return;
+
+              const content = document.querySelector("section.content");
+              if (!content) return;
+
+              if (content.lastElementChild !== footer) {
+                content.appendChild(footer);
+              }
+            }
+
             function normalizeDocsifyDom() {
               document
                 .querySelectorAll(".markdown-section a[href], .sidebar a[href], nav a[href]")
@@ -252,6 +264,7 @@
                 });
 
               upgradeCalloutsDom();
+              attachDocsifyFooter();
             }
 
             if (!window.__markbaseDocsifyObserverInstalled) {
