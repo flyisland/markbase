@@ -1,18 +1,109 @@
-# Markdown Base CLI (markbase)
+# markbase
 
-A high-performance CLI tool for indexing and querying Markdown notes, designed for both AI agents and human users with Obsidian compatibility in mind.
+Obsidian-compatible Markdown knowledge base infrastructure for AI agents.
+
+中文版本：[README.zh-CN.md](README.zh-CN.md)
+
+markbase exists for one specific workflow: keep writing notes as normal Markdown, keep the vault compatible with Obsidian, keep AI-written notes structurally consistent through templates and `note verify`, and make the vault usable from CLI tools, server-side agents, and the web without depending on the Obsidian app.
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/flyisland/markbase)
 
+## Why This Exists
+
+I built markbase around four recurring problems:
+
+1. Obsidian has a CLI, but it depends on the desktop app being open, which makes it a poor fit for headless or server-side agent workflows.
+2. Even with AI help, keeping notes structurally consistent is hard. Agents tend to "improvise" frontmatter and note layout unless the system gives them a clear contract.
+3. Obsidian Base, previously the unofficial Dataview plugin, is extremely useful for showing one-to-many relationships inside notes. A company note can automatically show related people or opportunities in Obsidian, but an agent reading raw Markdown cannot see that computed view.
+4. Once the vault is synced to a Linux server, you still need a simple way to inspect notes quickly in the browser.
+
+markbase is the layer that fills those gaps.
+
+The most important piece for consistency is its template system. Templates define the expected structure for a note, and `markbase note verify` lets agents and humans check whether notes still conform to that structure instead of slowly drifting into incompatible formats.
+
+## Best Practice
+
+The strongest real-world pattern is not "let the agent write arbitrary Markdown." It is "let the human provide intent, let the agent do the repetitive note work, and let markbase enforce the contract."
+
+```mermaid
+flowchart TD
+    H["Human<br/>Intent and judgment"]
+    A["Agent / Skill<br/>Choose template and draft updates"]
+    T["Templates<br/>Filename, location, fields, writable sections"]
+    N["Create / Update<br/>markbase note new"]
+    V["Verify<br/>markbase note verify"]
+    R["Inspect<br/>note render, .base, web serve"]
+
+    H --> A
+    A --> T
+    T --> N
+    N --> V
+    V --> R
+    R --> H
+```
+
+### Collaboration roles
+
+| Role | Main job | Should not do |
+| --- | --- | --- |
+| Human | Provide intent, review edge cases, decide ambiguous cases | Hand-maintain every schema detail in every note |
+| Agent | Choose a template, fill allowed sections, align entities, repair verify failures | Invent new structure or write outside template-declared surfaces |
+| markbase | Expose templates, create notes in the right place, verify schema, render `.base` relationships, serve the vault | Replace human judgment or rely on unchecked free-form output |
+
+### Recommended workflow
+
+| Step | Who leads | What happens |
+| --- | --- | --- |
+| 1. Capture intent | Human | The user states what happened or what should be recorded |
+| 2. Pick one template | Agent + markbase | The agent uses `markbase template list` and `markbase template describe` to choose exactly one template |
+| 3. Create the note | markbase | `markbase note new` creates the file with the correct location, defaults, and structure |
+| 4. Fill only allowed parts | Agent | The agent writes only fields and sections that the template explicitly allows |
+| 5. Verify structure | markbase + agent | `markbase note verify` catches drift; the agent repairs if needed |
+| 6. Inspect derived views | Human + agent | `.base` views, `note render`, and `web serve` expose relationships back to both sides |
+
+This is how I use markbase in my own Obsidian vault.
+
+- `company_customer` defines company files under `entities/company/`, requires stable fields such as `description` and `type`, constrains links like `owner -> person`, and embeds Base views for related people and activity logs.
+- `person_work` defines person files under `entities/person/`, requires a linked company, and keeps relationship history in template-declared sections instead of free-form drift.
+- `activity_log` defines event-style notes under `logs/opportunities/`, requires fields such as `date`, `activity_type`, and `related_customer`, and preserves attachments and attendee views in a repeatable structure.
+- Domain skills such as `opportunity-capture` and `english-capture` treat templates as the source of truth for filename rules, required properties, writable sections, and post-write verification.
+
+In practice, the template is not just a note scaffold. It is the contract that tells the agent what kind of note this is, where it lives, how it should be named, which links are valid, which sections are writable, and what must still be true after later edits. `note verify` is what turns that contract into something enforceable.
+
+## What markbase does
+
+- Runs as a standalone CLI. No Obsidian app is required.
+- Keeps Markdown files as the source of truth and builds a rebuildable DuckDB index for fast reads.
+- Stays compatible with Obsidian conventions such as wikilinks, embeds, frontmatter, and `.base` files.
+- Uses templates to give notes a repeatable structure, then uses `note verify` to enforce that structure over time.
+- Gives agents stable commands for querying notes, resolving links, creating notes from templates, and checking schema compliance.
+- Renders embedded notes and Base views so agents can access the same derived relationships that humans see in Obsidian.
+- Serves the vault over the web for quick browser access on a local machine or server.
+
+## Use markbase if
+
+- You want agents to work on a Markdown vault directly instead of through a proprietary database.
+- You want Obsidian compatibility, especially around links, embeds, and Base-style note relationships.
+- You need stronger note structure than "free-form Markdown plus vibes", especially if multiple agents or people are writing notes.
+- You want a server-friendly CLI and web view for a synced vault.
+
+## Core ideas
+
+- Files are the product. DuckDB is only a derived index.
+- Markdown note identity is name-based, not path-based.
+- Obsidian-compatible behavior wins over internal abstraction when the two conflict.
+- Templates plus `note verify` are the mechanism for keeping AI-written notes structurally consistent.
+- Default outputs are agent-friendly. Human-readable tables are opt-in.
+
 ## Installation
 
-**From crates.io (recommended):**
+From crates.io:
 
 ```bash
 cargo install markbase
 ```
 
-**Build from source:**
+From source:
 
 ```bash
 git clone <repository-url>
@@ -21,582 +112,142 @@ cargo build --release
 ./target/release/markbase --help
 ```
 
-**Prerequisites:** Rust 1.85+ (DuckDB is bundled)
+Rust 1.85+ is required. DuckDB is bundled.
 
 ## Quick Start
 
-```bash
-export MARKBASE_BASE_DIR=/path/to/your/notes
+Set the vault directory:
 
+```bash
+export MARKBASE_BASE_DIR=/path/to/your/vault
+```
+
+Query notes:
+
+```bash
 markbase query "author == 'Tom'"
-markbase query "SELECT file.path, file.name FROM notes WHERE list_contains(file.tags, 'todo')"
-```
-
-## Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `MARKBASE_BASE_DIR` | Vault directory | `.` (current directory) |
-| `MARKBASE_INDEX_LOG_LEVEL` | Automatic indexing output (`off`, `summary`, `verbose`) | `off` |
-| `MARKBASE_COMPUTE_BACKLINKS` | Compute `file.backlinks` during automatic indexing | disabled |
-
-**Priority:** CLI args > Environment variables > Defaults
-
-```bash
-export MARKBASE_BASE_DIR=/path/to/notes
-markbase query "list_contains(file.tags, 'design')"
-```
-
-## Concepts
-
-### Note Properties
-
-Each indexed note has two namespaces for properties:
-
-**File Properties** (`file.*` prefix):
-Access native database columns representing file metadata:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `file.path` | TEXT | File path relative to base-dir |
-| `file.folder` | TEXT | Directory path relative to base-dir |
-| `file.name` | TEXT | File name without extension |
-| `file.ext` | TEXT | File extension |
-| `file.size` | INTEGER | File size in bytes |
-| `file.ctime` | TIMESTAMPTZ | Created time |
-| `file.mtime` | TIMESTAMPTZ | Modified time |
-| `file.tags` | VARCHAR[] | Tags from content (`#tag`) and frontmatter |
-| `file.links` | VARCHAR[] | Wiki-links `[[link]]` + embeds `![[embed]]` from body and frontmatter |
-| `file.backlinks` | VARCHAR[] | Notes linking to this note (reverse of links); empty unless backlinks computation is enabled |
-| `file.embeds` | VARCHAR[] | Embeds `![[embed]]` from body only |
-
-**Note Properties** (`note.*` prefix or bare):
-Access YAML frontmatter fields:
-
-```yaml
----
-title: My Note
-author: John
-status: in-progress
----
-```
-
-Query using explicit prefix or bare shorthand:
-```bash
-markbase query "note.author == 'John'"    # explicit
-markbase query "author == 'John'"         # shorthand (same result)
-```
-
-### Tags
-
-Tags are extracted from two sources:
-
-**Content tags** (`#tag` in note body):
-- Obsidian format: `#` followed by alphanumeric characters, underscores, hyphens, and forward slashes
-- Must contain at least one non-numerical character (e.g., `#1984` is invalid, `#y1984` is valid)
-- Case-insensitive (e.g., `#tag` and `#TAG` are identical)
-- Supports nested tags using `/` separator (e.g., `#project/2024/q1`)
-
-**Frontmatter tags**:
-- YAML list format: `tags: [tag1, tag2]` or `tags: [project/2024]`
-
-All tags are merged into `file.tags` and can be queried with `list_contains(file.tags, 'tag-name')`.
-
-### Field Resolution
-
-| Syntax | Resolves To | Example |
-|--------|-------------|---------|
-| `file.*` | Native database column | `file.name` → `name` column |
-| `note.*` | Frontmatter JSON extraction | `note.author` → `properties->"author"` |
-| bare (no prefix) | Frontmatter JSON extraction (shorthand for `note.*`) | `author` → `properties->"author"` |
-
-The `file.*` and `note.*` namespaces are completely separate — no naming conflicts.
-
-### Name Uniqueness
-
-Note names must be unique across the entire vault, regardless of their directory location.
-
-- **Index**: When indexing, if two notes have the same name (different paths), a warning is shown and the duplicate is skipped
-- **Create**: Creating a note fails if a note with that name already exists
-- **Rename**: Renaming a note fails if a note with the target name already exists
-
-### Indexing Scope
-
-Indexing walks the vault recursively under `MARKBASE_BASE_DIR`.
-
-- Only files with an extension are indexed
-- Markdown files (`.md`) are parsed for frontmatter, tags, links, and embeds
-- Non-Markdown files with an extension, including `.base`, are still indexed as resources, but they do not contribute parsed Markdown fields
-- Dot-prefixed hidden files and directories are skipped by default
-- Root `.gitignore` and `.markbaseignore` patterns are applied during indexing
-- When both ignore files match the same path, `.markbaseignore` is applied after `.gitignore`
-
-### Link Format (Obsidian Style)
-
-Always use the **filename only** — no path, no extension:
-
-```markdown
-# ✅ Correct
-[[中国移动]]
-[[张三]]
-
-# ❌ Wrong
-[[entities/中国移动.md]]
-[[people/张三]]
-```
-
-Wiki-links in **frontmatter properties** must additionally be wrapped in quotes:
-
-```yaml
-# ✅ Correct
-related_customer: "[[中石油]]"
-attendees_internal: ["[[张三]]", "[[李四]]"]
-
-# ❌ Wrong
-related_customer: [[中国移动]]
-attendees_internal: [[[张三]], [[李四]]]
-```
-
-## Commands
-
-### `query`
-
-Query notes in your vault.
-
-**Two input modes:**
-
-```bash
-# Expression mode (WHERE clause only)
-markbase query "note.author == 'Tom'"          # frontmatter (explicit)
-markbase query "author == 'Tom'"               # frontmatter (shorthand)
-markbase query "file.mtime > '2024-01-01'"     # file metadata
-markbase query "list_contains(file.tags, 'project')"  # file array field
-markbase query "author == 'Tom' ORDER BY file.mtime DESC LIMIT 10"
-
-# Backlinks are disabled by default to keep indexing fast
-markbase query "list_contains(file.backlinks, 'source')"
-markbase --compute-backlinks query "list_contains(file.backlinks, 'source')"
-
-# SQL mode (full SELECT statement)
+markbase query "list_contains(file.tags, 'customer')"
 markbase query "SELECT file.path, note.author FROM notes WHERE note.author = 'Tom'"
 ```
 
-`file.backlinks` is empty unless backlinks computation is enabled with
-`--compute-backlinks` or `MARKBASE_COMPUTE_BACKLINKS`.
-
-Default columns for empty input or expression mode: `file.path`, `file.name`, `description`, `file.mtime`, `file.size`, `file.tags`.
-
-**Output formats:**
-- default output is `json`, optimized for agents and scripts
-- `-o table` renders compact Markdown tables for humans
+Create a note from a template:
 
 ```bash
-markbase query "SELECT file.name, title FROM notes" -o table
+markbase note new acme --template company
+markbase note verify acme
 ```
 
-```md
-| file.name | title |
-| --- | --- |
-| readme | README |
-| todo | Todo List |
-```
+Inspect the rendered relationships that an agent would otherwise miss in raw Markdown:
 
 ```bash
-markbase query "SELECT file.name, title, file.tags FROM notes"
+markbase note render acme
+markbase web serve --homepage /HOME.md
 ```
 
-```json
-[
-  {
-    "file.name": "readme",
-    "title": "README",
-    "file.tags": ["documentation", "important"]
-  },
-  {
-    "file.name": "todo",
-    "title": "Todo List",
-    "file.tags": ["todo", "work"]
-  }
-]
-```
-
-Empty results stay machine-friendly:
-- default `json` prints `[]`
-- `-o table` prints just the header row and separator
-
-**Debug:**
+Serve the vault in the browser:
 
 ```bash
-markbase query --dry-run "author == 'Tom'"  # Show translated SQL
-```
-
-**Type casts for non-string comparisons:**
-
-```bash
-markbase query "note.year::INTEGER >= 2024"
-markbase query "note.created::TIMESTAMP > '2024-01-01'"
-# or using bare shorthand:
-markbase query "year::INTEGER >= 2024"
-```
-
-### `note`
-
-Create and manage notes.
-
-**Create a note:**
-
-Without a template, `markbase note new` creates a Markdown note in `base-dir/inbox` with a default frontmatter field: `description: 临时笔记`.
-
-```bash
-markbase note new my-note                    # Create in base-dir/inbox
-markbase note new my-note --template daily   # Create in base-dir/inbox if template has no location
-markbase note new customer --template company # Create in _schema.location if template defines one
-```
-
-`name` must be a pure note name: no directory components and no file extension.
-
-On success, `markbase note new` prints only the note path relative to `base-dir`.
-
-**Rename a note:**
-
-```bash
-markbase note rename old-name new-name
-```
-
-Behavior:
-- `old-name` and `new-name` must be names only (no path components)
-- Looks up note by name (not path)
-- Fails if name is ambiguous or new name exists
-- Updates all `[[old-name]]` links and `![[old-name]]` embeds across the vault (body and frontmatter)
-- Preserves aliases, section anchors, and block IDs
-- Normalizes rewritten Markdown-note targets to path-free, extension-free form such as `[[folder/old.md#Section]] -> [[new#Section]]`
-- Preserves table-safe escaped separators such as `[[old-note\|Alias]] -> [[new-note\|Alias]]`
-- Skips fenced code blocks and inline code spans when rewriting body links
-- Reindexes the vault immediately after the rename completes
-
-Extensions are allowed when renaming resource-style files such as `aaa.jpeg`; the forbidden part is the path, not the suffix.
-
-**Resolve one or more entity names to notes:**
-
-```bash
-markbase note resolve "acme"
-markbase note resolve "张伟" "阿里"
-```
-
-Outputs JSON by default for agent-friendly entity alignment. Each input returns `query`, `status`, and `matches`.
-
-Each resolve input is a path-free query string, never a path or file-style name with an extension.
-
-Statuses:
-- `exact` — one note matched by `file.name`
-- `alias` — one note matched by frontmatter `aliases`
-- `name_contains_query` — one note matched because `file.name` contains the query
-- `query_contains_name` — one note matched because the query contains `file.name`
-- `multiple` — more than one candidate matched; disambiguate before linking
-- `missing` — no exact name, alias, or partial-name candidate matched
-
-Each match includes `name`, `path`, `type`, `description`, and `matched_by`. Missing descriptions are emitted as `null`, not omitted.
-
-`matched_by` can be `name`, `alias`, `name_contains_query`, or `query_contains_name`.
-
-Matching is case-insensitive for exact name, alias, and partial `file.name` resolution. Returned `name` and `path` keep their indexed casing.
-
-Match priority is deterministic:
-- `name`
-- `alias`
-- `name_contains_query`
-- `query_contains_name`
-
-Partial matching applies only to `file.name`, never to frontmatter `aliases`.
-
-A single `exact`, `alias`, `name_contains_query`, or `query_contains_name` result is still only a low-cost alignment hint: compare `description` and context before reusing the note. If the description is clearly about a different thing, prefer creating a new note instead of forcing reuse.
-
-**Verify a note against its template schema:**
-
-```bash
-markbase note verify <name>
-```
-
-`<name>` must be a note name only: no path and no file extension.
-
-Checks that the note conforms to all constraints defined in its referenced MTS template(s), and also runs a global `description` check before template validation:
-- Global frontmatter `description` exists, is a string, and is not blank (reported as ERROR)
-- Referenced template frontmatter must parse successfully as YAML, or verification fails
-- Targets that resolve to `templates/<name>.md` are rejected as template files rather than verified as note instances
-- Directory location matches `_schema.location`
-- Required frontmatter fields are present
-- Field types and enum values are correct
-- Link fields must be a single pure Obsidian wikilink such as `[[note]]` or `[[folder/note.md#Heading|Alias]]`
-- Link fields point to notes of the expected `type`
-- Template Markdown body `.base` embeds must also appear in the note body, so required embedded views are not dropped from instances
-- Embedded `.base` targets in the Markdown body must exist in the indexed vault; missing or unreadable `.base` targets are reported as errors after the rest of verification continues
-
-`note verify` no longer treats template outer-frontmatter seed values as literal-match requirements. `_schema.create` defines creation-time defaults, while continuing invariants must be modeled through `_schema.required` and `_schema.properties`. In practice, stable identity fields such as `type` should be declared in both places, while mutable seed fields such as `status` may evolve after creation as long as they still satisfy the schema.
-
-Verification issues are reported to stderr. For issue output, the header includes `file.path`, and each schema-related issue includes a compact `Definition:` line so agents can repair notes with the expected type/constraints. Exit code is non-zero whenever verification produces any `ERROR`; dangling link references remain `INFO` and do not fail the command by themselves.
-
-**Render a note (expand note and `.base` embeds):**
-
-```bash
-markbase note render <n>            # Markdown with embedded JSON blocks (default)
-markbase note render <n> -o table    # Markdown tables for embedded Base views
-markbase note render <n> --dry-run   # show SQL without executing
-```
-
-`<n>` must be either a note name (no extension) or a `.base` filename, never a path.
-
-Rendering a Markdown note prints its body to stdout and scans normal Markdown
-body content for live embed tokens:
-
-- `![[note]]` and `![[note|Alias]]` expand to the embedded note's rendered body
-- embedded note frontmatter is stripped; only the body is emitted
-- note embeds with heading or block selectors such as `![[note#Heading]]` stay
-  literal output for now
-- `![[tasks.base]]` and `![[tasks.base#Open Tasks]]` render Base views at that
-  token position
-- non-Markdown, non-`.base` embeds are passed through unchanged
-
-Inline note embeds are block-oriented. `Before![[note]]After` renders as
-`Before`, then the embedded note body, then `After` on separate lines. The same
-recursive render rules apply inside embedded note bodies, so nested note embeds
-and nested `.base` embeds continue to expand.
-
-Recursive note rendering is cycle-safe. If an embed would revisit a note that
-is already on the active render stack, markbase warns on stderr and leaves a
-placeholder comment in stdout instead of recursing forever. Missing embedded
-notes are also soft failures: render continues after emitting a warning and a
-placeholder comment. Unreadable embedded notes behave the same way and emit a
-read-failure warning plus placeholder instead of aborting the whole render.
-
-When a nested `.base` embed runs inside an embedded note body, `this` is bound
-to the embedded note currently being rendered, not the original top-level note.
-
-`![[tasks.base#Open Tasks]]` renders only the matching view. If the view does
-not exist, markbase warns on stderr and leaves an HTML comment placeholder at
-that line in stdout. Fenced code blocks and inline code spans are never treated
-as live `.base` embeds, even if they contain the same syntax literally.
-
-If a `.base` embed appears inline with surrounding text, markbase expands the
-embed and keeps the surrounding text in output rather than requiring the embed
-to occupy the entire line by itself.
-
-If a live note or `.base` embed appears inside a blockquote or callout body,
-markbase preserves that quote container line-by-line during expansion,
-including blank lines and nested quote depth. List items remain outside the
-supported live-embed container contract: note and `.base` embeds inside list
-items stay literal output, even when quote or callout syntax appears on the
-same logical line.
-
-For `-o table`, each rendered Base view becomes a compact Markdown table:
-
-```md
-<!-- start: [markbase] rendered from tasks.base -->
-
-> **Open Tasks**
-
-| name | priority |
-| --- | --- |
-| [[task-a]] | high |
-| [[task-b]] | medium |
-
-<!-- end: [markbase] rendered from tasks.base -->
-```
-
-By default, the same view is wrapped in a JSON code fence so agents can parse it directly from the rendered Markdown:
-
-````md
-<!-- start: [markbase] rendered from tasks.base -->
-
-> **Open Tasks**
-
-```json
-[
-  {
-    "name": "[[task-a]]",
-    "priority": "high"
-  },
-  {
-    "name": "[[task-b]]",
-    "priority": "medium"
-  }
-]
-```
-<!-- end: [markbase] rendered from tasks.base -->
-````
-
-Supported filters: `link(this)`, `link("name")`, `file.hasLink(this.file)`,
-`file.hasTag()`, `file.inFolder()`, date comparisons, `isEmpty()`, `contains()`.
-
-When a frontmatter scalar stores a pure wikilink such as `company: "[[acme]]"`,
-Base equality filters compare by the normalized target name, so
-`company == this.file.name` and `company == link(this)` both match.
-
-Warnings (unsupported filters, missing embedded notes, missing base files) go to stderr.
-Exit code is non-zero only on hard errors (e.g. note not found).
-
-### `web`
-
-Initialize the supported docsify entry HTML, serve browser routes, or inspect the
-final web Markdown body.
-
-```bash
-markbase web init-docsify --homepage /HOME.md
-markbase web serve --homepage /HOME.md         # dynamic browser entry HTML
-markbase web serve                           # listen on 127.0.0.1:3000
-markbase web serve --bind 127.0.0.1 --port 4000
+markbase web serve --homepage /HOME.md
 markbase web serve --cache-control "public, max-age=60"
-markbase web get /entities/person/alice.md  # print final web Markdown body
 ```
 
-`markbase web init-docsify --homepage <homepage-ref>` writes `index.html` into
-the base-dir root. `--homepage` may be a note name, vault-relative `file.path`,
-or canonical URL, but it must resolve to an existing `.md` or `.base`
-document. An existing `index.html` is left untouched unless `--force` is
-provided. The generated docsify entry HTML remains a single `index.html`; users
-do not need to manage extra JS or CSS files. That exported entry HTML also
-embeds the generating `markbase` version, homepage, and git commit/time
-metadata in both the page footer and HTML metadata. `web init-docsify` is not
-required for normal browser use; it primarily exists as an export/debugging
-tool for advanced users who want to inspect or hand-edit the exported
-`index.html`.
+## Command Overview
 
-`markbase web serve` is the default browser entrypoint. On startup it selects a
-mode based on whether `--homepage` is present:
+| Command | Purpose |
+| --- | --- |
+| `query` | Query the indexed vault with expression syntax or SQL |
+| `note new` | Create Markdown notes, optionally from templates |
+| `note verify` | Check whether a note still matches its template schema |
+| `note rename` | Rename a note and rewrite wikilinks and embeds |
+| `note resolve` | Resolve entity names to existing notes for agent linking |
+| `note render` | Expand note embeds and `.base` views into agent-readable output |
+| `template list` | List available templates |
+| `template describe` | Show normalized template content |
+| `web serve` | Serve the vault in the browser |
+| `web get` | Print the final web Markdown for one canonical route |
 
-- without `--homepage`, `web serve` only reuses the existing
-  `base-dir/index.html`
-- with `--homepage <homepage-ref>`, `web serve` always generates docsify entry
-  HTML dynamically at runtime
+## Concepts That Matter
 
-`homepage-ref` may be a note name, vault-relative `file.path`, or canonical
-URL, but it must resolve to an existing `.md` or `.base` document. The browser
-entry HTML always uses the canonical URL form after resolution.
+### Query namespaces
 
-Without `--homepage`, `web serve` fails if `index.html` is missing, malformed,
-or was generated by a different `markbase` version. With `--homepage`,
-`web serve` always uses dynamic mode; if an exported `index.html` already
-exists, the server logs a warning that the file was found but will not be used
-for this run.
+- `file.*` means indexed file metadata such as `file.path`, `file.name`, `file.tags`, and `file.mtime`.
+- `note.*` means frontmatter fields.
+- Bare fields such as `author` are shorthand for `note.author`.
 
-For both exported and dynamic modes:
-
-- requesting `/` returns `index.html`
-- requesting `/index.html` returns the same docsify entry HTML
-- the docsify entry HTML keeps internal `.md` and `.base` document links inside docsify
-- the browser entry HTML upgrades Obsidian-style callouts, including foldable
-  `[!type]+` and `[!type]-`, in the browser UI
-- binary resource URLs such as images and attachments continue to resolve
-  directly
-
-By default, `web serve` returns `Cache-Control: no-store, no-cache,
-must-revalidate` plus matching legacy no-cache headers on every response. Pass
-`--cache-control <value>` to override that header for all responses served by
-the process.
-
-Web routing is path-based and derived from indexed `file.path`, but internal
-rendering still resolves Markdown notes and `.base` targets by name. The
-canonical note or resource URL is always `/<file.path>` with browser-safe
-percent-encoding.
-
-Each `web serve` request refreshes the index before route resolution and uses a
-request-scoped DuckDB handle. For Markdown notes and direct `.base` targets,
-the server returns docsify/marked-renderable Markdown rather than an HTML
-shell. For binary resources, it returns raw bytes with the corresponding
-`Content-Type`.
-
-The server-side Markdown pipeline:
-
-- reuses note-render semantics for recursive `![[note]]` expansion, `.base`
-  expansion, soft-failure placeholders, and quote-container preservation
-- rewrites `[[note]]` links to canonical path-based Markdown links
-- rewrites non-Markdown `![[...]]` resource embeds to standard Markdown images
-  or links
-- removes `%%comment%%` from normal Markdown body content
-- preserves fenced code blocks and inline code spans literally
-- leaves unresolved wikilinks, unresolved resource embeds, selector-based note
-  embeds, and block-target note embeds as literal source text in v1
-
-`markbase web get <canonical-url>` prints the same Markdown body that
-`web serve` returns for a Markdown note or `.base` route. If the canonical URL
-resolves to a binary resource, `web get` exits with an explanatory failure
-instead of streaming bytes.
-
-HTTP miss and bad-path behavior:
-
-- route miss returns `404 Not Found`
-- invalid percent-decoding returns `400 Bad Request`
-
-### `template`
-
-Manage MTS templates.
+Examples:
 
 ```bash
-markbase template list            # JSON (default, agent-first)
-markbase template list -o table   # Compact Markdown table
-markbase template describe daily  # Show normalized template content
+markbase query "file.mtime > '2024-01-01'"
+markbase query "author == 'Tom'"
+markbase query "list_contains(file.tags, 'project')"
 ```
 
-Templates are stored in `templates/` under base-dir. `template describe` shows the normalized template view used by the CLI, including `_schema.create` and auto-injected `description` schema/default fields when older templates omit them. For new templates, author note-creation defaults under `_schema.create` and let `markbase note new --template` inject the `templates` field automatically:
+### Obsidian-compatible linking
+
+Use note names, not paths, for Markdown-note links:
+
+```markdown
+[[Acme]]
+[[Zhang San]]
+![[pipeline.base]]
+```
+
+For frontmatter link values, keep them as quoted Obsidian wikilinks:
 
 ```yaml
-_schema:
-  description: 用于匹配客户公司资料的模板
-  location: company/
-  required:
-    - description
-    - type
-  properties:
-    description:
-      type: text
-      description: 一句话说明这个 note 是什么
-    type:
-      type: text
-      enum: [company]
-  create:
-    description: ""
-    type: company
-    tags: []
+company: "[[Acme]]"
+owner: "[[Zhang San]]"
 ```
 
-Here, `_schema.description` is the template routing prompt, `_schema.properties.description` is the schema definition for the instance field, and `_schema.create.description` is the concrete value written into new notes. Created notes receive `templates: ["[[<template-name>]]"]` from the CLI; template authors should not hand-write that field in the template.
+### Templates and verification
 
-## Query Syntax
+Templates are one of markbase's main reasons to exist. They provide a repeatable structure for note creation, and `note verify` checks whether a note still conforms to its template schema after later edits by humans or agents.
 
-markbase translates field names using explicit namespaces (`file.*` for file metadata, `note.*` or bare for frontmatter) to DuckDB queries. All DuckDB SQL keywords and operators are supported natively.
+That means you can let agents create and update Markdown notes without giving up consistency. Instead of hoping every prompt produces the same frontmatter shape and embedded sections, you can define the structure once in a template and continuously verify that the vault still follows it.
 
-**Commonly Used Functions:**
-- `list_contains(field, value)` - Array containment
-  - `list_contains(file.tags, 'todo')` - file array field (native)
-  - `list_contains(note.categories, 'work')` - frontmatter array (cast to VARCHAR[])
+In the `log-notes` workflow, templates do all of the following at once:
 
-**Field Prefix Reference:**
+- choose the target directory and filename convention
+- define required frontmatter and allowed enums
+- constrain link targets such as `company -> company` or `owner -> person`
+- declare which sections are agent-writable
+- preserve structural `.base` embeds that expose related notes
 
-| Prefix | Namespace | Use For | Example |
-|--------|-----------|---------|---------|
-| `file.` | File properties | Metadata columns | `file.name`, `file.mtime`, `file.size` |
-| `note.` | Note properties | Frontmatter fields | `note.author`, `note.status` |
-| (bare) | Note properties | Shorthand for `note.*` | `author`, `status` |
+That is why `note verify` matters so much. It is the mechanism that catches drift after creation, not just during creation.
 
-**Examples:**
+### Web delivery
+
+`web serve` gives a browser-friendly view of the same vault. By default it listens on `127.0.0.1:3000`. Routes are path-based externally, while note logic inside markbase still follows Obsidian-style name-based identity.
+
+`markbase web get <canonical-url>` prints the final Markdown body for one canonical route. Each web request uses a request-scoped DuckDB handle, and route miss returns `404 Not Found`.
+
+`web init-docsify` writes a single `index.html` and is not required for normal browser use. The browser entry HTML upgrades Obsidian-style callouts in the frontend while preserving the backend Markdown contract.
+
+## Environment
+
+- `MARKBASE_BASE_DIR`: vault directory. Default is the current directory.
+- `MARKBASE_INDEX_LOG_LEVEL`: automatic indexing output level.
+- `MARKBASE_COMPUTE_BACKLINKS`: enable backlink computation during indexing.
+
+## Validation
+
+For local development:
 
 ```bash
-# File metadata queries (require file.* prefix)
-markbase query "file.folder == './notes'"
-markbase query "file.mtime > '2024-01-01'"
-markbase query "file.size > 10000"
-markbase query "file.name LIKE '%meeting%'"
-markbase query "list_contains(file.tags, 'todo')"
-
-# Frontmatter queries (note.* prefix or bare)
-markbase query "note.author == 'John'"
-markbase query "author == 'John'"  # same as above
-markbase query "note.status == 'active'"
-markbase query "author IS NOT NULL"
-
-# Combined queries
-markbase query "author == 'John' AND file.mtime > '2024-01-01'"
-markbase query "list_contains(file.tags, 'todo') AND status == 'active'"
+cargo build
+cargo test
+cargo clippy -- -D warnings
+cargo fmt --check
 ```
+
+## More docs
+
+- [ARCHITECTURE.md](ARCHITECTURE.md): system map and invariants
+- [AGENTS.md](AGENTS.md): repo workflow for coding agents
+- [docs/design-docs/implemented/design-010-query-subsystem.md](docs/design-docs/implemented/design-010-query-subsystem.md): query behavior
+- [docs/design-docs/implemented/design-011-note-creation.md](docs/design-docs/implemented/design-011-note-creation.md): note creation behavior
+- [docs/design-docs/implemented/design-002-render.md](docs/design-docs/implemented/design-002-render.md): render behavior
+- [docs/design-docs/implemented/design-003-web-note-view.md](docs/design-docs/implemented/design-003-web-note-view.md): web behavior
 
 ## License
 
