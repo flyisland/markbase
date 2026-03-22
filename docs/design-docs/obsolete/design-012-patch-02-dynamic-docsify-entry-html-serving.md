@@ -1,15 +1,21 @@
 ---
 id: design-012-patch-02
 title: "Dynamic Docsify Entry HTML Serving"
-status: draft
+status: obsolete:merged
 parent: design-012
+merged-into: design-012
 module: web-frontend
 ---
 
 # Dynamic Docsify Entry HTML Serving
 
-**Status:** Draft  
+**Status:** Obsolete: Merged  
 **Target:** `design-012` frontend integration follow-up
+
+This file is retained as an archived patch record.
+
+Its active content has been folded back into
+`docs/design-docs/implemented/design-012-docsify-frontend-integration.md`.
 
 ## Purpose
 
@@ -170,9 +176,7 @@ alternative is not acceptable.
 
 ## Decision Status
 
-Selected for implementation via `task-0021`.
+Implemented via `task-0021` and merged into `design-012`.
 
-The merged steady-state contract should live in `design-012`. This patch
-records the follow-up direction that makes dynamic docsify entry HTML the
-default browser path while retaining `web init-docsify` as the explicit
-export/debug tool.
+The active steady-state contract now lives in
+`docs/design-docs/implemented/design-012-docsify-frontend-integration.md`.

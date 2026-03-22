@@ -1,7 +1,7 @@
 ---
 id: task-0021
 title: "实现动态 docsify entry HTML serving"
-status: active
+status: completed
 design: design-012-patch-02
 boundaries:
   allowed:
@@ -9,9 +9,9 @@ boundaries:
     - "src/web/**"
     - "README.md"
     - "ARCHITECTURE.md"
-    - "docs/design-docs/draft/design-012-patch-02-dynamic-docsify-shell-serving.md"
+    - "docs/design-docs/obsolete/design-012-patch-02-dynamic-docsify-entry-html-serving.md"
     - "docs/design-docs/implemented/design-012-docsify-frontend-integration.md"
-    - "specs/active/task-0021-dynamic-docsify-entry-html-serving.md"
+    - "specs/archived/task-0021-dynamic-docsify-entry-html-serving.md"
     - "tests/cli_web.rs"
     - "tests/common/**"
   forbidden_patterns:
@@ -93,7 +93,7 @@ completion_criteria:
 - 若未传 `--homepage`，`web serve` 仅尝试使用现有导出 `index.html`；若该文件不存在、缺少版本 marker、或版本不匹配，则命令必须报错退出
 - 若传入 `--homepage`，`web serve` 必须直接动态生成 docsify entry HTML；若 `<base-dir>/index.html` 存在，则输出 `WARN` 说明发现了该文件但本次不会使用它
 - 动态模式下，请求 `/` 与 `/index.html` 必须返回相同 docsify entry HTML；不得让一个路径走动态返回、另一个路径走 404 或磁盘 miss
-- `web get` 仍是 shell-independent inspection command；本任务不改变 `web get` 合同
+- `web get` 仍是 docsify-entry-HTML-independent inspection command；本任务不改变 `web get` 合同
 - 动态 / 导出两种 entry HTML 模式都必须保留现有 docsify 前端合同：内部 `.md` / `.base` 导航、resource URL 直连、callout UI、版本 footer
 - `web init-docsify` help 与 README 必须强调：它不是浏览器使用前的必需步骤，主要面向导出/调试/高级用户修改导出物
 - `web serve` 启动时至少要区分两类日志：
@@ -108,7 +108,7 @@ completion_criteria:
 - src/web/**
 - README.md
 - ARCHITECTURE.md
-- docs/design-docs/draft/design-012-patch-02-dynamic-docsify-shell-serving.md
+- docs/design-docs/obsolete/design-012-patch-02-dynamic-docsify-entry-html-serving.md
 - docs/design-docs/implemented/design-012-docsify-frontend-integration.md
 - specs/active/task-0021-dynamic-docsify-entry-html-serving.md
 - tests/cli_web.rs

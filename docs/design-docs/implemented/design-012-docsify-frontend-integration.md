@@ -103,8 +103,8 @@ The chosen direction for docsify integration is:
 - treat docsify compatibility as a frontend integration responsibility
 - solve docsify navigation with a generated frontend plugin rather than a
   backend link-shape rewrite
-- generate the shell at the base-dir root as `index.html` rather than under a
-  markbase-owned subdirectory
+- generate the docsify entry HTML at the base-dir root as `index.html` rather
+  than under a markbase-owned subdirectory
 
 This means the current absolute backend href shape, such as:
 
@@ -261,7 +261,7 @@ such as:
 ```
 
 This is acceptable as a backend route contract, but it causes docsify to leave
-its HTML shell when those links are clicked.
+the docsify entry HTML when those links are clicked.
 
 ### Initial docsify solution
 
@@ -337,7 +337,7 @@ The active responsibility split is:
 - the docsify entry HTML applies callout UI, fold/unfold interaction, and styling
 
 This keeps vault-aware semantics on the backend and presentation behavior in the
-frontend shell.
+frontend entry HTML.
 
 ## Foldable Callout Support
 
@@ -381,7 +381,7 @@ This DOM-upgrade approach is preferred over frontend Markdown pre-processing
 because it reuses docsify's parser output and avoids introducing a second
 partial Markdown parser in browser code.
 
-## Generated Shell Authoring
+## Generated Entry HTML Authoring
 
 The user-facing output of `markbase web init-docsify` remains a single
 generated file:
@@ -401,7 +401,7 @@ Docsify integration is not just a one-line fix for links.
 
 It opens a separate frontend problem space that includes:
 
-- shell installation and ownership
+- docsify entry HTML installation and ownership
 - homepage configuration
 - internal route adaptation
 - future callout styling
