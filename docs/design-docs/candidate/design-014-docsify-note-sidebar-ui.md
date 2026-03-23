@@ -35,10 +35,12 @@ and fetch lifecycle above that contract.
 This design covers:
 
 - desktop and mobile sidebar layout
+- sidebar tab-strip structure and active-panel behavior
 - which docsify routes are eligible for metadata sidebar rendering
 - metadata request construction for eligible note routes
 - sidebar section structure for `Properties` and `Links`
 - rendering rules for `properties.fields[].value`
+- docsify route adaptation for sidebar-internal note/base links
 - loading, empty, and error states
 - docsify route-change refresh behavior
 
@@ -116,8 +118,11 @@ Recommended behavior:
 
 - main column remains visually dominant
 - sidebar width stays fixed or capped within a narrow readable range
-- sidebar remains independently scrollable only if needed; otherwise the page
-  should prefer normal document scroll
+- the sidebar owns its own scroll container when metadata content exceeds the
+  available sidebar height
+- the tab strip remains visible while scrolling sidebar content
+- long `Properties` content must not push `Links` or future panels below the
+  fold as always-visible stacked sections
 
 The first version should avoid a floating overlay or collapsible drawer on
 desktop. The metadata is important enough to deserve stable placement.
@@ -138,16 +143,26 @@ The first version does not require a separate mobile toggle button.
 ## Section Structure
 
 When the current route is eligible and metadata has been loaded, the sidebar
-contains two top-level sections in v1:
+contains a tab strip plus one active panel.
+
+In v1 the available tabs are:
 
 1. `Properties`
 2. `Links`
 
 Rules:
 
-- section titles are always visible
-- sections render in the order above
-- a missing requested section renders an explicit empty state, not a silent gap
+- only one panel is visible at a time
+- the tab strip remains visible while the active panel scrolls
+- the default active tab is `Properties`
+- tab order is stable: `Properties`, then `Links`, then any future tabs such as
+  `Backlinks`
+- a tab whose requested data is empty still renders an explicit empty state
+  when selected, rather than disappearing silently
+
+This is a structural decision, not just styling. `Properties`, `Links`, and
+future metadata surfaces should share the same sidebar slot rather than render
+as a single long stacked document.
 
 ## `Properties` Section
 
@@ -163,6 +178,10 @@ Each entry contains:
 
 The visual default should be compact and scan-friendly rather than
 document-like.
+
+`Properties` lives inside the active sidebar panel. When the property list is
+long, this panel scrolls within the sidebar container instead of extending the
+entire page layout downward.
 
 ### Property Keys
 
@@ -248,6 +267,17 @@ Rules:
 - resolved resource links follow their direct resource URL
 - unresolved links render as non-clickable text
 
+For note/base targets, the frontend must not use the backend canonical href as
+a direct browser destination. The backend may expose canonical paths such as
+`/entities/company/acme.md`, but inside the docsify sidebar these must be
+adapted into docsify shell navigation targets so clicking opens the note in the
+docsify app rather than showing raw Markdown.
+
+Equivalent examples:
+
+- backend canonical href: `/entities/company/acme.md`
+- docsify sidebar destination: `#/entities/company/acme.md`
+
 If later versions add source attribution such as `body` or `frontmatter`, that
 should be treated as secondary row metadata rather than a separate primary
 grouping in the first version.
@@ -303,7 +333,9 @@ On docsify route changes:
 5. build the metadata request from the canonical note pathname plus
    `?fields=properties,links`, without forwarding docsify-only query parameters
    such as `id`
-6. replace sidebar contents only with the response for the latest active route
+6. adapt resolved note/base links in sidebar content to docsify shell routes
+   before attaching them to clickable UI
+7. replace sidebar contents only with the response for the latest active route
 
 The implementation should guard against stale-response overwrite when users
 navigate quickly.

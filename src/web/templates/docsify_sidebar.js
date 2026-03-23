@@ -35,6 +35,18 @@
 
                 const body = document.createElement("div");
                 body.className = "mb-note-sidebar-body";
+
+                const tabs = document.createElement("div");
+                tabs.className = "mb-note-sidebar-tabs";
+                tabs.setAttribute("role", "tablist");
+                tabs.setAttribute("aria-label", "Note metadata");
+
+                const panel = document.createElement("div");
+                panel.className = "mb-note-sidebar-panel";
+                panel.id = "mb-note-sidebar-panel";
+
+                body.appendChild(tabs);
+                body.appendChild(panel);
                 sidebar.appendChild(body);
 
                 page.appendChild(sidebar);
@@ -43,27 +55,57 @@
               return sidebar;
             }
 
-            function sidebarSectionCard(title, bodyContent) {
-              const card = document.createElement("section");
-              card.className = "mb-note-sidebar-card";
+            function docsifySidebarTabs() {
+              return [
+                { key: "properties", label: "Properties" },
+                { key: "links", label: "Links" },
+              ];
+            }
 
-              const header = document.createElement("header");
-              header.className = "mb-note-sidebar-card-header";
+            function ensureDocsifySidebarActiveTab() {
+              const state = docsifySidebarState();
+              const tabs = docsifySidebarTabs();
+              const activeTab = state.activeTab || "properties";
+
+              if (tabs.some(function (tab) { return tab.key === activeTab; })) {
+                state.activeTab = activeTab;
+                return activeTab;
+              }
+
+              state.activeTab = "properties";
+              return state.activeTab;
+            }
+
+            function docsifySidebarHref(href) {
+              if (!href) return "";
+              if (href.startsWith("#")) return href;
+              if (!href.startsWith("/")) return href;
+
+              const path = href.split("#")[0].split("?")[0];
+              if (path.endsWith(".md") || path.endsWith(".base")) {
+                return "#" + href;
+              }
+
+              return href;
+            }
+
+            function sidebarPanelSection(title, bodyContent) {
+              const section = document.createElement("section");
+              section.className = "mb-note-sidebar-panel-section";
 
               const heading = document.createElement("h2");
+              heading.className = "mb-note-sidebar-panel-title";
               heading.textContent = title;
-              header.appendChild(heading);
+              section.appendChild(heading);
 
               const body = document.createElement("div");
-              body.className = "mb-note-sidebar-card-body";
-
+              body.className = "mb-note-sidebar-panel-content";
               if (bodyContent) {
                 body.appendChild(bodyContent);
               }
+              section.appendChild(body);
 
-              card.appendChild(header);
-              card.appendChild(body);
-              return card;
+              return section;
             }
 
             function sidebarEmptyState(message) {
@@ -116,7 +158,7 @@
                   if (segment.exists && segment.href) {
                     const link = document.createElement("a");
                     link.className = "mb-sidebar-link";
-                    link.href = segment.href;
+                    link.href = docsifySidebarHref(segment.href);
                     link.textContent = segment.text || segment.target || "";
                     container.appendChild(link);
                     return;
@@ -204,7 +246,7 @@
             function renderPropertiesSection(properties) {
               const fields = properties && Array.isArray(properties.fields) ? properties.fields : [];
               if (fields.length === 0) {
-                return sidebarSectionCard("Properties", sidebarEmptyState("No properties"));
+                return sidebarPanelSection("Properties", sidebarEmptyState("No properties"));
               }
 
               const container = document.createElement("div");
@@ -236,7 +278,7 @@
                 container.appendChild(row);
               });
 
-              return sidebarSectionCard("Properties", container);
+              return sidebarPanelSection("Properties", container);
             }
 
             function renderLinkRow(entry) {
@@ -251,7 +293,7 @@
               if (entry.exists && entry.href) {
                 const link = document.createElement("a");
                 link.className = "mb-sidebar-link-label";
-                link.href = entry.href;
+                link.href = docsifySidebarHref(entry.href);
                 link.textContent = entry.target || "";
                 row.appendChild(link);
               } else {
@@ -267,7 +309,7 @@
             function renderLinksSection(links) {
               const entries = Array.isArray(links) ? links : [];
               if (entries.length === 0) {
-                return sidebarSectionCard("Links", sidebarEmptyState("No links"));
+                return sidebarPanelSection("Links", sidebarEmptyState("No links"));
               }
 
               const list = document.createElement("ul");
@@ -276,7 +318,7 @@
                 list.appendChild(renderLinkRow(entry));
               });
 
-              return sidebarSectionCard("Links", list);
+              return sidebarPanelSection("Links", list);
             }
 
             function renderSidebarStateMessage(status, message) {
@@ -287,30 +329,80 @@
               return state;
             }
 
+            function renderSidebarTab(tab, isActive) {
+              const button = document.createElement("button");
+              button.type = "button";
+              button.className = "mb-note-sidebar-tab";
+              button.dataset.sidebarTab = tab.key;
+              button.setAttribute("role", "tab");
+              button.setAttribute("aria-controls", "mb-note-sidebar-panel");
+              button.setAttribute("aria-selected", isActive ? "true" : "false");
+              button.setAttribute("tabindex", isActive ? "0" : "-1");
+              button.textContent = tab.label;
+
+              if (isActive) {
+                button.dataset.active = "true";
+              }
+
+              button.addEventListener("click", function () {
+                const state = docsifySidebarState();
+                if (state.activeTab === tab.key) return;
+
+                state.activeTab = tab.key;
+
+                const sidebar = ensureDocsifySidebarContainer();
+                if (!sidebar) return;
+                if (sidebar.dataset.sidebarState === "ready") {
+                  renderDocsifySidebar("ready", "");
+                }
+                const panel = sidebar.querySelector(".mb-note-sidebar-panel");
+                if (panel) {
+                  panel.scrollTop = 0;
+                }
+              });
+
+              return button;
+            }
+
             function renderDocsifySidebar(status, message) {
               const sidebar = ensureDocsifySidebarContainer();
               if (!sidebar) return;
+
               const body = sidebar.querySelector(".mb-note-sidebar-body");
-              if (!body) return;
+              const tabs = sidebar.querySelector(".mb-note-sidebar-tabs");
+              const panel = sidebar.querySelector(".mb-note-sidebar-panel");
+              if (!body || !tabs || !panel) return;
 
               sidebar.dataset.sidebarState = status;
               sidebar.setAttribute("aria-busy", status === "loading" ? "true" : "false");
 
               if (status === "hidden") {
                 sidebar.hidden = true;
-                body.replaceChildren();
+                tabs.replaceChildren();
+                panel.replaceChildren();
                 return;
               }
 
               sidebar.hidden = false;
-              body.replaceChildren();
+              const activeTab = ensureDocsifySidebarActiveTab();
+
+              tabs.replaceChildren();
+              docsifySidebarTabs().forEach(function (tab) {
+                tabs.appendChild(renderSidebarTab(tab, tab.key === activeTab));
+              });
+
+              panel.replaceChildren();
 
               if (status === "loading" || status === "error") {
-                body.appendChild(renderSidebarStateMessage(status, message || ""));
+                panel.appendChild(renderSidebarStateMessage(status, message || ""));
                 return;
               }
 
               const metadata = docsifySidebarState().metadata || {};
-              body.appendChild(renderPropertiesSection(metadata.properties));
-              body.appendChild(renderLinksSection(metadata.links));
+              if (activeTab === "links") {
+                panel.appendChild(renderLinksSection(metadata.links));
+                return;
+              }
+
+              panel.appendChild(renderPropertiesSection(metadata.properties));
             }

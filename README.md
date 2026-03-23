@@ -228,8 +228,12 @@ For both exported and dynamic modes:
 - the docsify entry HTML keeps internal `.md` and `.base` document links inside docsify
 - the browser entry HTML upgrades Obsidian-style callouts, including foldable
   `[!type]+` and `[!type]-`, in the browser UI while preserving multiline body structure
-- on canonical `.md` note routes, the docsify shell renders a note-only metadata
-  sidebar for `Properties` and `Links`
+- on canonical `.md` note routes, the docsify shell renders a note-only
+  metadata sidebar with `Properties` and `Links` tabs
+- the active sidebar panel has its own scroll container, so long `Properties`
+  content does not push other tabs below the page fold
+- sidebar note/base links stay inside docsify by navigating to docsify hash
+  routes such as `#/entities/company/acme.md`
 - docsify TOC anchor jumps such as `#/note.md?id=heading` stay in-page and do
   not turn into backend metadata requests
 - `.base` pages, the shell root route, and other non-note routes do not request
@@ -300,7 +304,8 @@ HTTP miss and bad-path behavior:
 
 `web init-docsify` writes a single `index.html` and is not required for normal browser use. The browser entry HTML owns frontend-only behaviors such as
 internal docsify navigation adaptation, callout UI upgrades, and the note-only
-metadata sidebar while preserving the backend Markdown and metadata contracts.
+metadata sidebar tabs and routing behavior while preserving the backend
+Markdown and metadata contracts.
 
 ## Environment
 

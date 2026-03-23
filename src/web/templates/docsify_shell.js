@@ -332,6 +332,7 @@
                   notePath: null,
                   requestId: 0,
                   activeRequestId: 0,
+                  activeTab: "properties",
                   metadata: null,
                   error: null,
                   abortController: null,
@@ -406,6 +407,7 @@
 
               state.requestId += 1;
               state.activeRequestId = state.requestId;
+              state.activeTab = "properties";
               state.error = null;
               state.metadata = null;
 

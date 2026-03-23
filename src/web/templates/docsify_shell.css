@@ -230,6 +230,7 @@ section.content {
   width: 320px;
   max-width: 100%;
   align-self: stretch;
+  min-height: 0;
 }
 
 .mb-note-sidebar[hidden] {
@@ -239,45 +240,67 @@ section.content {
 .mb-note-sidebar-body {
   position: sticky;
   top: 1.5rem;
-  display: grid;
-  gap: 1rem;
-}
-
-.mb-note-sidebar-card,
-.mb-note-sidebar-state {
   border: 1px solid #d9e2ec;
   border-radius: 0.85rem;
   background: #f8fbff;
   box-shadow: 0 14px 34px rgba(15, 23, 42, 0.06);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  max-height: calc(100vh - 3rem);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .mb-note-sidebar-state {
   color: #486581;
-  padding: 0.95rem 1rem;
   font-size: 0.95rem;
+  border-radius: 0.7rem;
+  padding: 0.95rem 1rem;
+  border: 1px dashed #d9e2ec;
+  background: #fff;
 }
 
-.mb-note-sidebar[data-sidebar-state="error"] .mb-note-sidebar-state {
-  border-color: #f7c5cc;
-  background: #fff5f6;
-  color: #b42318;
-}
-
-.mb-note-sidebar[data-sidebar-state="loading"] .mb-note-sidebar-state {
-  border-style: dashed;
-}
-
-.mb-note-sidebar-card {
-  overflow: hidden;
-}
-
-.mb-note-sidebar-card-header {
-  padding: 0.8rem 1rem;
+.mb-note-sidebar-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding: 0.65rem;
   border-bottom: 1px solid #e6edf5;
   background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
 }
 
-.mb-note-sidebar-card-header h2 {
+.mb-note-sidebar-tab {
+  appearance: none;
+  border: 1px solid #d9e2ec;
+  border-radius: 999px;
+  background: #fff;
+  color: #486581;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 0.48rem 0.8rem;
+}
+
+.mb-note-sidebar-tab[data-active="true"] {
+  border-color: #0b69a3;
+  background: #0b69a3;
+  color: #fff;
+}
+
+.mb-note-sidebar-panel {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.95rem 1rem 1rem;
+}
+
+.mb-note-sidebar-panel-section {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.mb-note-sidebar-panel-title {
   margin: 0;
   color: #243b53;
   font-size: 0.9rem;
@@ -285,8 +308,15 @@ section.content {
   text-transform: uppercase;
 }
 
-.mb-note-sidebar-card-body {
-  padding: 0.9rem 1rem 1rem;
+.mb-note-sidebar-panel-content {
+  display: grid;
+  gap: 0.95rem;
+}
+
+.mb-note-sidebar[data-sidebar-state="error"] .mb-note-sidebar-state {
+  border-color: #f7c5cc;
+  background: #fff5f6;
+  color: #b42318;
 }
 
 .mb-note-sidebar-empty {
@@ -437,6 +467,11 @@ section.content {
 
   .mb-note-sidebar-body {
     position: static;
+    max-height: none;
+  }
+
+  .mb-note-sidebar-panel {
+    overflow: visible;
   }
 }
 
