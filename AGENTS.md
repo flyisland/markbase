@@ -5,18 +5,24 @@ This file is the entry point for developers and coding agents. It is intentional
 ## Quick Start
 
 ```bash
-cargo build
-cargo test
-cargo clippy -- -D warnings
-cargo fmt --check
+RUSTC_WRAPPER= cargo build
+RUSTC_WRAPPER= cargo test
+RUSTC_WRAPPER= cargo clippy -- -D warnings
+RUSTC_WRAPPER= cargo fmt --check
 ```
 
 Common local run pattern:
 
 ```bash
 export MARKBASE_BASE_DIR=./notes
-cargo run -- query "author == 'Tom'"
+RUSTC_WRAPPER= cargo run -- query "author == 'Tom'"
 ```
+
+## Local Build Environment
+
+- Repo-local Cargo config sets a shared target directory at `/tmp/markbase-target` so new worktrees can reuse build artifacts.
+- In Codex sandbox runs, invoke Rust commands with `RUSTC_WRAPPER=` in the same command to bypass host-level `sccache` configuration that may fail inside the sandbox.
+- If a command needs extra environment variables, keep `RUSTC_WRAPPER=` in that same invocation, for example `MARKBASE_BASE_DIR=./notes RUSTC_WRAPPER= cargo run -- query "author == 'Tom'"`.
 
 ## Read First
 
