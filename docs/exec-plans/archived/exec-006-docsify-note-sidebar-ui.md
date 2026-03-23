@@ -1,14 +1,14 @@
 ---
 id: exec-006
 title: "Docsify Note Sidebar UI"
-status: active
+status: completed
 design-doc: design-014
 parallel_safe_verified: false
 ---
 
 ## Goal
 
-按 [design-014-docsify-note-sidebar-ui.md](../../design-docs/candidate/design-014-docsify-note-sidebar-ui.md)
+按 [design-014-docsify-note-sidebar-ui.md](../../design-docs/implemented/design-014-docsify-note-sidebar-ui.md)
 为 markbase 的 docsify shell 交付第一版 note metadata sidebar UI，并把这次已暴露的
 前端路由边界明确收口：
 
@@ -28,15 +28,15 @@ parallel_safe_verified: false
 
 ### Phase 1: Route Eligibility And Fetch Lifecycle
 
-- [ ] task-0022: 建立 docsify metadata sidebar 的 route eligibility、metadata request 构造、`?id=...` 锚点忽略、error/loading state 与 stale-response 防护
+- [x] task-0027: 建立 docsify metadata sidebar 的 route eligibility、metadata request 构造、`?id=...` 锚点忽略、error/loading state 与 stale-response 防护
 
 ### Phase 2: Sidebar Rendering And Layout
 
-- [ ] task-0023: 实现 `Properties` / `Links` 的 semantic rendering、desktop/mobile layout 与最小可用样式
+- [x] task-0023: 实现 `Properties` / `Links` 的 semantic rendering、desktop/mobile layout 与最小可用样式
 
 ### Phase 3: Documentation Closure And Acceptance
 
-- [ ] task-0024: 收口 README / ARCHITECTURE / AGENTS / browser acceptance，并把最终 sidebar contract 固定下来
+- [x] task-0024: 收口 README / ARCHITECTURE / AGENTS / browser acceptance，并把最终 sidebar contract 固定下来
 
 ## Execution Mode
 
@@ -44,13 +44,13 @@ parallel_safe_verified: false
 
 原因：
 
-- `task-0022` 负责修正这次 bug 暴露出的根问题，也就是 docsify route state 与后端 metadata route contract 的边界；不先收敛这层，后续 UI 只会建立在错误的 fetch 行为之上
+- `task-0027` 负责修正这次 bug 暴露出的根问题，也就是 docsify route state 与后端 metadata route contract 的边界；不先收敛这层，后续 UI 只会建立在错误的 fetch 行为之上
 - `task-0023` 的渲染和布局必须建立在稳定的 sidebar state machine 之上，否则会把 route eligibility、loading、error 和 stale-response 逻辑散落到视觉层
 - `task-0024` 负责把最终实现反写到 README、ARCHITECTURE 与 AGENTS，并完成最终验收；必须等前两阶段的行为收敛后再锁定
 
 ## Dependencies
 
-task-0022 -> task-0023 -> task-0024
+task-0027 -> task-0023 -> task-0024
 
 ## Decision Log
 
@@ -83,6 +83,9 @@ task-0022 -> task-0023 -> task-0024
 ## Progress Notes
 
 - 2026-03-23: 建立 `exec-006` 初稿，按 route lifecycle -> rendering/layout -> docs/acceptance 三阶段拆分 sidebar UI 交付
+- 2026-03-23: 完成 `task-0027`，为 docsify shell 增加 metadata sidebar route eligibility、fixed metadata request shape、same-note TOC anchor 忽略与 stale-response 防护
+- 2026-03-23: 完成 `task-0023`，交付 sidebar rendering/layout、独立 sidebar 模板资产，并将 `design-014` 迁移为 implemented
+- 2026-03-23: 完成 `task-0024`，收口 README、ARCHITECTURE、AGENTS 与 browser acceptance，执行计划归档
 
 ## Definition of Done
 

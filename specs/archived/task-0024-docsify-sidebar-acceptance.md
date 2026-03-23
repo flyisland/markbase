@@ -1,7 +1,7 @@
 ---
 id: task-0024
 title: "收口 docsify sidebar 文档与验收"
-status: draft
+status: completed
 design: design-014
 exec-plan: exec-006
 phase: 3
@@ -10,7 +10,7 @@ boundaries:
     - "AGENTS.md"
     - "README.md"
     - "ARCHITECTURE.md"
-    - "specs/active/task-0024-docsify-sidebar-acceptance.md"
+    - "specs/archived/task-0024-docsify-sidebar-acceptance.md"
   forbidden_patterns:
     - "specs/**"
     - "src/**"
@@ -50,7 +50,7 @@ completion_criteria:
 - AGENTS.md
 - README.md
 - ARCHITECTURE.md
-- specs/active/task-0024-docsify-sidebar-acceptance.md
+- specs/archived/task-0024-docsify-sidebar-acceptance.md
 
 ### Forbidden
 

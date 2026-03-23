@@ -1,0 +1,316 @@
+            function ensureDocsifySidebarContainer() {
+              const content = document.querySelector("section.content");
+              if (!content) return null;
+
+              let page = content.querySelector(".mb-note-page");
+              if (!page) {
+                page = document.createElement("div");
+                page.className = "mb-note-page";
+
+                const markdownSection = content.querySelector(".markdown-section");
+                if (markdownSection) {
+                  content.insertBefore(page, markdownSection);
+                  page.appendChild(markdownSection);
+                } else {
+                  const footer = content.querySelector(".mb-shell-footer");
+                  if (footer) {
+                    content.insertBefore(page, footer);
+                  } else {
+                    content.appendChild(page);
+                  }
+                }
+              }
+
+              const markdownSection = content.querySelector(".markdown-section");
+              if (markdownSection && markdownSection.parentElement !== page) {
+                page.insertBefore(markdownSection, page.firstChild);
+              }
+
+              let sidebar = page.querySelector(".mb-note-sidebar");
+              if (!sidebar) {
+                sidebar = document.createElement("aside");
+                sidebar.className = "mb-note-sidebar";
+                sidebar.hidden = true;
+                sidebar.setAttribute("aria-live", "polite");
+
+                const body = document.createElement("div");
+                body.className = "mb-note-sidebar-body";
+                sidebar.appendChild(body);
+
+                page.appendChild(sidebar);
+              }
+
+              return sidebar;
+            }
+
+            function sidebarSectionCard(title, bodyContent) {
+              const card = document.createElement("section");
+              card.className = "mb-note-sidebar-card";
+
+              const header = document.createElement("header");
+              header.className = "mb-note-sidebar-card-header";
+
+              const heading = document.createElement("h2");
+              heading.textContent = title;
+              header.appendChild(heading);
+
+              const body = document.createElement("div");
+              body.className = "mb-note-sidebar-card-body";
+
+              if (bodyContent) {
+                body.appendChild(bodyContent);
+              }
+
+              card.appendChild(header);
+              card.appendChild(body);
+              return card;
+            }
+
+            function sidebarEmptyState(message) {
+              const empty = document.createElement("p");
+              empty.className = "mb-note-sidebar-empty";
+              empty.textContent = message;
+              return empty;
+            }
+
+            function schemaHint(label, kind) {
+              const hint = document.createElement("span");
+              hint.className = "mb-sidebar-schema-hint";
+              hint.dataset.hintKind = kind;
+              hint.textContent = label;
+              return hint;
+            }
+
+            function renderSchemaHints(schema) {
+              if (!schema) return null;
+
+              const hints = document.createElement("div");
+              hints.className = "mb-sidebar-schema-hints";
+
+              if (schema.required) {
+                hints.appendChild(schemaHint("required", "required"));
+              }
+              if (schema.type) {
+                hints.appendChild(schemaHint(schema.type, "type"));
+              }
+              if (schema.format) {
+                hints.appendChild(schemaHint(schema.format, "format"));
+              }
+
+              return hints.childNodes.length > 0 ? hints : null;
+            }
+
+            function renderRichTextSegments(segments) {
+              const container = document.createElement("span");
+              container.className = "mb-sidebar-rich-text";
+
+              (segments || []).forEach(function (segment) {
+                if (!segment || !segment.type) return;
+
+                if (segment.type === "text") {
+                  container.appendChild(document.createTextNode(segment.text || ""));
+                  return;
+                }
+
+                if (segment.type === "wikilink") {
+                  if (segment.exists && segment.href) {
+                    const link = document.createElement("a");
+                    link.className = "mb-sidebar-link";
+                    link.href = segment.href;
+                    link.textContent = segment.text || segment.target || "";
+                    container.appendChild(link);
+                    return;
+                  }
+
+                  const unresolved = document.createElement("span");
+                  unresolved.className = "mb-sidebar-unresolved";
+                  unresolved.textContent = segment.text || segment.target || "";
+                  container.appendChild(unresolved);
+                }
+              });
+
+              return container;
+            }
+
+            function renderSidebarValueNode(node) {
+              if (!node || !node.kind) {
+                return sidebarEmptyState("No value");
+              }
+
+              if (node.kind === "null") {
+                const empty = document.createElement("span");
+                empty.className = "mb-sidebar-placeholder";
+                empty.textContent = "null";
+                return empty;
+              }
+
+              if (node.kind === "scalar") {
+                const scalar = document.createElement("span");
+                scalar.textContent =
+                  node.value === null || node.value === undefined
+                    ? ""
+                    : String(node.value);
+                return scalar;
+              }
+
+              if (node.kind === "rich_text") {
+                return renderRichTextSegments(node.segments);
+              }
+
+              if (node.kind === "list") {
+                const list = document.createElement("ul");
+                list.className = "mb-sidebar-list-value";
+
+                (node.items || []).forEach(function (item) {
+                  const entry = document.createElement("li");
+                  entry.appendChild(renderSidebarValueNode(item));
+                  list.appendChild(entry);
+                });
+
+                return list;
+              }
+
+              if (node.kind === "object") {
+                const object = document.createElement("div");
+                object.className = "mb-sidebar-object-fields";
+
+                (node.fields || []).forEach(function (field) {
+                  const row = document.createElement("div");
+                  row.className = "mb-sidebar-property";
+
+                  const header = document.createElement("div");
+                  header.className = "mb-sidebar-property-header";
+
+                  const key = document.createElement("span");
+                  key.className = "mb-sidebar-property-key";
+                  key.textContent = field.key || "";
+                  header.appendChild(key);
+
+                  const value = document.createElement("div");
+                  value.className = "mb-sidebar-object-value";
+                  value.appendChild(renderSidebarValueNode(field.value));
+
+                  row.appendChild(header);
+                  row.appendChild(value);
+                  object.appendChild(row);
+                });
+
+                return object;
+              }
+
+              return sidebarEmptyState("Unsupported value");
+            }
+
+            function renderPropertiesSection(properties) {
+              const fields = properties && Array.isArray(properties.fields) ? properties.fields : [];
+              if (fields.length === 0) {
+                return sidebarSectionCard("Properties", sidebarEmptyState("No properties"));
+              }
+
+              const container = document.createElement("div");
+              container.className = "mb-sidebar-properties";
+
+              fields.forEach(function (field) {
+                const row = document.createElement("div");
+                row.className = "mb-sidebar-property";
+
+                const header = document.createElement("div");
+                header.className = "mb-sidebar-property-header";
+
+                const key = document.createElement("span");
+                key.className = "mb-sidebar-property-key";
+                key.textContent = field.key || "";
+                header.appendChild(key);
+
+                const hints = renderSchemaHints(field.schema);
+                if (hints) {
+                  header.appendChild(hints);
+                }
+
+                const value = document.createElement("div");
+                value.className = "mb-sidebar-property-value";
+                value.appendChild(renderSidebarValueNode(field.value));
+
+                row.appendChild(header);
+                row.appendChild(value);
+                container.appendChild(row);
+              });
+
+              return sidebarSectionCard("Properties", container);
+            }
+
+            function renderLinkRow(entry) {
+              const row = document.createElement("li");
+              row.className = "mb-sidebar-links-row";
+
+              const kind = document.createElement("span");
+              kind.className = "mb-sidebar-link-kind";
+              kind.textContent = entry.kind || "link";
+              row.appendChild(kind);
+
+              if (entry.exists && entry.href) {
+                const link = document.createElement("a");
+                link.className = "mb-sidebar-link-label";
+                link.href = entry.href;
+                link.textContent = entry.target || "";
+                row.appendChild(link);
+              } else {
+                const unresolved = document.createElement("span");
+                unresolved.className = "mb-sidebar-unresolved mb-sidebar-link-label";
+                unresolved.textContent = entry.target || "";
+                row.appendChild(unresolved);
+              }
+
+              return row;
+            }
+
+            function renderLinksSection(links) {
+              const entries = Array.isArray(links) ? links : [];
+              if (entries.length === 0) {
+                return sidebarSectionCard("Links", sidebarEmptyState("No links"));
+              }
+
+              const list = document.createElement("ul");
+              list.className = "mb-sidebar-links-list";
+              entries.forEach(function (entry) {
+                list.appendChild(renderLinkRow(entry));
+              });
+
+              return sidebarSectionCard("Links", list);
+            }
+
+            function renderSidebarStateMessage(status, message) {
+              const state = document.createElement("div");
+              state.className = "mb-note-sidebar-state";
+              state.textContent = message;
+              state.dataset.stateKind = status;
+              return state;
+            }
+
+            function renderDocsifySidebar(status, message) {
+              const sidebar = ensureDocsifySidebarContainer();
+              if (!sidebar) return;
+              const body = sidebar.querySelector(".mb-note-sidebar-body");
+              if (!body) return;
+
+              sidebar.dataset.sidebarState = status;
+              sidebar.setAttribute("aria-busy", status === "loading" ? "true" : "false");
+
+              if (status === "hidden") {
+                sidebar.hidden = true;
+                body.replaceChildren();
+                return;
+              }
+
+              sidebar.hidden = false;
+              body.replaceChildren();
+
+              if (status === "loading" || status === "error") {
+                body.appendChild(renderSidebarStateMessage(status, message || ""));
+                return;
+              }
+
+              const metadata = docsifySidebarState().metadata || {};
+              body.appendChild(renderPropertiesSection(metadata.properties));
+              body.appendChild(renderLinksSection(metadata.links));
+            }

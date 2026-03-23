@@ -64,6 +64,7 @@
 
             const foldMarkerSvg =
               '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6.75L15 12l-6 5.25"></path></svg>';
+            const sidebarMetadataFields = "properties,links";
 
             function defaultTitleForCallout(calloutType) {
               const knownTitle = defaultCalloutTitles[calloutType];
@@ -305,11 +306,168 @@
               return route ? route.pathname : null;
             }
 
+            function eligibleMetadataRoutePath(route) {
+              if (!route) return null;
+
+              const pathname = route.pathname;
+              if (!pathname || !pathname.endsWith(".md")) return null;
+
+              return pathname;
+            }
+
             function normalizeDocsifyDocumentPath(pathname) {
               if (!pathname) return null;
               if (pathname.endsWith(".md")) return pathname.slice(0, -3);
               if (pathname.endsWith(".base")) return pathname.slice(0, -5);
               return pathname;
+            }
+
+            function buildMetadataRequestPath(notePath) {
+              return notePath + "?fields=" + sidebarMetadataFields;
+            }
+
+            function docsifySidebarState() {
+              if (!window.__markbaseDocsifySidebarState) {
+                window.__markbaseDocsifySidebarState = {
+                  notePath: null,
+                  requestId: 0,
+                  activeRequestId: 0,
+                  metadata: null,
+                  error: null,
+                  abortController: null,
+                };
+              }
+
+              return window.__markbaseDocsifySidebarState;
+            }
+
+            function ensureDocsifySidebarContainer() {
+              const content = document.querySelector("section.content");
+              if (!content) return null;
+
+              let sidebar = content.querySelector(".mb-note-sidebar");
+              if (!sidebar) {
+                sidebar = document.createElement("aside");
+                sidebar.className = "mb-note-sidebar";
+                sidebar.hidden = true;
+                sidebar.setAttribute("aria-live", "polite");
+
+                const body = document.createElement("div");
+                body.className = "mb-note-sidebar-body";
+                sidebar.appendChild(body);
+
+                const footer = content.querySelector(".mb-shell-footer");
+                if (footer) {
+                  content.insertBefore(sidebar, footer);
+                } else {
+                  content.appendChild(sidebar);
+                }
+              }
+
+              return sidebar;
+            }
+
+            function renderDocsifySidebar(status, message) {
+              const sidebar = ensureDocsifySidebarContainer();
+              if (!sidebar) return;
+
+              const body = sidebar.querySelector(".mb-note-sidebar-body");
+              if (!body) return;
+
+              sidebar.dataset.sidebarState = status;
+              sidebar.setAttribute("aria-busy", status === "loading" ? "true" : "false");
+
+              if (status === "hidden") {
+                sidebar.hidden = true;
+                body.textContent = "";
+                return;
+              }
+
+              sidebar.hidden = false;
+              body.textContent = message || "";
+            }
+
+            function clearDocsifySidebarRequest() {
+              const state = docsifySidebarState();
+              if (state.abortController) {
+                state.abortController.abort();
+                state.abortController = null;
+              }
+            }
+
+            function shouldIgnoreSidebarResponse(notePath, requestId) {
+              const state = docsifySidebarState();
+              return state.notePath !== notePath || state.activeRequestId !== requestId;
+            }
+
+            function startDocsifySidebarMetadataRequest(notePath) {
+              const state = docsifySidebarState();
+              clearDocsifySidebarRequest();
+
+              state.requestId += 1;
+              state.activeRequestId = state.requestId;
+              state.error = null;
+              state.metadata = null;
+
+              let abortController = null;
+              if (typeof AbortController === "function") {
+                abortController = new AbortController();
+                state.abortController = abortController;
+              }
+
+              const requestId = state.activeRequestId;
+              const requestPath = buildMetadataRequestPath(notePath);
+              const requestOptions = abortController ? { signal: abortController.signal } : {};
+
+              renderDocsifySidebar("loading", "Loading metadata...");
+
+              fetch(requestPath, requestOptions)
+                .then(function (response) {
+                  if (!response.ok) {
+                    throw new Error(
+                      "metadata request failed with status " + response.status
+                    );
+                  }
+
+                  return response.json();
+                })
+                .then(function (metadata) {
+                  if (shouldIgnoreSidebarResponse(notePath, requestId)) return;
+
+                  const currentState = docsifySidebarState();
+                  currentState.abortController = null;
+                  currentState.metadata = metadata;
+                  renderDocsifySidebar("ready", "");
+                })
+                .catch(function (error) {
+                  if (abortController && error && error.name === "AbortError") return;
+                  if (shouldIgnoreSidebarResponse(notePath, requestId)) return;
+
+                  const currentState = docsifySidebarState();
+                  currentState.abortController = null;
+                  currentState.error = error;
+                  renderDocsifySidebar("error", "Metadata unavailable.");
+                });
+            }
+
+            function syncDocsifySidebarForCurrentRoute() {
+              const state = docsifySidebarState();
+              const route = parseDocsifyRouteHref(window.location.hash || "");
+              const notePath = eligibleMetadataRoutePath(route);
+
+              if (!notePath) {
+                clearDocsifySidebarRequest();
+                state.notePath = null;
+                state.metadata = null;
+                state.error = null;
+                renderDocsifySidebar("hidden", "");
+                return;
+              }
+
+              if (state.notePath === notePath) return;
+
+              state.notePath = notePath;
+              startDocsifySidebarMetadataRequest(notePath);
             }
 
             function scrollToDocsifySectionAnchor(anchorId) {
@@ -327,7 +485,7 @@
               if (event.button !== 0) return;
               if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
 
-              const link = event.target.closest("a.section-link[href]");
+              const link = event.target.closest(".sidebar a[href], a.section-link[href]");
               if (!link) return;
 
               const route = parseDocsifyRouteHref(link.getAttribute("href"));
@@ -397,6 +555,14 @@
               document.addEventListener("click", handleDocsifySectionLinkClick, true);
             }
 
+            if (!window.__markbaseDocsifySidebarHashchangeHandlerInstalled) {
+              window.__markbaseDocsifySidebarHashchangeHandlerInstalled = true;
+              window.addEventListener("hashchange", function () {
+                syncDocsifySidebarForCurrentRoute();
+              });
+            }
+
             hook.doneEach(function () {
               normalizeDocsifyDom();
+              syncDocsifySidebarForCurrentRoute();
             });

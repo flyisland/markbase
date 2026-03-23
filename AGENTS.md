@@ -43,6 +43,7 @@ Before making non-trivial changes, read these in order:
 - `docs/design-docs/implemented/design-011-note-creation.md`: active `note new` command contract
 - `docs/design-docs/implemented/design-003-web-note-view.md`: active web note view contract
 - `docs/design-docs/implemented/design-013-web-note-metadata-mode.md`: active web note metadata route and JSON contract
+- `docs/design-docs/implemented/design-014-docsify-note-sidebar-ui.md`: active docsify note metadata sidebar UI contract
 - `docs/design-docs/implemented/design-001-links-and-embeds.md`: link, embed, backlink, and rename semantics
 - `docs/design-docs/implemented/design-002-render.md`: active render contract
 - `docs/design-docs/implemented/design-006-template-system.md`: active template subsystem behavior
@@ -60,7 +61,7 @@ Prefer active managed docs before legacy references.
 - Note resolve: `docs/design-docs/implemented/design-008-note-resolve.md`
 - Note verify: `docs/design-docs/implemented/design-004-note-verify.md`, then `docs/design-docs/implemented/design-006-template-system.md`
 - Note render: `docs/design-docs/implemented/design-002-render.md`, then `docs/design-docs/implemented/design-001-links-and-embeds.md`
-- Web note view: `docs/design-docs/implemented/design-003-web-note-view.md`, then `docs/design-docs/implemented/design-013-web-note-metadata-mode.md`, then `docs/design-docs/implemented/design-002-render.md`, then `docs/design-docs/implemented/design-001-links-and-embeds.md`
+- Web note view: `docs/design-docs/implemented/design-003-web-note-view.md`, then `docs/design-docs/implemented/design-013-web-note-metadata-mode.md`, then `docs/design-docs/implemented/design-014-docsify-note-sidebar-ui.md`, then `docs/design-docs/implemented/design-002-render.md`, then `docs/design-docs/implemented/design-001-links-and-embeds.md`
 - Index traversal, collisions, and ignore behavior: `docs/design-docs/implemented/design-005-indexing.md`
 - Template normalization and describe output: `docs/design-docs/implemented/design-006-template-system.md`
 - Documentation-system rules: `docs/design-docs/implemented/design-009-document-system.md`

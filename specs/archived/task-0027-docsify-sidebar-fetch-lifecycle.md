@@ -1,7 +1,7 @@
 ---
-id: task-0022
+id: task-0027
 title: "实现 docsify sidebar 路由与请求生命周期"
-status: active
+status: completed
 design: design-014
 exec-plan: exec-006
 phase: 1
@@ -9,7 +9,7 @@ boundaries:
   allowed:
     - "src/web/templates/docsify_shell.js"
     - "tests/cli_web.rs"
-    - "specs/active/task-0022-docsify-sidebar-fetch-lifecycle.md"
+    - "specs/archived/task-0027-docsify-sidebar-fetch-lifecycle.md"
   forbidden_patterns:
     - "specs/**"
     - "src/renderer/**"
@@ -62,7 +62,7 @@ completion_criteria:
 
 - src/web/templates/docsify_shell.js
 - tests/cli_web.rs
-- specs/active/task-0022-docsify-sidebar-fetch-lifecycle.md
+- specs/archived/task-0027-docsify-sidebar-fetch-lifecycle.md
 
 ### Forbidden
 

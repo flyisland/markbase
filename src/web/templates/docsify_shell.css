@@ -209,6 +209,237 @@ section.content {
   min-height: 100vh;
 }
 
+.mb-note-page {
+  display: flex;
+  align-items: flex-start;
+  gap: 2rem;
+  width: min(1200px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 1.5rem 0 0;
+}
+
+.mb-note-page > .markdown-section {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  max-width: none;
+}
+
+.mb-note-sidebar {
+  flex: 0 0 320px;
+  width: 320px;
+  max-width: 100%;
+  align-self: stretch;
+}
+
+.mb-note-sidebar[hidden] {
+  display: none;
+}
+
+.mb-note-sidebar-body {
+  position: sticky;
+  top: 1.5rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.mb-note-sidebar-card,
+.mb-note-sidebar-state {
+  border: 1px solid #d9e2ec;
+  border-radius: 0.85rem;
+  background: #f8fbff;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.06);
+}
+
+.mb-note-sidebar-state {
+  color: #486581;
+  padding: 0.95rem 1rem;
+  font-size: 0.95rem;
+}
+
+.mb-note-sidebar[data-sidebar-state="error"] .mb-note-sidebar-state {
+  border-color: #f7c5cc;
+  background: #fff5f6;
+  color: #b42318;
+}
+
+.mb-note-sidebar[data-sidebar-state="loading"] .mb-note-sidebar-state {
+  border-style: dashed;
+}
+
+.mb-note-sidebar-card {
+  overflow: hidden;
+}
+
+.mb-note-sidebar-card-header {
+  padding: 0.8rem 1rem;
+  border-bottom: 1px solid #e6edf5;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.mb-note-sidebar-card-header h2 {
+  margin: 0;
+  color: #243b53;
+  font-size: 0.9rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.mb-note-sidebar-card-body {
+  padding: 0.9rem 1rem 1rem;
+}
+
+.mb-note-sidebar-empty {
+  color: #7b8794;
+  font-size: 0.95rem;
+}
+
+.mb-sidebar-properties {
+  display: grid;
+  gap: 0.95rem;
+}
+
+.mb-sidebar-property {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.mb-sidebar-property-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.mb-sidebar-property-key {
+  color: #102a43;
+  font-size: 0.95rem;
+  font-weight: 700;
+  word-break: break-word;
+}
+
+.mb-sidebar-schema-hints {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.mb-sidebar-schema-hint {
+  border-radius: 999px;
+  background: #e6edf5;
+  color: #486581;
+  padding: 0.12rem 0.48rem;
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.mb-sidebar-schema-hint[data-hint-kind="required"] {
+  background: #fff7d6;
+  color: #8d6b0b;
+}
+
+.mb-sidebar-property-value,
+.mb-sidebar-object-value,
+.mb-sidebar-list-value {
+  color: #243b53;
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+.mb-sidebar-placeholder {
+  color: #7b8794;
+  font-style: italic;
+}
+
+.mb-sidebar-rich-text {
+  word-break: break-word;
+}
+
+.mb-sidebar-link,
+.mb-sidebar-links-list a {
+  color: #0b69a3;
+  text-decoration: none;
+}
+
+.mb-sidebar-link:hover,
+.mb-sidebar-links-list a:hover {
+  text-decoration: underline;
+}
+
+.mb-sidebar-unresolved {
+  color: #9f1239;
+  text-decoration: underline dotted;
+  text-underline-offset: 0.15em;
+}
+
+.mb-sidebar-unresolved::after {
+  content: " unresolved";
+  margin-left: 0.3rem;
+  border-radius: 999px;
+  background: #fff1f2;
+  color: #9f1239;
+  padding: 0.08rem 0.45rem;
+  font-size: 0.7rem;
+  text-decoration: none;
+  vertical-align: middle;
+}
+
+.mb-sidebar-list-value,
+.mb-sidebar-links-list,
+.mb-sidebar-object-fields {
+  display: grid;
+  gap: 0.45rem;
+  padding-left: 1rem;
+  margin: 0;
+}
+
+.mb-sidebar-list-value {
+  list-style: disc;
+}
+
+.mb-sidebar-links-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.mb-sidebar-links-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.45rem;
+  color: #243b53;
+}
+
+.mb-sidebar-link-kind {
+  border-radius: 999px;
+  background: #eef2f6;
+  color: #52606d;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.72rem;
+  text-transform: lowercase;
+}
+
+.mb-sidebar-link-label {
+  word-break: break-word;
+}
+
+@media (max-width: 960px) {
+  .mb-note-page {
+    flex-direction: column;
+    gap: 1.5rem;
+    width: min(100%, calc(100% - 1.5rem));
+  }
+
+  .mb-note-sidebar {
+    width: 100%;
+    flex-basis: auto;
+  }
+
+  .mb-note-sidebar-body {
+    position: static;
+  }
+}
+
 .markdown-section {
   flex: 1 0 auto;
 }

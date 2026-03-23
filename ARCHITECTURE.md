@@ -105,7 +105,7 @@ This layer exists so user query ergonomics can evolve without leaking raw schema
 - Web `.base` routes return translated Markdown bodies; binary resource routes return raw bytes with a derived content type.
 - Metadata generation in `src/web/` reuses `src/link_syntax.rs` for frontmatter wiki-link parsing and `src/template.rs` for template-aware property enrichment rather than introducing browser-only parsers.
 - `src/web/` owns docsify entry HTML generation for the supported browser entrypoint at `/` and `base-dir/index.html`.
-- The generated docsify entry HTML owns frontend-only internal-link adaptation, resource URL normalization, callout UI upgrades including multiline body preservation, and embedded metadata such as the generating `markbase` version, homepage, and git commit/time; the backend web contract remains Markdown, metadata JSON, and resource bytes rather than callout-specific HTML.
+- The generated docsify entry HTML owns frontend-only internal-link adaptation, resource URL normalization, callout UI upgrades, note-only metadata sidebar rendering for eligible `.md` routes, and embedded metadata such as the generating `markbase` version, homepage, and git commit/time; the backend web contract remains Markdown, metadata JSON, and resource bytes rather than callout-specific HTML.
 - `web serve` is the user-facing browser surface. Without `--homepage` it only reuses exported `base-dir/index.html`; with `--homepage` it resolves that input to an existing `.md` or `.base` target and dynamically renders the same browser entry HTML at runtime. `web init-docsify` remains the non-required export/debug tool and `web get` remains the entry-HTML-independent inspection command.
 
 ## 5. Core Invariants

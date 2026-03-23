@@ -407,9 +407,9 @@ It opens a separate frontend problem space that includes:
 - docsify entry HTML installation and ownership
 - homepage configuration
 - internal route adaptation
-- future callout styling
+- callout styling
 - future Mermaid integration
-- future sidebar, search, and theme decisions
+- sidebar, search, and theme decisions
 
 These concerns are broader than a small patch to `design-003`, so they should
 be tracked as their own design document.
@@ -439,9 +439,9 @@ installation work.
 The generated docsify entry HTML is also the right place to host future
 presentation-only behaviors, for example:
 
-- callout styling for `> [!info]` and related blocks
 - Mermaid rendering for preserved fenced code blocks
-- optional sidebar loading
+- richer sidebar behaviors beyond the note metadata sidebar defined in
+  `design-014`
 - optional search integration
 - theme customization
 

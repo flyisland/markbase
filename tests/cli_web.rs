@@ -1301,7 +1301,9 @@ fn test_web_init_docsify_plugin_intercepts_same_page_section_links() {
     assert!(html.contains("function normalizeDocsifyDocumentPath(pathname) {"));
     assert!(html.contains("function scrollToDocsifySectionAnchor(anchorId) {"));
     assert!(html.contains("function handleDocsifySectionLinkClick(event) {"));
-    assert!(html.contains("const link = event.target.closest(\"a.section-link[href]\");"));
+    assert!(html.contains(
+        "const link = event.target.closest(\".sidebar a[href], a.section-link[href]\");"
+    ));
     assert!(html.contains("const anchorId = route.searchParams.get(\"id\");"));
     assert!(html.contains("const targetPath = normalizeDocsifyDocumentPath(route.pathname);"));
     assert!(
@@ -1312,6 +1314,94 @@ fn test_web_init_docsify_plugin_intercepts_same_page_section_links() {
     assert!(
         html.contains("document.addEventListener(\"click\", handleDocsifySectionLinkClick, true);")
     );
+}
+
+#[test]
+fn test_web_init_docsify_sidebar_only_targets_markdown_note_routes() {
+    let vault = TestVault::new();
+    create_home_note(&vault);
+    assert_cli_success(&vault.web_init_docsify("HOME"));
+
+    let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
+    assert!(html.contains("function eligibleMetadataRoutePath(route) {"));
+    assert!(html.contains("if (!pathname || !pathname.endsWith(\".md\")) return null;"));
+    assert!(html.contains("renderDocsifySidebar(\"hidden\", \"\");"));
+}
+
+#[test]
+fn test_web_init_docsify_sidebar_metadata_request_uses_canonical_note_path_only() {
+    let vault = TestVault::new();
+    create_home_note(&vault);
+    assert_cli_success(&vault.web_init_docsify("HOME"));
+
+    let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
+    assert!(html.contains("const sidebarMetadataFields = \"properties,links\";"));
+    assert!(html.contains("function buildMetadataRequestPath(notePath) {"));
+    assert!(html.contains("return notePath + \"?fields=\" + sidebarMetadataFields;"));
+    assert!(html.contains("const requestPath = buildMetadataRequestPath(notePath);"));
+    assert!(!html.contains("fetch(window.location.hash"));
+    assert!(!html.contains("fields=properties%2Clinks"));
+}
+
+#[test]
+fn test_web_init_docsify_sidebar_ignores_same_note_section_anchor_navigation() {
+    let vault = TestVault::new();
+    create_home_note(&vault);
+    assert_cli_success(&vault.web_init_docsify("HOME"));
+
+    let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
+    assert!(html.contains(
+        "const link = event.target.closest(\".sidebar a[href], a.section-link[href]\");"
+    ));
+    assert!(html.contains("const anchorId = route.searchParams.get(\"id\");"));
+    assert!(html.contains("const targetPath = normalizeDocsifyDocumentPath(route.pathname);"));
+    assert!(
+        html.contains("if (!currentPath || !targetPath || targetPath !== currentPath) return;")
+    );
+    assert!(html.contains("event.stopImmediatePropagation();"));
+}
+
+#[test]
+fn test_web_init_docsify_sidebar_skips_unsupported_routes_without_metadata_errors() {
+    let vault = TestVault::new();
+    create_home_note(&vault);
+    assert_cli_success(&vault.web_init_docsify("HOME"));
+
+    let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
+    assert!(html.contains("const notePath = eligibleMetadataRoutePath(route);"));
+    assert!(html.contains("if (!notePath) {"));
+    assert!(html.contains("clearDocsifySidebarRequest();"));
+    assert!(html.contains("renderDocsifySidebar(\"hidden\", \"\");"));
+}
+
+#[test]
+fn test_web_init_docsify_sidebar_prevents_stale_response_overwrite() {
+    let vault = TestVault::new();
+    create_home_note(&vault);
+    assert_cli_success(&vault.web_init_docsify("HOME"));
+
+    let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
+    assert!(html.contains("function shouldIgnoreSidebarResponse(notePath, requestId) {"));
+    assert!(
+        html.contains("return state.notePath !== notePath || state.activeRequestId !== requestId;")
+    );
+    assert!(html.contains("if (shouldIgnoreSidebarResponse(notePath, requestId)) return;"));
+    assert!(html.contains("state.requestId += 1;"));
+    assert!(html.contains("state.activeRequestId = state.requestId;"));
+}
+
+#[test]
+fn test_web_init_docsify_sidebar_metadata_failure_does_not_block_note_body() {
+    let vault = TestVault::new();
+    create_home_note(&vault);
+    assert_cli_success(&vault.web_init_docsify("HOME"));
+
+    let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
+    assert!(html.contains("renderDocsifySidebar(\"loading\", \"Loading metadata...\");"));
+    assert!(html.contains("renderDocsifySidebar(\"error\", \"Metadata unavailable.\");"));
+    assert!(html.contains("fetch(requestPath, requestOptions)"));
+    assert!(html.contains("hook.doneEach(function () {"));
+    assert!(html.contains("normalizeDocsifyDom();"));
 }
 
 #[test]

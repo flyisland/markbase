@@ -19,6 +19,7 @@ pub const DEFAULT_CACHE_CONTROL: &str = "no-store, no-cache, must-revalidate";
 const DOCSIFY_INDEX_TEMPLATE: &str = include_str!("templates/docsify_index.html");
 const DOCSIFY_SHELL_STYLE: &str = include_str!("templates/docsify_shell.css");
 const DOCSIFY_SHELL_SCRIPT: &str = include_str!("templates/docsify_shell.js");
+const DOCSIFY_SIDEBAR_SCRIPT: &str = include_str!("templates/docsify_sidebar.js");
 const MARKBASE_BUILD_VERSION: &str = env!("MARKBASE_BUILD_VERSION");
 const MARKBASE_GIT_COMMIT: &str = env!("MARKBASE_GIT_COMMIT");
 const MARKBASE_GIT_COMMIT_TIME: &str = env!("MARKBASE_GIT_COMMIT_TIME");
@@ -1554,9 +1555,10 @@ fn render_docsify_index(homepage: &str) -> String {
     let version_html = html_escape(MARKBASE_BUILD_VERSION);
     let commit_html = html_escape(MARKBASE_GIT_COMMIT);
     let commit_time_html = html_escape(MARKBASE_GIT_COMMIT_TIME);
+    let docsify_script = format!("{}\n{}", DOCSIFY_SHELL_SCRIPT, DOCSIFY_SIDEBAR_SCRIPT);
     DOCSIFY_INDEX_TEMPLATE
         .replace("__MARKBASE_DOCSIFY_STYLE__", DOCSIFY_SHELL_STYLE)
-        .replace("__MARKBASE_DOCSIFY_SCRIPT__", DOCSIFY_SHELL_SCRIPT)
+        .replace("__MARKBASE_DOCSIFY_SCRIPT__", &docsify_script)
         .replace("__MARKBASE_DOCSIFY_HOMEPAGE__", &homepage_json)
         .replace("__MARKBASE_DOCSIFY_HOMEPAGE_JSON__", &homepage_json)
         .replace("__MARKBASE_DOCSIFY_HOMEPAGE_HTML__", &homepage_html)

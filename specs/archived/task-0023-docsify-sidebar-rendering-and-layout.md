@@ -1,7 +1,7 @@
 ---
 id: task-0023
 title: "实现 docsify sidebar 渲染与布局"
-status: draft
+status: completed
 design: design-014
 exec-plan: exec-006
 phase: 2
@@ -11,9 +11,8 @@ boundaries:
     - "src/web/templates/docsify_index.html"
     - "src/web/templates/docsify_shell.css"
     - "src/web/templates/docsify_sidebar.js"
-    - "docs/design-docs/candidate/design-014-docsify-note-sidebar-ui.md"
     - "docs/design-docs/implemented/design-014-docsify-note-sidebar-ui.md"
-    - "specs/active/task-0023-docsify-sidebar-rendering-and-layout.md"
+    - "specs/archived/task-0023-docsify-sidebar-rendering-and-layout.md"
     - "tests/cli_docsify.rs"
   forbidden_patterns:
     - "specs/**"
@@ -75,9 +74,8 @@ completion_criteria:
 - src/web/templates/docsify_index.html
 - src/web/templates/docsify_shell.css
 - src/web/templates/docsify_sidebar.js
-- docs/design-docs/candidate/design-014-docsify-note-sidebar-ui.md
 - docs/design-docs/implemented/design-014-docsify-note-sidebar-ui.md
-- specs/active/task-0023-docsify-sidebar-rendering-and-layout.md
+- specs/archived/task-0023-docsify-sidebar-rendering-and-layout.md
 - tests/cli_docsify.rs
 
 ### Forbidden
