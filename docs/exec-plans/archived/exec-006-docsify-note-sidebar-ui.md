@@ -8,7 +8,7 @@ parallel_safe_verified: false
 
 ## Goal
 
-按 [design-014-docsify-note-sidebar-ui.md](../../design-docs/implemented/design-014-docsify-note-sidebar-ui.md)
+按 [design-014-docsify-note-sidebar-ui.md](../../design-docs/candidate/design-014-docsify-note-sidebar-ui.md)
 为 markbase 的 docsify shell 交付第一版 note metadata sidebar UI，并把这次已暴露的
 前端路由边界明确收口：
 
@@ -21,7 +21,7 @@ parallel_safe_verified: false
 这个计划的目标不是笼统地“做个 sidebar”，而是分阶段交付以下能力：
 
 - 先修正 docsify shell 对 route identity、request gating、stale response 与 TOC 锚点跳转的处理
-- 再交付 `Properties` / `Links` 的 sidebar 渲染、responsive layout、最小可用视觉层，以及 `design-014` 的最终实现文档收口
+- 再交付 `Properties` / `Links` 的 sidebar 渲染、responsive layout、最小可用视觉层，并收口 `design-014` 的候选设计文档
 - 最后把 README、ARCHITECTURE、AGENTS 和验收测试一起收口，避免实现与仓库级文档再次漂移
 
 ## Phases
@@ -84,7 +84,7 @@ task-0027 -> task-0023 -> task-0024
 
 - 2026-03-23: 建立 `exec-006` 初稿，按 route lifecycle -> rendering/layout -> docs/acceptance 三阶段拆分 sidebar UI 交付
 - 2026-03-23: 完成 `task-0027`，为 docsify shell 增加 metadata sidebar route eligibility、fixed metadata request shape、same-note TOC anchor 忽略与 stale-response 防护
-- 2026-03-23: 完成 `task-0023`，交付 sidebar rendering/layout、独立 sidebar 模板资产，并将 `design-014` 迁移为 implemented
+- 2026-03-23: 完成 `task-0023`，交付 sidebar rendering/layout、独立 sidebar 模板资产，并收口 `design-014` 候选设计文档内容
 - 2026-03-23: 完成 `task-0024`，收口 README、ARCHITECTURE、AGENTS 与 browser acceptance，执行计划归档
 
 ## Definition of Done
@@ -101,7 +101,7 @@ task-0027 -> task-0023 -> task-0024
 8. resolved frontmatter `wikilink` segment 在 sidebar 中可点击；unresolved segment 维持显式 unresolved 表达且不伪造 href
 9. `Links` section 只依赖 `design-013` 当前已提供的 `target` / `kind` / `href` / `exists` 字段，不假设 alias 或 source attribution
 10. desktop 采用正文 + 右侧 sidebar 的两栏布局，mobile / narrow viewport 下 sidebar 堆叠到正文下方
-11. README、ARCHITECTURE 和最终 design doc 与实现一致，且 `design-014` 生命周期状态完成收口
+11. README、ARCHITECTURE 和 `design-014` 候选设计文档与实现一致
 12. 回归测试覆盖 route eligibility、TOC anchor behavior、sidebar rendering 和核心浏览器验收场景
 13. `cargo test`、`cargo clippy -- -D warnings`、`cargo fmt --check` 通过
 14. `specmate check` 通过

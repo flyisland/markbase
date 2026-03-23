@@ -11,7 +11,7 @@ boundaries:
     - "src/web/templates/docsify_index.html"
     - "src/web/templates/docsify_shell.css"
     - "src/web/templates/docsify_sidebar.js"
-    - "docs/design-docs/implemented/design-014-docsify-note-sidebar-ui.md"
+    - "docs/design-docs/candidate/design-014-docsify-note-sidebar-ui.md"
     - "specs/archived/task-0023-docsify-sidebar-rendering-and-layout.md"
     - "tests/cli_docsify.rs"
   forbidden_patterns:
@@ -41,7 +41,7 @@ completion_criteria:
     scenario: "empty / loading / ready 状态有明确 DOM contract"
     test: "test_web_init_docsify_sidebar_includes_state_dom_contract"
   - id: "cc-007"
-    scenario: "`design-014` 在 sidebar 合同实现后完成内容收口并迁移到 implemented"
+    scenario: "`design-014` 在 sidebar 合同实现后完成内容收口并保持 candidate 状态"
     test: "doc review"
 ---
 
@@ -52,7 +52,7 @@ completion_criteria:
 这个任务负责把已经稳定的 metadata state 渲染为 `Properties` / `Links` UI，并给 note page 提供 responsive sidebar layout。
 
 这个任务不负责改变 route eligibility 或后端 metadata contract。
-实现收口后，本任务同时负责把 `design-014` 的最终实现合同折回正式设计文档并完成生命周期迁移。
+实现收口后，本任务同时负责把 `design-014` 的最终实现合同折回候选设计文档。
 
 ## Decisions
 
@@ -64,7 +64,7 @@ completion_criteria:
 - schema hints 属于次级信息，只允许轻量显示，不得把 sidebar 变成冗长的 schema inspector
 - loading / empty / error / ready state 都需要稳定 DOM contract，便于测试与后续维护
 - renderer / layout 资产应从 shell lifecycle 脚本中分离为独立模板资产；本任务负责其模板装配与样式合同
-- 当 sidebar 合同已经落地时，`design-014` 不应继续停留在 candidate；本任务负责把最终合同写实并迁移到 implemented
+- 当 sidebar 合同已经落地时，`design-014` 仍可继续停留在 candidate；本任务负责把最终合同写实并与实现对齐
 
 ## Boundaries
 
@@ -74,7 +74,7 @@ completion_criteria:
 - src/web/templates/docsify_index.html
 - src/web/templates/docsify_shell.css
 - src/web/templates/docsify_sidebar.js
-- docs/design-docs/implemented/design-014-docsify-note-sidebar-ui.md
+- docs/design-docs/candidate/design-014-docsify-note-sidebar-ui.md
 - specs/archived/task-0023-docsify-sidebar-rendering-and-layout.md
 - tests/cli_docsify.rs
 
@@ -131,9 +131,10 @@ completion_criteria:
 那么 每种状态都有稳定、可识别的 DOM 表达
 并且 不会把 empty 与 error 混为同一种模糊状态
 
-场景: `design-014` 在 sidebar 合同实现后完成内容收口并迁移到 implemented
+场景: `design-014` 在 sidebar 合同实现后完成内容收口并保持 candidate 状态
 测试: doc review
 假设 sidebar route lifecycle、rendering 与 layout 合同都已实现
 当   检查设计文档目录与 `design-014` 内容
-那么 `design-014` 已迁移到 `docs/design-docs/implemented/`
+那么 `design-014` 位于 `docs/design-docs/candidate/`
+并且 frontmatter `status` 为 `candidate`
 并且 文档反映最终的 note-only sidebar、route eligibility、TOC anchor handling 与 rendering contract

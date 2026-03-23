@@ -1,7 +1,7 @@
 ---
 id: design-014
 title: "Docsify Note Sidebar UI"
-status: implemented
+status: candidate
 module: web-frontend
 ---
 

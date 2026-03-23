@@ -19,7 +19,7 @@ completion_criteria:
     scenario: "README 与 ARCHITECTURE 记录 sidebar 的 note-only 适用范围与 frontend ownership"
     test: "doc review"
   - id: "cc-002"
-    scenario: "AGENTS.md 的阅读导航在 `design-014` implemented 后保持正确"
+    scenario: "AGENTS.md 的阅读导航在 `design-014` 保持 candidate 时仍然正确"
     test: "doc review"
   - id: "cc-003"
     scenario: "浏览器验收覆盖 note route、TOC 锚点跳转、unsupported route 与 sidebar state"
@@ -34,13 +34,13 @@ completion_criteria:
 落地 sidebar UI 后的最终文档收口与验收。
 
 这个任务的重点不是再发明新 UI，而是把已经实现的 sidebar contract 固定到 README、ARCHITECTURE 与 AGENTS 中，并通过浏览器验收把这次 bug class 封住。
-这个任务假定 `task-0023` 已经完成实现代码与 `design-014` 的生命周期迁移；它只负责仓库级文档收口和最终验收。
+这个任务假定 `task-0023` 已经完成实现代码并收口 `design-014` 候选设计文档内容；它只负责仓库级文档收口和最终验收。
 
 ## Decisions
 
 - sidebar 是 docsify frontend behavior，不是后端 metadata contract 的一部分
 - README 与 ARCHITECTURE 必须明确 sidebar 只对 canonical `.md` note route 生效
-- AGENTS.md 的 “Read First” / “Task Navigation” 需要在 `design-014` implemented 后反映新的 active doc
+- AGENTS.md 的 “Read First” / “Task Navigation” 需要在 `design-014` 仍为 candidate 时保持正确导航
 - 浏览器验收必须显式覆盖 TOC `?id=...` 锚点跳转不触发错误 metadata request 这一回归场景
 
 ## Boundaries
@@ -67,11 +67,11 @@ completion_criteria:
 那么 文档明确说明 sidebar 属于 docsify shell 前端能力
 并且 明确说明只有 canonical `.md` note route 使用 metadata sidebar
 
-场景: AGENTS.md 的阅读导航在 `design-014` implemented 后保持正确
+场景: AGENTS.md 的阅读导航在 `design-014` 保持 candidate 时仍然正确
 测试: doc review
-假设 `design-014` 已成为 implemented design doc
+假设 `design-014` 仍为 candidate design doc
 当   检查 AGENTS.md
-那么 Web note view / docsify frontend 相关导航包含正确的 implemented `design-014` 路径
+那么 Web note view / docsify frontend 相关导航在需要时包含正确的 candidate `design-014` 路径
 并且 不再把旧 draft 路径当作 active contract
 
 场景: 浏览器验收覆盖 note route、TOC 锚点跳转、unsupported route 与 sidebar state
