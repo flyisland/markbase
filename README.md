@@ -4,7 +4,7 @@ Obsidian-compatible Markdown knowledge base infrastructure for AI agents.
 
 中文版本：[README.zh-CN.md](README.zh-CN.md)
 
-markbase exists for one specific workflow: keep writing notes as normal Markdown, keep the vault compatible with Obsidian, keep AI-written notes structurally consistent through templates and `note verify`, and make the vault usable from CLI tools, server-side agents, and the web without depending on the Obsidian app.
+markbase is built for a specific workflow: keep writing notes as normal Markdown, keep the vault Obsidian-compatible, use templates and `note verify` to keep agent-written notes structurally consistent, and let agents, CLI tools, and the web operate directly on the Markdown vault.
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/flyisland/markbase)
 
@@ -15,15 +15,15 @@ I built markbase around four recurring problems:
 1. Obsidian has a CLI, but it depends on the desktop app being open, which makes it a poor fit for headless or server-side agent workflows.
 2. Even with AI help, keeping notes structurally consistent is hard. Agents tend to "improvise" frontmatter and note layout unless the system gives them a clear contract.
 3. Obsidian Base, or the community Dataview plugin, is extremely useful for showing one-to-many relationships inside notes. A company note can automatically show related people or opportunities in Obsidian, but an agent reading raw Markdown cannot see that computed view.
-4. Once the vault is synced to a Linux server, you still need a simple way to inspect notes quickly in the browser.
+4. Once the vault is synced to a remote server and updated by AI agents, you still need a simple way to inspect notes quickly in the browser.
 
 markbase is the layer that fills those gaps.
 
-The most important piece for consistency is its template system. Templates define the expected structure for a note, and `markbase note verify` lets agents and humans check whether notes still conform to that structure instead of slowly drifting into incompatible formats.
+The most important consistency layer is its template system. Templates define the expected structure for a note, and `markbase note verify` lets agents and humans check whether notes still conform to that structure instead of slowly drifting into incompatible formats.
 
 ## Best Practice
 
-The strongest real-world pattern is not "let the agent write arbitrary Markdown." It is "let the human provide intent, let the agent do the repetitive note work, and let markbase enforce the contract."
+The strongest pattern I have found in practice is not "let the agent write arbitrary Markdown." It is "let the human provide intent, let the agent do the repetitive note work, and let markbase provide the harness."
 
 ```mermaid
 flowchart TD
@@ -68,7 +68,7 @@ This is how I use markbase in my own Obsidian vault.
 - `activity_log` defines event-style notes under `logs/opportunities/`, requires fields such as `date`, `activity_type`, and `related_customer`, and preserves attachments and attendee views in a repeatable structure.
 - Domain skills such as `opportunity-capture` and `english-capture` treat templates as the source of truth for filename rules, required properties, writable sections, and post-write verification.
 
-In practice, the template is not just a note scaffold. It is the contract that tells the agent what kind of note this is, where it lives, how it should be named, which links are valid, which sections are writable, and what must still be true after later edits. `note verify` is what turns that contract into something enforceable.
+In practice, the template is not just a note scaffold. It is the contract that tells the agent what kind of note this is, where it lives, how it should be named, which links are valid, which sections are writable, and what must still be true after later edits. `note verify` is what makes that contract enforceable.
 
 ## What markbase does
 
@@ -92,7 +92,7 @@ In practice, the template is not just a note scaffold. It is the contract that t
 - Files are the product. DuckDB is only a derived index.
 - Markdown note identity is name-based, not path-based.
 - Obsidian-compatible behavior wins over internal abstraction when the two conflict.
-- Templates plus `note verify` are the mechanism for keeping AI-written notes structurally consistent.
+- Templates plus `note verify` are the harness for keeping AI-written notes structurally consistent.
 - Default outputs are agent-friendly. Human-readable tables are opt-in.
 
 ## Installation
@@ -141,7 +141,6 @@ Inspect the rendered relationships that an agent would otherwise miss in raw Mar
 
 ```bash
 markbase note render acme
-markbase web serve --homepage /HOME.md
 ```
 
 Serve the vault in the browser:
@@ -149,6 +148,11 @@ Serve the vault in the browser:
 ```bash
 markbase web serve --homepage /HOME.md
 markbase web serve --cache-control "public, max-age=60"
+```
+
+Inspect the final web output without starting a browser:
+
+```bash
 markbase web get /entities/person/alice.md  # print final web Markdown body
 markbase web get /entities/person/alice.md?fields=properties,links
 ```
@@ -203,7 +207,7 @@ owner: "[[Zhang San]]"
 
 ### Templates and verification
 
-Templates are one of markbase's main reasons to exist. They provide a repeatable structure for note creation, and `note verify` checks whether a note still conforms to its template schema after later edits by humans or agents.
+Templates are one of markbase's main reasons to exist. Together with `note verify`, they provide a repeatable harness for note creation. `note verify` checks whether a note still conforms to its template schema after later edits by humans or agents.
 
 That means you can let agents create and update Markdown notes without giving up consistency. Instead of hoping every prompt produces the same frontmatter shape and embedded sections, you can define the structure once in a template and continuously verify that the vault still follows it.
 
