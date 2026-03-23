@@ -1,7 +1,7 @@
 ---
 id: design-014
 title: "Docsify Note Sidebar UI"
-status: candidate
+status: implemented
 module: web-frontend
 ---
 
@@ -14,8 +14,8 @@ metadata sidebar powered by the backend metadata mode defined in `design-013`.
 
 It answers a frontend question, not a backend one:
 
-- when the sidebar should appear at all
-- how note metadata should be laid out in the docsify shell
+- when metadata tabs should appear at all
+- how docsify outline and note metadata should share one sidebar
 - how the sidebar should react to route changes and request failures
 - how semantic metadata nodes from the backend should be rendered as browser UI
 
@@ -34,9 +34,10 @@ and fetch lifecycle above that contract.
 
 This design covers:
 
-- desktop and mobile sidebar layout
-- sidebar tab-strip structure and active-panel behavior
-- which docsify routes are eligible for metadata sidebar rendering
+- the unified left-sidebar layout inside docsify's existing `.sidebar`
+- the sidebar tab-strip structure and active-panel behavior
+- how docsify outline content should be presented as an `Outline` tab
+- which docsify routes are eligible for metadata tabs
 - metadata request construction for eligible note routes
 - sidebar section structure for `Properties` and `Links`
 - rendering rules for `properties.fields[].value`
@@ -51,11 +52,12 @@ This design does not cover:
 - generic docsify internal-link rewriting outside the metadata sidebar
 - editing note properties in the browser
 - backlinks
-- full-site navigation redesign beyond the note metadata sidebar
+- replacing docsify's own outline generation with a markbase-owned TOC parser
 
 ## Design Goals
 
 - Keep note body reading as the primary activity.
+- Preserve docsify's familiar left-sidebar navigation model.
 - Make important note metadata visible without polluting the note Markdown.
 - Preserve clickable wiki-links inside frontmatter-derived values.
 - Keep the sidebar readable on dense knowledge-management notes with many
@@ -68,103 +70,138 @@ This design does not cover:
 - The first version does not render every schema hint as a visible control.
 - The first version does not support inline property editing.
 - The first version does not require animations beyond simple state changes.
+- The first version does not replace docsify's mobile drawer behavior with a
+  separate markbase-specific drawer.
 
 ## Core Decision
 
-The docsify shell should render note pages as a two-region layout on desktop:
+The docsify shell should use the existing docsify left sidebar as the only
+sidebar in the page.
 
-- main content column for note Markdown
-- right sidebar for metadata
+That sidebar should be organized as one tab strip plus one active panel:
 
-On narrow screens, the sidebar should move below the note content rather than
-compete for horizontal space.
+- `Outline`
+- `Properties`
+- `Links`
 
-This sidebar is note-specific page chrome, not universal shell chrome. It is
-shown only when the current docsify route represents a canonical Markdown note
-route that supports metadata mode under `design-013`.
+`Outline` is the default tab and presents docsify's own navigation and
+heading-outline content. `Properties` and `Links` are markbase-owned metadata
+panels that only become available for canonical Markdown note routes supported
+by `design-013`.
 
-This preserves reading flow while keeping metadata available on note pages
-without forcing unsupported routes such as `.base` pages through a metadata UI
-they do not implement.
+This is a unified-shell decision:
+
+- the page should no longer render a separate right metadata sidebar
+- note metadata should not compete with docsify outline as two unrelated
+  sidebars
+- metadata should feel like part of the docsify reading rail rather than a
+  second page chrome system with its own palette and placement rules
 
 ## Eligible Routes
 
-The metadata sidebar is defined only for canonical Markdown note routes.
+The `Outline` tab is part of the unified sidebar shell and may appear on any
+docsify document route where docsify itself renders sidebar content.
+
+Metadata tabs are defined only for canonical Markdown note routes.
 
 Rules:
 
-- a docsify route whose pathname ends in `.md` is eligible for metadata sidebar
-  behavior
-- a docsify route whose pathname ends in `.base` is not eligible and must not
-  trigger a metadata request
-- non-document shell routes such as `/` are not eligible and must not trigger a
-  metadata request
+- a docsify route whose pathname ends in `.md` is eligible for `Properties`
+  and `Links`
+- a docsify route whose pathname ends in `.base` is not eligible for metadata
+  requests and should expose only `Outline`
+- non-document shell routes such as `/` are not eligible for metadata requests
+  and should expose only `Outline`
 - docsify query parameters used only for in-page navigation, such as `?id=...`,
   do not change route eligibility or document identity
 
-For non-eligible routes, the frontend should omit or hide the metadata sidebar
-rather than render an error state for an unsupported backend capability.
+Unsupported routes are not an error state. They simply do not surface metadata
+tabs.
 
 ## Layout
 
 ### Desktop
 
-Desktop note pages should use a two-column layout:
+Desktop should keep docsify's existing left-rail structure:
 
-- main column: rendered note content
-- sidebar column: metadata sections
+- docsify left sidebar remains the only sidebar
+- note body remains in the main content area
+- markbase tabs live inside `.sidebar`
 
 Recommended behavior:
 
-- main column remains visually dominant
-- sidebar width stays fixed or capped within a narrow readable range
-- the sidebar owns its own scroll container when metadata content exceeds the
-  available sidebar height
-- the tab strip remains visible while scrolling sidebar content
-- long `Properties` content must not push `Links` or future panels below the
-  fold as always-visible stacked sections
+- the docsify app name/header stays outside the tab panels
+- the tab strip sits directly below the docsify app name area
+- the active panel uses the sidebar's existing visual language
+- the sidebar keeps one coherent background, border, typography, and hover
+  system rather than mixing a docsify rail with a card-styled markbase widget
+- `Outline`, `Properties`, and `Links` share one sidebar slot rather than
+  appearing as separate stacked regions
 
-The first version should avoid a floating overlay or collapsible drawer on
-desktop. The metadata is important enough to deserve stable placement.
+The first version should not render metadata as a floating overlay or a second
+column.
 
 ### Mobile
 
-On mobile or narrow viewports, the sidebar should stack below the note body.
+On mobile or narrow viewports, the unified sidebar should continue to follow
+docsify's existing mobile/sidebar behavior.
 
-Reasons:
+Implications:
 
-- preserving note readability matters more than persistent side placement
-- docsify already has limited horizontal space on small screens
-- stacking avoids building an early drawer system before the information
-  architecture stabilizes
+- markbase should not move metadata below the note body on narrow screens
+- tabs live inside the same docsify sidebar or drawer that already serves
+  navigation
+- the first version does not require a second mobile toggle button
 
-The first version does not require a separate mobile toggle button.
+## Tab Structure
 
-## Section Structure
+The sidebar contains a stable tab strip plus one active panel.
 
-When the current route is eligible and metadata has been loaded, the sidebar
-contains a tab strip plus one active panel.
+In v1 the tabs are:
 
-In v1 the available tabs are:
-
-1. `Properties`
-2. `Links`
+1. `Outline`
+2. `Properties`
+3. `Links`
 
 Rules:
 
 - only one panel is visible at a time
-- the tab strip remains visible while the active panel scrolls
-- the default active tab is `Properties`
-- tab order is stable: `Properties`, then `Links`, then any future tabs such as
-  `Backlinks`
+- `Outline` is the default tab
+- tab order is stable: `Outline`, then `Properties`, then `Links`, then any
+  future tabs such as `Backlinks`
+- on non-eligible routes, only `Outline` is shown
 - a tab whose requested data is empty still renders an explicit empty state
   when selected, rather than disappearing silently
 
-This is a structural decision, not just styling. `Properties`, `Links`, and
-future metadata surfaces should share the same sidebar slot rather than render
-as a single long stacked document.
+This is a structural decision, not just styling. Docsify outline and markbase
+metadata should share one sidebar framework without being flattened into the
+same `ul/li` tree.
 
-## `Properties` Section
+## `Outline` Tab
+
+### Ownership
+
+`Outline` is docsify-owned content presented inside the unified tab framework.
+
+Markbase should not replace docsify's TOC generation logic with a second
+outline implementation. Instead, docsify should continue generating its own
+sidebar navigation and in-page outline, and markbase should treat that content
+as the body of the `Outline` tab.
+
+### Integration Rules
+
+- docsify must be allowed to generate its normal sidebar DOM first
+- markbase may wrap or relocate that generated DOM into the `Outline` panel
+  after docsify render hooks run
+- markbase must preserve docsify-generated link targets, nesting, and DOM
+  semantics inside the outline content
+- markbase must continue applying same-note `?id=...` interception so outline
+  clicks remain in-page navigation instead of backend requests
+
+This means `Outline` is a presentation container around docsify output, not a
+markbase-authored parallel TOC.
+
+## `Properties` Tab
 
 ### Overall Structure
 
@@ -179,9 +216,8 @@ Each entry contains:
 The visual default should be compact and scan-friendly rather than
 document-like.
 
-`Properties` lives inside the active sidebar panel. When the property list is
-long, this panel scrolls within the sidebar container instead of extending the
-entire page layout downward.
+`Properties` lives inside the unified sidebar panel and should adopt the
+docsify sidebar palette instead of a detached card treatment.
 
 ### Property Keys
 
@@ -241,7 +277,7 @@ Recommended treatment:
 The first version should avoid turning schema descriptions into long always-on
 paragraphs in the sidebar.
 
-## `Links` Section
+## `Links` Tab
 
 ### Overall Structure
 
@@ -289,14 +325,16 @@ grouping in the first version.
 While metadata is loading for the current note:
 
 - keep the main note body visible
-- render lightweight loading placeholders in the sidebar
+- keep `Outline` available
+- render lightweight loading placeholders when users switch into a metadata tab
 
-The first version should avoid blocking the note page on sidebar data.
+The first version should avoid blocking the note page or the docsify outline on
+sidebar data.
 
 ### Empty
 
-Empty states must be explicit when the sidebar is active for an eligible note
-route.
+Empty states must be explicit when a metadata tab is active for an eligible
+note route.
 
 Examples:
 
@@ -308,14 +346,12 @@ Examples:
 If the sidebar metadata request fails:
 
 - the main note body remains visible
-- the sidebar shows a compact error state
+- `Outline` remains usable
+- the metadata tab shows a compact error state
 - a later route change retries automatically
 
 The first version may omit manual retry UI if automatic retry on navigation is
 already present.
-
-Unsupported routes are not an error case for this design. The frontend should
-simply avoid issuing metadata requests for them.
 
 ## Route Change Behavior
 
@@ -323,46 +359,49 @@ On docsify route changes:
 
 1. derive the logical document identity from the docsify route pathname, not
    from docsify's section-anchor query parameters
-2. if the pathname is not an eligible `.md` note route, clear or hide the
-   sidebar and do not request metadata
-3. if only the docsify `?id=...` anchor changes while the normalized note
-   pathname stays the same, treat it as in-page navigation and keep the current
+2. keep the unified sidebar shell mounted inside docsify's existing `.sidebar`
+3. if the pathname is not an eligible `.md` note route, clear metadata state,
+   suppress metadata requests, and expose only `Outline`
+4. if only the docsify `?id=...` anchor changes while the normalized note
+   pathname stays the same, treat it as in-page navigation and keep current
    sidebar state
-4. for a newly active eligible note route, keep the previous sidebar visible
-   briefly or replace it with a loading state
-5. build the metadata request from the canonical note pathname plus
-   `?fields=properties,links`, without forwarding docsify-only query parameters
-   such as `id`
+5. for a newly active eligible note route, build the metadata request from the
+   canonical note pathname plus `?fields=properties,links`, without forwarding
+   docsify-only query parameters such as `id`
 6. adapt resolved note/base links in sidebar content to docsify shell routes
    before attaching them to clickable UI
-7. replace sidebar contents only with the response for the latest active route
+7. re-sync the docsify-generated outline DOM into the `Outline` tab after docsify
+   updates the sidebar for the new route
+8. replace metadata contents only with the response for the latest active route
 
 The implementation should guard against stale-response overwrite when users
 navigate quickly.
 
 ## Visual Direction
 
-The sidebar should feel like stable reading chrome, not like a debug panel.
+The sidebar should feel like one coherent docsify rail, not like a docsify rail
+plus a second embedded app.
 
 Recommended visual principles:
 
-- restrained density
-- strong separation between section headers and rows
-- low-noise typography
-- enough contrast to make clickable values obvious
-- consistent spacing between rows
+- follow docsify sidebar colors for background, text, separators, and hover
+- use restrained density
+- keep tab chrome simple and rail-like rather than card-like
+- maintain enough contrast to make clickable values obvious
+- keep consistent spacing between rows
 
-The first version should prefer a clean neutral presentation over decorative
-cards or heavy borders.
+The first version should prefer docsify-native visual alignment over decorative
+cards, heavy shadows, or a competing color system.
 
 ## Accessibility
 
 The docsify sidebar UI should:
 
-- preserve keyboard access to links
+- preserve keyboard access to tabs and links
 - keep section headings semantic
 - not rely on color alone to distinguish unresolved links
 - remain readable when properties contain long values or many list items
+- preserve outline navigation as a first-class keyboard-accessible surface
 
 ## Compatibility Notes
 

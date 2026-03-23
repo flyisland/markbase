@@ -1732,7 +1732,8 @@ mod tests {
         assert!(html.contains(".mb-callout {"));
         assert!(html.contains("section.content {"));
         assert!(html.contains("min-height: 100vh;"));
-        assert!(html.contains("flex-direction: column;"));
+        assert!(html.contains("function docsifySidebarTabs(includeMetadataTabs) {"));
+        assert!(html.contains("{ key: \"outline\", label: \"Outline\" }"));
         assert!(html.contains("function upgradeCalloutsDom() {"));
         assert!(html.contains("function parseCalloutMetadata(firstParagraph) {"));
         assert!(html.contains("function appendTextWithPreservedLineBreaks(target, text) {"));

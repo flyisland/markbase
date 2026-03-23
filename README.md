@@ -228,10 +228,15 @@ For both exported and dynamic modes:
 - the docsify entry HTML keeps internal `.md` and `.base` document links inside docsify
 - the browser entry HTML upgrades Obsidian-style callouts, including foldable
   `[!type]+` and `[!type]-`, in the browser UI while preserving multiline body structure
-- on canonical `.md` note routes, the docsify shell renders a note-only
-  metadata sidebar with `Properties` and `Links` tabs
-- the active sidebar panel has its own scroll container, so long `Properties`
-  content does not push other tabs below the page fold
+- the docsify shell uses the existing left docsify sidebar as a unified
+  `Outline` / `Properties` / `Links` tab rail
+- `Outline` is the default tab and presents docsify's own sidebar navigation
+  and heading outline content
+- on canonical `.md` note routes, `Properties` and `Links` tabs appear beside
+  `Outline`; on `.base` and other unsupported routes only `Outline` remains
+- the active sidebar tab panel has its own scroll container, so long
+  `Properties` content stays inside the sidebar rather than pushing tabs below
+  the page fold
 - sidebar note/base links stay inside docsify by navigating to docsify hash
   routes such as `#/entities/company/acme.md`
 - docsify TOC anchor jumps such as `#/note.md?id=heading` stay in-page and do

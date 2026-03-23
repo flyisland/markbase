@@ -14,61 +14,67 @@ fn test_docsify_sidebar_uses_tabbed_panel_contract() {
     assert_cli_success(&vault.web_init_docsify("HOME"));
 
     let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
-    assert!(html.contains("function docsifySidebarTabs() {"));
+    assert!(html.contains("function docsifySidebarTabs(includeMetadataTabs) {"));
+    assert!(html.contains("{ key: \"outline\", label: \"Outline\" }"));
     assert!(html.contains("{ key: \"properties\", label: \"Properties\" }"));
     assert!(html.contains("{ key: \"links\", label: \"Links\" }"));
     assert!(html.contains("tabs.className = \"mb-note-sidebar-tabs\";"));
-    assert!(html.contains("panel.className = \"mb-note-sidebar-panel\";"));
-    assert!(html.contains("function renderSidebarTab(tab, isActive) {"));
+    assert!(html.contains("panelStack.className = \"mb-note-sidebar-panels\";"));
+    assert!(html.contains("outlinePanel.id = \"mb-note-sidebar-outline-panel\";"));
+    assert!(html.contains("metadataPanel.id = \"mb-note-sidebar-panel\";"));
+    assert!(html.contains("function renderSidebarTab(tab, isActive, metadataPanelId) {"));
     assert!(html.contains("button.setAttribute(\"role\", \"tab\");"));
-    assert!(html.contains("panel.appendChild(renderLinksSection(metadata.links));"));
-    assert!(html.contains("panel.appendChild(renderPropertiesSection(metadata.properties));"));
+    assert!(html.contains("metadataPanel.appendChild(renderLinksSection(metadata.links));"));
+    assert!(
+        html.contains("metadataPanel.appendChild(renderPropertiesSection(metadata.properties));")
+    );
 }
 
 #[test]
-fn test_docsify_sidebar_defaults_to_properties_tab() {
+fn test_docsify_sidebar_defaults_to_outline_tab() {
     let vault = TestVault::new();
     create_home_note(&vault);
     assert_cli_success(&vault.web_init_docsify("HOME"));
 
     let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
-    assert!(html.contains("activeTab: \"properties\","));
-    assert!(html.contains("state.activeTab = \"properties\";"));
-    assert!(html.contains("const activeTab = state.activeTab || \"properties\";"));
+    assert!(html.contains("activeTab: \"outline\","));
+    assert!(html.contains("state.activeTab = \"outline\";"));
+    assert!(html.contains("const activeTab = state.activeTab || \"outline\";"));
     assert!(html.contains("if (state.activeTab === tab.key) return;"));
     assert!(html.contains("state.activeTab = tab.key;"));
-    assert!(html.contains("renderDocsifySidebar(\"ready\", \"\");"));
+    assert!(html.contains("showDocsifySidebarPanel(shell, activeTab);"));
 }
 
 #[test]
-fn test_docsify_sidebar_uses_independent_scroll_container() {
+fn test_docsify_sidebar_uses_unified_left_sidebar_layout() {
     let vault = TestVault::new();
     create_home_note(&vault);
     assert_cli_success(&vault.web_init_docsify("HOME"));
 
     let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
+    assert!(html.contains("const docsifySidebar = document.querySelector(\".sidebar\");"));
     assert!(html.contains(".mb-note-sidebar-body {"));
+    assert!(html.contains("border-top: 1px solid #eee;"));
     assert!(html.contains("grid-template-rows: auto minmax(0, 1fr);"));
-    assert!(html.contains("max-height: calc(100vh - 3rem);"));
-    assert!(html.contains(".mb-note-sidebar-panel {"));
-    assert!(html.contains("overflow-y: auto;"));
     assert!(html.contains(".mb-note-sidebar-tabs {"));
-    assert!(html.contains("border-bottom: 1px solid #e6edf5;"));
+    assert!(html.contains("position: sticky;"));
+    assert!(html.contains("top: 0;"));
+    assert!(html.contains(".mb-note-sidebar-panel {"));
+    assert!(html.contains(".mb-note-sidebar-panel-outline .sidebar-nav,"));
 }
 
 #[test]
-fn test_docsify_sidebar_mobile_layout_preserves_tabbed_panels() {
+fn test_docsify_sidebar_reuses_docsify_outline_dom_in_outline_tab() {
     let vault = TestVault::new();
     create_home_note(&vault);
     assert_cli_success(&vault.web_init_docsify("HOME"));
 
     let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
-    assert!(html.contains("@media (max-width: 960px) {"));
-    assert!(html.contains(".mb-note-page {"));
-    assert!(html.contains("flex-direction: column;"));
-    assert!(html.contains(".mb-note-sidebar-panel {"));
-    assert!(html.contains("overflow: visible;"));
-    assert!(!html.contains("renderLinksSection(metadata.links));\n              body.appendChild"));
+    assert!(html.contains("function syncDocsifyOutlinePanel(shell) {"));
+    assert!(html.contains("child.classList.contains(\"sidebar-nav\")"));
+    assert!(html.contains("child.classList.contains(\"app-sub-sidebar\")"));
+    assert!(html.contains("outlinePanel.appendChild(child);"));
+    assert!(html.contains("syncDocsifyOutlinePanel(shell);"));
 }
 
 #[test]
@@ -136,10 +142,16 @@ fn test_docsify_sidebar_includes_state_dom_contract() {
     let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
     assert!(html.contains("body.className = \"mb-note-sidebar-body\";"));
     assert!(html.contains("tabs.className = \"mb-note-sidebar-tabs\";"));
-    assert!(html.contains("panel.className = \"mb-note-sidebar-panel\";"));
+    assert!(html.contains("panelStack.className = \"mb-note-sidebar-panels\";"));
+    assert!(html.contains(
+        "outlinePanel.className = \"mb-note-sidebar-panel mb-note-sidebar-panel-outline\";"
+    ));
+    assert!(html.contains(
+        "metadataPanel.className =\n                  \"mb-note-sidebar-panel mb-note-sidebar-panel-metadata\";"
+    ));
     assert!(html.contains("function renderSidebarStateMessage(status, message) {"));
     assert!(html.contains("state.className = \"mb-note-sidebar-state\";"));
     assert!(html.contains("tabs.replaceChildren();"));
-    assert!(html.contains("panel.replaceChildren();"));
-    assert!(html.contains("sidebar.hidden = true;"));
+    assert!(html.contains("metadataPanel.replaceChildren();"));
+    assert!(html.contains("const includeMetadataTabs = status !== \"hidden\";"));
 }

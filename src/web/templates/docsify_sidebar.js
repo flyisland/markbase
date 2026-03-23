@@ -1,78 +1,26 @@
-            function ensureDocsifySidebarContainer() {
-              const content = document.querySelector("section.content");
-              if (!content) return null;
-
-              let page = content.querySelector(".mb-note-page");
-              if (!page) {
-                page = document.createElement("div");
-                page.className = "mb-note-page";
-
-                const markdownSection = content.querySelector(".markdown-section");
-                if (markdownSection) {
-                  content.insertBefore(page, markdownSection);
-                  page.appendChild(markdownSection);
-                } else {
-                  const footer = content.querySelector(".mb-shell-footer");
-                  if (footer) {
-                    content.insertBefore(page, footer);
-                  } else {
-                    content.appendChild(page);
-                  }
-                }
+            function docsifySidebarTabs(includeMetadataTabs) {
+              const tabs = [{ key: "outline", label: "Outline" }];
+              if (includeMetadataTabs) {
+                tabs.push(
+                  { key: "properties", label: "Properties" },
+                  { key: "links", label: "Links" }
+                );
               }
 
-              const markdownSection = content.querySelector(".markdown-section");
-              if (markdownSection && markdownSection.parentElement !== page) {
-                page.insertBefore(markdownSection, page.firstChild);
-              }
-
-              let sidebar = page.querySelector(".mb-note-sidebar");
-              if (!sidebar) {
-                sidebar = document.createElement("aside");
-                sidebar.className = "mb-note-sidebar";
-                sidebar.hidden = true;
-                sidebar.setAttribute("aria-live", "polite");
-
-                const body = document.createElement("div");
-                body.className = "mb-note-sidebar-body";
-
-                const tabs = document.createElement("div");
-                tabs.className = "mb-note-sidebar-tabs";
-                tabs.setAttribute("role", "tablist");
-                tabs.setAttribute("aria-label", "Note metadata");
-
-                const panel = document.createElement("div");
-                panel.className = "mb-note-sidebar-panel";
-                panel.id = "mb-note-sidebar-panel";
-
-                body.appendChild(tabs);
-                body.appendChild(panel);
-                sidebar.appendChild(body);
-
-                page.appendChild(sidebar);
-              }
-
-              return sidebar;
+              return tabs;
             }
 
-            function docsifySidebarTabs() {
-              return [
-                { key: "properties", label: "Properties" },
-                { key: "links", label: "Links" },
-              ];
-            }
-
-            function ensureDocsifySidebarActiveTab() {
+            function ensureDocsifySidebarActiveTab(includeMetadataTabs) {
               const state = docsifySidebarState();
-              const tabs = docsifySidebarTabs();
-              const activeTab = state.activeTab || "properties";
+              const tabs = docsifySidebarTabs(includeMetadataTabs);
+              const activeTab = state.activeTab || "outline";
 
               if (tabs.some(function (tab) { return tab.key === activeTab; })) {
                 state.activeTab = activeTab;
                 return activeTab;
               }
 
-              state.activeTab = "properties";
+              state.activeTab = "outline";
               return state.activeTab;
             }
 
@@ -87,6 +35,77 @@
               }
 
               return href;
+            }
+
+            function ensureDocsifySidebarContainer() {
+              const docsifySidebar = document.querySelector(".sidebar");
+              if (!docsifySidebar) return null;
+
+              let shell = docsifySidebar.querySelector(".mb-note-sidebar");
+              if (!shell) {
+                shell = document.createElement("div");
+                shell.className = "mb-note-sidebar";
+                shell.setAttribute("aria-live", "polite");
+
+                const body = document.createElement("div");
+                body.className = "mb-note-sidebar-body";
+
+                const tabs = document.createElement("div");
+                tabs.className = "mb-note-sidebar-tabs";
+                tabs.setAttribute("role", "tablist");
+                tabs.setAttribute("aria-label", "Sidebar panels");
+
+                const panelStack = document.createElement("div");
+                panelStack.className = "mb-note-sidebar-panels";
+
+                const outlinePanel = document.createElement("div");
+                outlinePanel.className = "mb-note-sidebar-panel mb-note-sidebar-panel-outline";
+                outlinePanel.id = "mb-note-sidebar-outline-panel";
+
+                const metadataPanel = document.createElement("div");
+                metadataPanel.className =
+                  "mb-note-sidebar-panel mb-note-sidebar-panel-metadata";
+                metadataPanel.id = "mb-note-sidebar-panel";
+
+                panelStack.appendChild(outlinePanel);
+                panelStack.appendChild(metadataPanel);
+                body.appendChild(tabs);
+                body.appendChild(panelStack);
+                shell.appendChild(body);
+
+                const appName = docsifySidebar.querySelector(".app-name");
+                if (appName && appName.nextSibling) {
+                  docsifySidebar.insertBefore(shell, appName.nextSibling);
+                } else if (appName) {
+                  docsifySidebar.appendChild(shell);
+                } else {
+                  docsifySidebar.insertBefore(shell, docsifySidebar.firstChild);
+                }
+              }
+
+              return shell;
+            }
+
+            function syncDocsifyOutlinePanel(shell) {
+              if (!shell) return;
+
+              const docsifySidebar = document.querySelector(".sidebar");
+              const outlinePanel = shell.querySelector(".mb-note-sidebar-panel-outline");
+              if (!docsifySidebar || !outlinePanel) return;
+
+              Array.from(docsifySidebar.children)
+                .filter(function (child) {
+                  if (child === shell) return false;
+                  if (child.classList && child.classList.contains("app-name")) return false;
+                  return (
+                    child.classList &&
+                    (child.classList.contains("sidebar-nav") ||
+                      child.classList.contains("app-sub-sidebar"))
+                  );
+                })
+                .forEach(function (child) {
+                  outlinePanel.appendChild(child);
+                });
             }
 
             function sidebarPanelSection(title, bodyContent) {
@@ -329,13 +348,26 @@
               return state;
             }
 
-            function renderSidebarTab(tab, isActive) {
+            function showDocsifySidebarPanel(shell, activeTab) {
+              const outlinePanel = shell.querySelector(".mb-note-sidebar-panel-outline");
+              const metadataPanel = shell.querySelector(".mb-note-sidebar-panel-metadata");
+              if (!outlinePanel || !metadataPanel) return;
+
+              const showOutline = activeTab === "outline";
+              outlinePanel.hidden = !showOutline;
+              metadataPanel.hidden = showOutline;
+            }
+
+            function renderSidebarTab(tab, isActive, metadataPanelId) {
               const button = document.createElement("button");
               button.type = "button";
               button.className = "mb-note-sidebar-tab";
               button.dataset.sidebarTab = tab.key;
               button.setAttribute("role", "tab");
-              button.setAttribute("aria-controls", "mb-note-sidebar-panel");
+              button.setAttribute(
+                "aria-controls",
+                tab.key === "outline" ? "mb-note-sidebar-outline-panel" : metadataPanelId
+              );
               button.setAttribute("aria-selected", isActive ? "true" : "false");
               button.setAttribute("tabindex", isActive ? "0" : "-1");
               button.textContent = tab.label;
@@ -352,10 +384,13 @@
 
                 const sidebar = ensureDocsifySidebarContainer();
                 if (!sidebar) return;
-                if (sidebar.dataset.sidebarState === "ready") {
-                  renderDocsifySidebar("ready", "");
-                }
-                const panel = sidebar.querySelector(".mb-note-sidebar-panel");
+                renderDocsifySidebar(sidebar.dataset.sidebarState || "hidden", "");
+
+                const panel = sidebar.querySelector(
+                  tab.key === "outline"
+                    ? ".mb-note-sidebar-panel-outline"
+                    : ".mb-note-sidebar-panel-metadata"
+                );
                 if (panel) {
                   panel.scrollTop = 0;
                 }
@@ -365,44 +400,52 @@
             }
 
             function renderDocsifySidebar(status, message) {
-              const sidebar = ensureDocsifySidebarContainer();
-              if (!sidebar) return;
+              const shell = ensureDocsifySidebarContainer();
+              if (!shell) return;
 
-              const body = sidebar.querySelector(".mb-note-sidebar-body");
-              const tabs = sidebar.querySelector(".mb-note-sidebar-tabs");
-              const panel = sidebar.querySelector(".mb-note-sidebar-panel");
-              if (!body || !tabs || !panel) return;
+              syncDocsifyOutlinePanel(shell);
 
-              sidebar.dataset.sidebarState = status;
-              sidebar.setAttribute("aria-busy", status === "loading" ? "true" : "false");
+              const tabs = shell.querySelector(".mb-note-sidebar-tabs");
+              const metadataPanel = shell.querySelector(".mb-note-sidebar-panel-metadata");
+              if (!tabs || !metadataPanel) return;
 
-              if (status === "hidden") {
-                sidebar.hidden = true;
-                tabs.replaceChildren();
-                panel.replaceChildren();
+              shell.dataset.sidebarState = status;
+              shell.setAttribute("aria-busy", status === "loading" ? "true" : "false");
+
+              const includeMetadataTabs = status !== "hidden";
+              const activeTab = ensureDocsifySidebarActiveTab(includeMetadataTabs);
+              const tabItems = docsifySidebarTabs(includeMetadataTabs);
+
+              tabs.replaceChildren();
+              tabItems.forEach(function (tab) {
+                tabs.appendChild(renderSidebarTab(tab, tab.key === activeTab, metadataPanel.id));
+              });
+
+              metadataPanel.replaceChildren();
+
+              if (!includeMetadataTabs) {
+                showDocsifySidebarPanel(shell, "outline");
                 return;
               }
 
-              sidebar.hidden = false;
-              const activeTab = ensureDocsifySidebarActiveTab();
-
-              tabs.replaceChildren();
-              docsifySidebarTabs().forEach(function (tab) {
-                tabs.appendChild(renderSidebarTab(tab, tab.key === activeTab));
-              });
-
-              panel.replaceChildren();
-
               if (status === "loading" || status === "error") {
-                panel.appendChild(renderSidebarStateMessage(status, message || ""));
+                metadataPanel.appendChild(renderSidebarStateMessage(status, message || ""));
+                showDocsifySidebarPanel(shell, activeTab);
                 return;
               }
 
               const metadata = docsifySidebarState().metadata || {};
               if (activeTab === "links") {
-                panel.appendChild(renderLinksSection(metadata.links));
+                metadataPanel.appendChild(renderLinksSection(metadata.links));
+                showDocsifySidebarPanel(shell, activeTab);
                 return;
               }
 
-              panel.appendChild(renderPropertiesSection(metadata.properties));
+              if (activeTab === "outline") {
+                showDocsifySidebarPanel(shell, activeTab);
+                return;
+              }
+
+              metadataPanel.appendChild(renderPropertiesSection(metadata.properties));
+              showDocsifySidebarPanel(shell, activeTab);
             }

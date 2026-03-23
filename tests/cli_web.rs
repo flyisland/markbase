@@ -1329,6 +1329,7 @@ fn test_web_init_docsify_sidebar_only_targets_markdown_note_routes() {
     assert!(html.contains("function eligibleMetadataRoutePath(route) {"));
     assert!(html.contains("if (!pathname || !pathname.endsWith(\".md\")) return null;"));
     assert!(html.contains("renderDocsifySidebar(\"hidden\", \"\");"));
+    assert!(html.contains("const includeMetadataTabs = status !== \"hidden\";"));
 }
 
 #[test]
@@ -1375,6 +1376,7 @@ fn test_web_init_docsify_sidebar_skips_unsupported_routes_without_metadata_error
     assert!(html.contains("if (!notePath) {"));
     assert!(html.contains("clearDocsifySidebarRequest();"));
     assert!(html.contains("renderDocsifySidebar(\"hidden\", \"\");"));
+    assert!(html.contains("showDocsifySidebarPanel(shell, \"outline\");"));
 }
 
 #[test]
@@ -1405,6 +1407,20 @@ fn test_web_init_docsify_sidebar_metadata_failure_does_not_block_note_body() {
     assert!(html.contains("fetch(requestPath, requestOptions)"));
     assert!(html.contains("hook.doneEach(function () {"));
     assert!(html.contains("normalizeDocsifyDom();"));
+    assert!(html.contains("syncDocsifyOutlinePanel(shell);"));
+}
+
+#[test]
+fn test_web_init_docsify_sidebar_uses_outline_as_default_tab() {
+    let vault = TestVault::new();
+    create_home_note(&vault);
+    assert_cli_success(&vault.web_init_docsify("HOME"));
+
+    let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
+    assert!(html.contains("activeTab: \"outline\","));
+    assert!(html.contains("state.activeTab = \"outline\";"));
+    assert!(html.contains("const activeTab = state.activeTab || \"outline\";"));
+    assert!(html.contains("{ key: \"outline\", label: \"Outline\" }"));
 }
 
 #[test]
