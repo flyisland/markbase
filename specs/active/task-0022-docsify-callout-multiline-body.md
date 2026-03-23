@@ -11,8 +11,9 @@ boundaries:
     - "README.md"
     - "ARCHITECTURE.md"
     - "docs/design-docs/implemented/design-012-docsify-frontend-integration.md"
-    - "specs/active/task-0022-fix-docsify-callout-body-block-structure.md"
+    - "specs/active/task-0022-docsify-callout-multiline-body.md"
   forbidden_patterns:
+    - "specs/**"
     - "src/renderer/**"
     - "src/query/**"
     - "src/db.rs"
@@ -75,7 +76,7 @@ completion_criteria:
 - README.md
 - ARCHITECTURE.md
 - docs/design-docs/implemented/design-012-docsify-frontend-integration.md
-- specs/active/task-0022-fix-docsify-callout-body-block-structure.md
+- specs/active/task-0022-docsify-callout-multiline-body.md
 
 ### Forbidden
 
