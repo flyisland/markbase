@@ -14,7 +14,7 @@ I built markbase around four recurring problems:
 
 1. Obsidian has a CLI, but it depends on the desktop app being open, which makes it a poor fit for headless or server-side agent workflows.
 2. Even with AI help, keeping notes structurally consistent is hard. Agents tend to "improvise" frontmatter and note layout unless the system gives them a clear contract.
-3. Obsidian Base, previously the unofficial Dataview plugin, is extremely useful for showing one-to-many relationships inside notes. A company note can automatically show related people or opportunities in Obsidian, but an agent reading raw Markdown cannot see that computed view.
+3. Obsidian Base, or the community Dataview plugin, is extremely useful for showing one-to-many relationships inside notes. A company note can automatically show related people or opportunities in Obsidian, but an agent reading raw Markdown cannot see that computed view.
 4. Once the vault is synced to a Linux server, you still need a simple way to inspect notes quickly in the browser.
 
 markbase is the layer that fills those gaps.
