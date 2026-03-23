@@ -1,7 +1,7 @@
 ---
 id: design-014
 title: "Docsify Note Sidebar UI"
-status: draft
+status: candidate
 module: web-frontend
 ---
 
@@ -14,6 +14,7 @@ metadata sidebar powered by the backend metadata mode defined in `design-013`.
 
 It answers a frontend question, not a backend one:
 
+- when the sidebar should appear at all
 - how note metadata should be laid out in the docsify shell
 - how the sidebar should react to route changes and request failures
 - how semantic metadata nodes from the backend should be rendered as browser UI
@@ -34,6 +35,8 @@ and fetch lifecycle above that contract.
 This design covers:
 
 - desktop and mobile sidebar layout
+- which docsify routes are eligible for metadata sidebar rendering
+- metadata request construction for eligible note routes
 - sidebar section structure for `Properties` and `Links`
 - rendering rules for `properties.fields[].value`
 - loading, empty, and error states
@@ -43,6 +46,7 @@ This design does not cover:
 
 - backend route changes
 - metadata JSON schema changes
+- generic docsify internal-link rewriting outside the metadata sidebar
 - editing note properties in the browser
 - backlinks
 - full-site navigation redesign beyond the note metadata sidebar
@@ -65,7 +69,7 @@ This design does not cover:
 
 ## Core Decision
 
-The docsify shell should render a two-region note page on desktop:
+The docsify shell should render note pages as a two-region layout on desktop:
 
 - main content column for note Markdown
 - right sidebar for metadata
@@ -73,8 +77,31 @@ The docsify shell should render a two-region note page on desktop:
 On narrow screens, the sidebar should move below the note content rather than
 compete for horizontal space.
 
-This preserves reading flow while keeping metadata available as persistent page
-chrome on larger screens.
+This sidebar is note-specific page chrome, not universal shell chrome. It is
+shown only when the current docsify route represents a canonical Markdown note
+route that supports metadata mode under `design-013`.
+
+This preserves reading flow while keeping metadata available on note pages
+without forcing unsupported routes such as `.base` pages through a metadata UI
+they do not implement.
+
+## Eligible Routes
+
+The metadata sidebar is defined only for canonical Markdown note routes.
+
+Rules:
+
+- a docsify route whose pathname ends in `.md` is eligible for metadata sidebar
+  behavior
+- a docsify route whose pathname ends in `.base` is not eligible and must not
+  trigger a metadata request
+- non-document shell routes such as `/` are not eligible and must not trigger a
+  metadata request
+- docsify query parameters used only for in-page navigation, such as `?id=...`,
+  do not change route eligibility or document identity
+
+For non-eligible routes, the frontend should omit or hide the metadata sidebar
+rather than render an error state for an unsupported backend capability.
 
 ## Layout
 
@@ -110,7 +137,8 @@ The first version does not require a separate mobile toggle button.
 
 ## Section Structure
 
-The sidebar contains two top-level sections in v1:
+When the current route is eligible and metadata has been loaded, the sidebar
+contains two top-level sections in v1:
 
 1. `Properties`
 2. `Links`
@@ -202,11 +230,15 @@ paragraphs in the sidebar.
 
 Each row may include:
 
-- target display text
+- a label derived from the backend `target` field
 - optional kind hint such as `note`, `base`, or `resource`
 - resolved/unresolved state
 
 The first version should optimize for quick scanning, not graph exploration.
+
+The first version should not assume alias text, source-location metadata, or
+frontmatter-vs-body attribution because `design-013` does not expose those
+details in the `links` field.
 
 ### Link Behavior
 
@@ -233,7 +265,8 @@ The first version should avoid blocking the note page on sidebar data.
 
 ### Empty
 
-Empty states must be explicit.
+Empty states must be explicit when the sidebar is active for an eligible note
+route.
 
 Examples:
 
@@ -251,13 +284,26 @@ If the sidebar metadata request fails:
 The first version may omit manual retry UI if automatic retry on navigation is
 already present.
 
+Unsupported routes are not an error case for this design. The frontend should
+simply avoid issuing metadata requests for them.
+
 ## Route Change Behavior
 
-On docsify route changes to a canonical note page:
+On docsify route changes:
 
-1. keep the previous sidebar visible briefly or replace it with a loading state
-2. request `?fields=properties,links` for the new note route
-3. replace sidebar contents only with the response for the latest active route
+1. derive the logical document identity from the docsify route pathname, not
+   from docsify's section-anchor query parameters
+2. if the pathname is not an eligible `.md` note route, clear or hide the
+   sidebar and do not request metadata
+3. if only the docsify `?id=...` anchor changes while the normalized note
+   pathname stays the same, treat it as in-page navigation and keep the current
+   sidebar state
+4. for a newly active eligible note route, keep the previous sidebar visible
+   briefly or replace it with a loading state
+5. build the metadata request from the canonical note pathname plus
+   `?fields=properties,links`, without forwarding docsify-only query parameters
+   such as `id`
+6. replace sidebar contents only with the response for the latest active route
 
 The implementation should guard against stale-response overwrite when users
 navigate quickly.
@@ -289,5 +335,8 @@ The docsify sidebar UI should:
 ## Compatibility Notes
 
 - This design depends on the semantic property/value model from `design-013`.
+- This design intentionally avoids metadata requests for `.base` and other
+  unsupported routes because `design-013` defines metadata mode only on
+  canonical Markdown note routes.
 - This design extends the docsify integration surface defined in `design-012`
   without changing the backend Markdown contract from `design-003`.
