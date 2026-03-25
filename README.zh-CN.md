@@ -1,6 +1,6 @@
 # markbase
 
-面向 AI agent 的、兼容 Obsidian 的 Markdown 知识库基础设施。
+一款面向智能体、兼容 Obsidian 的结构化 Markdown 笔记工作流命令行工具。
 
 English version: [README.md](README.md)
 
@@ -61,12 +61,12 @@ flowchart TD
 | 5. 校验结构 | markbase + agent | `markbase note verify` 发现结构漂移；如有问题，agent 负责修复 |
 | 6. 查看派生视图 | 人类 + agent | 通过 `.base` 视图、`note render` 和 `web serve` 把关系结果再次暴露给双方 |
 
-这是我自己在 Obsidian 知识库里使用 markbase 的方式。
+例如，一个兼容 Obsidian 的 CRM 风格知识库，可以这样使用 template：
 
-- `company_customer` 用于定义 `entities/company/` 下的公司档案，要求稳定字段如 `description` 和 `type`，约束 `owner -> person` 这样的链接，并嵌入与相关人员、活动记录相关的 Base 视图。
-- `person_work` 用于定义 `entities/person/` 下的人物档案，要求关联公司，并把关系历史限制在 template 声明的章节内，而不是任由内容自由漂移。
-- `activity_log` 用于定义 `logs/opportunities/` 下的事件型记录，要求 `date`、`activity_type`、`related_customer` 等字段，并以统一结构保存附件和参与人视图。
-- `opportunity-capture`、`english-capture` 这类 domain skill，会把 template 视为文件名规则、必填属性、可写章节和写后校验的唯一事实来源。
+- `company_customer` 可以用于定义 `entities/company/` 下的公司档案，要求稳定字段如 `description` 和 `type`，约束 `owner -> person` 这样的链接，并嵌入与相关人员、活动记录相关的 Base 视图。
+- `person_work` 可以用于定义 `entities/person/` 下的人物档案，要求关联公司，并把关系历史限制在 template 声明的章节内，而不是任由内容自由漂移。
+- `activity_log` 可以用于定义 `logs/opportunities/` 下的事件型记录，要求 `date`、`activity_type`、`related_customer` 等字段，并以统一结构保存附件和参与人视图。
+- `opportunity-capture`、`english-capture` 这类 domain skill，也可以把 template 视为文件名规则、必填属性、可写章节和写后校验的唯一事实来源。
 
 在这个工作流里，template 不只是“生成初稿的脚手架”，而是一个可执行的契约。它告诉 agent：这是什么笔记、应该放在哪里、文件名怎么起、哪些链接合法、哪些章节可写，以及后续修改后哪些约束仍然必须成立。`note verify` 的作用，就是让这个契约真正变得可执行、可检查。
 

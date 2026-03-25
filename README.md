@@ -1,6 +1,6 @@
 # markbase
 
-Obsidian-compatible Markdown knowledge base infrastructure for AI agents.
+Agent-ready, Obsidian-compatible CLI for structured Markdown note workflows.
 
 中文版本：[README.zh-CN.md](README.zh-CN.md)
 
@@ -61,12 +61,11 @@ flowchart TD
 | 5. Verify structure | markbase + agent | `markbase note verify` catches drift; the agent repairs if needed |
 | 6. Inspect derived views | Human + agent | `.base` views, `note render`, and `web serve` expose relationships back to both sides |
 
-This is how I use markbase in my own Obsidian vault.
+For example, a CRM-style Obsidian-compatible vault could use templates like these:
 
-- `company_customer` defines company files under `entities/company/`, requires stable fields such as `description` and `type`, constrains links like `owner -> person`, and embeds Base views for related people and activity logs.
-- `person_work` defines person files under `entities/person/`, requires a linked company, and keeps relationship history in template-declared sections instead of free-form drift.
-- `activity_log` defines event-style notes under `logs/opportunities/`, requires fields such as `date`, `activity_type`, and `related_customer`, and preserves attachments and attendee views in a repeatable structure.
-- Domain skills such as `opportunity-capture` and `english-capture` treat templates as the source of truth for filename rules, required properties, writable sections, and post-write verification.
+- `company_customer` might place company files under `entities/company/`, require stable fields such as `description` and `type`, constrain links like `owner -> person`, and embed Base views for related people and activity logs.
+- `person_work` might place person files under `entities/person/`, require a linked company, and keep relationship history in template-declared sections instead of free-form drift.
+- `activity_log` might define event-style notes under `logs/opportunities/`, require fields such as `date`, `activity_type`, and `related_customer`, and preserve attachments and attendee views in a repeatable structure.
 
 In practice, the template is not just a note scaffold. It is the contract that tells the agent what kind of note this is, where it lives, how it should be named, which links are valid, which sections are writable, and what must still be true after later edits. `note verify` is what makes that contract enforceable.
 
