@@ -40,6 +40,7 @@
             function ensureDocsifySidebarContainer() {
               const docsifySidebar = document.querySelector(".sidebar");
               if (!docsifySidebar) return null;
+              docsifySidebar.classList.add("mb-note-sidebar-host");
 
               let shell = docsifySidebar.querySelector(".mb-note-sidebar");
               if (!shell) {

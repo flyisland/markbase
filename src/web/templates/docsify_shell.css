@@ -207,21 +207,38 @@ section.content {
   min-height: 100vh;
 }
 
+.sidebar.mb-note-sidebar-host {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar.mb-note-sidebar-host .app-name {
+  flex: 0 0 auto;
+}
+
 .mb-note-sidebar {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
   min-height: 0;
   margin-top: 0.5rem;
+  overflow: hidden;
 }
 
 .mb-note-sidebar-body {
   border-top: 1px solid #eee;
   background: transparent;
   display: grid;
+  flex: 1 1 auto;
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
+  overflow: hidden;
 }
 
 .mb-note-sidebar-panels {
   min-height: 0;
+  overflow: hidden;
 }
 
 .mb-note-sidebar-state {
@@ -264,6 +281,10 @@ section.content {
 }
 
 .mb-note-sidebar-panel {
+  box-sizing: border-box;
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   min-height: 0;
   padding: 0.9rem 1rem 1rem;
 }
@@ -279,6 +300,11 @@ section.content {
 .mb-note-sidebar-panel-outline .sidebar-nav,
 .mb-note-sidebar-panel-outline .app-sub-sidebar {
   margin: 0;
+  position: static;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
 }
 
 .mb-note-sidebar-panel-section {

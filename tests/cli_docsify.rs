@@ -53,14 +53,25 @@ fn test_docsify_sidebar_uses_unified_left_sidebar_layout() {
 
     let html = fs::read_to_string(vault.path.join("index.html")).unwrap();
     assert!(html.contains("const docsifySidebar = document.querySelector(\".sidebar\");"));
+    assert!(html.contains("docsifySidebar.classList.add(\"mb-note-sidebar-host\");"));
+    assert!(html.contains(".sidebar.mb-note-sidebar-host {"));
+    assert!(html.contains("display: flex;"));
+    assert!(html.contains("flex-direction: column;"));
+    assert!(html.contains("overflow: hidden;"));
+    assert!(html.contains(".mb-note-sidebar {"));
+    assert!(html.contains("flex-direction: column;"));
     assert!(html.contains(".mb-note-sidebar-body {"));
     assert!(html.contains("border-top: 1px solid #eee;"));
+    assert!(html.contains("flex: 1 1 auto;"));
     assert!(html.contains("grid-template-rows: auto minmax(0, 1fr);"));
     assert!(html.contains(".mb-note-sidebar-tabs {"));
     assert!(html.contains("position: sticky;"));
     assert!(html.contains("top: 0;"));
     assert!(html.contains(".mb-note-sidebar-panel {"));
+    assert!(html.contains("height: 100%;"));
+    assert!(html.contains("overflow-y: auto;"));
     assert!(html.contains(".mb-note-sidebar-panel-outline .sidebar-nav,"));
+    assert!(html.contains("position: static;"));
 }
 
 #[test]
