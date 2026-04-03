@@ -606,6 +606,16 @@ mod tests {
     }
 
     #[test]
+    fn test_global_base_dir_from_env() {
+        let cli = Cli::parse_from(["markbase", "query", "name == 'test'"]);
+        if std::env::var("MARKBASE_BASE_DIR").is_ok() {
+            assert_ne!(cli.base_dir, PathBuf::from("."));
+        } else {
+            assert_eq!(cli.base_dir, PathBuf::from("."));
+        }
+    }
+
+    #[test]
     fn test_global_options_share_same_help_section() {
         let help = Cli::command().render_long_help().to_string();
 

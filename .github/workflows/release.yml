@@ -1,0 +1,180 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+# 覆盖本地 .cargo/config.toml 里的 target-dir 设置
+env:
+  CARGO_TARGET_DIR: ${{ github.workspace }}/target
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            use_cross: true
+            archive: tar.gz
+
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+            use_cross: true
+            archive: tar.gz
+
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            use_cross: false
+            archive: tar.gz
+
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            use_cross: false
+            archive: tar.gz
+
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            use_cross: false
+            archive: zip
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-
+
+      # ---- Linux: 用 cross（Docker 内含完整 musl C++ 工具链）----
+      - name: Install cross
+        if: matrix.use_cross == true
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build (cross)
+        if: matrix.use_cross == true
+        run: cross build --release --target ${{ matrix.target }}
+
+      # ---- macOS: 原生 cargo + bundled ----
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        run: cargo build --release --target ${{ matrix.target }}
+
+      # ---- Windows: 下载预编译 duckdb，跳过 bundled ----
+      - name: Download prebuilt duckdb (Windows)
+        if: runner.os == 'Windows'
+        uses: robinraju/release-downloader@v1.4
+        with:
+          repository: "duckdb/duckdb"
+          tag: "v1.4.1"
+          fileName: "libduckdb-windows-amd64.zip"
+          out-file-path: ${{ github.workspace }}
+
+      - name: Extract duckdb (Windows)
+        if: runner.os == 'Windows'
+        uses: DuckSoft/extract-7z-action@v1.0
+        with:
+          pathSource: ${{ github.workspace }}\libduckdb-windows-amd64.zip
+          pathTarget: ${{ github.workspace }}\libduckdb
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: cargo build --release --target ${{ matrix.target }} --no-default-features
+        env:
+          DUCKDB_LIB_DIR: ${{ github.workspace }}\libduckdb
+          DUCKDB_INCLUDE_DIR: ${{ github.workspace }}\libduckdb
+
+      # ---- 验证产物 ----
+      - name: Verify binary (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          BIN_PATH="${CARGO_TARGET_DIR}/${{ matrix.target }}/release/markbase"
+          echo "Checking: $BIN_PATH"
+          ls -lh "$BIN_PATH"
+
+      - name: Verify binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $p = "${env:CARGO_TARGET_DIR}\${{ matrix.target }}\release\markbase.exe"
+          Write-Host "Checking: $p"
+          Get-Item $p
+
+      # ---- 打包 ----
+      - name: Package (Unix)
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          BIN=markbase
+          TARGET=${{ matrix.target }}
+          TAG=${GITHUB_REF_NAME}
+          ARCHIVE="${BIN}-${TAG}-${TARGET}.tar.gz"
+
+          mkdir -p dist
+          cp "${CARGO_TARGET_DIR}/${TARGET}/release/${BIN}" dist/
+          cp README.md LICENSE dist/ 2>/dev/null || true
+
+          tar -czf "${ARCHIVE}" -C dist .
+          echo "ASSET=${ARCHIVE}" >> $GITHUB_ENV
+
+      - name: Package (Windows)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          $BIN    = "markbase"
+          $TARGET = "${{ matrix.target }}"
+          $TAG    = "${env:GITHUB_REF_NAME}"
+          $ARCHIVE = "${BIN}-${TAG}-${TARGET}.zip"
+
+          New-Item -ItemType Directory -Force -Path dist
+          Copy-Item "${env:CARGO_TARGET_DIR}\${TARGET}\release\${BIN}.exe" dist\
+          if (Test-Path README.md) { Copy-Item README.md dist\ }
+          if (Test-Path LICENSE)   { Copy-Item LICENSE dist\ }
+
+          Compress-Archive -Path dist\* -DestinationPath $ARCHIVE
+          echo "ASSET=$ARCHIVE" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: ${{ env.ASSET }}
+
+  release:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
