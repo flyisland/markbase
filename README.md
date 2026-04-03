@@ -96,22 +96,32 @@ In practice, the template is not just a note scaffold. It is the contract that t
 
 ## Installation
 
-From crates.io:
+### macOS / Linux (recommended)
+
+```bash
+brew install flyisland/tap/markbase
+```
+
+### Windows
+
+Download the latest `.zip` from the [Releases page](https://github.com/flyisland/markbase/releases/latest), extract and add `markbase.exe` to your PATH.
+
+### From crates.io
 
 ```bash
 cargo install markbase
 ```
 
-From source:
+### From source
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/flyisland/markbase
 cd markbase
 cargo build --release
 ./target/release/markbase --help
 ```
 
-Rust 1.85+ is required. DuckDB is bundled.
+Rust 1.85+ is required.
 
 ## Quick Start
 

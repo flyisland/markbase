@@ -97,13 +97,23 @@ flowchart TD
 
 ## Installation
 
-从 crates.io 安装：
+### macOS / Linux (推荐)
+
+```bash
+brew install flyisland/tap/markbase
+```
+
+### Windows
+
+从 [Releases 页面](https://github.com/flyisland/markbase/releases/latest) 下载最新的 `.zip` 文件，解压后将 `markbase.exe` 添加到 PATH 环境变量中。
+
+### 从 crates.io 安装：
 
 ```bash
 cargo install markbase
 ```
 
-从源码构建：
+### 从源码构建：
 
 ```bash
 git clone <repository-url>
@@ -112,7 +122,7 @@ cargo build --release
 ./target/release/markbase --help
 ```
 
-需要 Rust 1.85+。DuckDB 已内置。
+需要 Rust 1.85+。
 
 ## Quick Start
 
