@@ -178,3 +178,86 @@ jobs:
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
+
+  update-homebrew-tap:
+    name: Update Homebrew Tap
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout homebrew-tap
+        uses: actions/checkout@v4
+        with:
+          repository: flyisland/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Compute SHA256 for each platform
+        id: sha
+        shell: bash
+        run: |
+          TAG=${GITHUB_REF_NAME}
+          BASE="https://github.com/flyisland/markbase/releases/download/${TAG}"
+
+          get_sha() {
+            curl -sL "$1" | shasum -a 256 | awk '{print $1}'
+          }
+
+          echo "aarch64_darwin=$(get_sha ${BASE}/markbase-${TAG}-aarch64-apple-darwin.tar.gz)"       >> $GITHUB_OUTPUT
+          echo "x86_64_darwin=$(get_sha ${BASE}/markbase-${TAG}-x86_64-apple-darwin.tar.gz)"         >> $GITHUB_OUTPUT
+          echo "aarch64_linux=$(get_sha ${BASE}/markbase-${TAG}-aarch64-unknown-linux-musl.tar.gz)"  >> $GITHUB_OUTPUT
+          echo "x86_64_linux=$(get_sha ${BASE}/markbase-${TAG}-x86_64-unknown-linux-musl.tar.gz)"    >> $GITHUB_OUTPUT
+
+      - name: Update Formula
+        shell: bash
+        run: |
+          TAG=${GITHUB_REF_NAME}
+          VERSION=${TAG#v}   # 去掉开头的 v
+          BASE="https://github.com/flyisland/markbase/releases/download/${TAG}"
+
+          mkdir -p homebrew-tap/Formula
+          cat > homebrew-tap/Formula/markbase.rb << EOF
+          class Markbase < Formula
+            desc "A high-performance CLI tool for indexing and querying Markdown files for AI agent. Obsidian-compatible."
+            homepage "https://github.com/flyisland/markbase"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "${BASE}/markbase-${TAG}-aarch64-apple-darwin.tar.gz"
+                sha256 "${{ steps.sha.outputs.aarch64_darwin }}"
+              else
+                url "${BASE}/markbase-${TAG}-x86_64-apple-darwin.tar.gz"
+                sha256 "${{ steps.sha.outputs.x86_64_darwin }}"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "${BASE}/markbase-${TAG}-aarch64-unknown-linux-musl.tar.gz"
+                sha256 "${{ steps.sha.outputs.aarch64_linux }}"
+              else
+                url "${BASE}/markbase-${TAG}-x86_64-unknown-linux-musl.tar.gz"
+                sha256 "${{ steps.sha.outputs.x86_64_linux }}"
+              end
+            end
+
+            def install
+              bin.install "markbase"
+            end
+
+            test do
+              system "#{bin}/markbase", "--version"
+            end
+          end
+          EOF
+
+      - name: Commit and push
+        shell: bash
+        run: |
+          cd homebrew-tap
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/markbase.rb
+          git commit -m "markbase ${GITHUB_REF_NAME}"
+          git push
