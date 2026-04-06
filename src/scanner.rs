@@ -371,7 +371,11 @@ fn index_single_file(
     };
 
     let size = metadata.len();
-    let ctime = metadata.created()?.duration_since(UNIX_EPOCH)?.as_secs() as i64;
+    let ctime = metadata
+        .created()
+        .or_else(|_| metadata.modified())?
+        .duration_since(UNIX_EPOCH)?
+        .as_secs() as i64;
     let mtime = metadata.modified()?.duration_since(UNIX_EPOCH)?.as_secs() as i64;
 
     let name = if is_md {
