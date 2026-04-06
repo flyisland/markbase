@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.6] - 2026-04-06
+
+### Added
+
+- **Cross-platform release builds** - Added automated release workflow for cross-platform builds including macOS (Intel/Apple Silicon), Linux (x86_64, aarch64, musl), and Windows.
+- **Homebrew distribution** - Added Homebrew tap support for easy installation on macOS and Linux.
+
+### Fixed
+
+- **File timestamp fallback** - Fixed fallback to mtime when ctime is unavailable, improving compatibility across different filesystems.
+- **JSON extension for musl builds** - Bundled JSON extension for musl builds to ensure full functionality on Alpine Linux and other musl-based distributions.
+
+### Changed
+
+- **Installation documentation** - Updated README with Homebrew and Windows installation instructions.
+- **Template new command design** - Added design documentation for the upcoming `template new` command.
+
 ## [0.9.5] - 2026-03-26
 
 ### Fixed
