@@ -163,7 +163,6 @@ _schema:
     模板用途说明。
     说明这种 note 用来记录什么，什么时候应该优先使用这个模板，
     以及它与相邻模板的边界是什么。
-  strict: false
   required:
     - description
     - type
@@ -220,9 +219,9 @@ house style used by real markbase vaults:
 
 - it uses the active `_schema` plus `_schema.create` split
 - it does not emit legacy outer-frontmatter instance fields
-- it includes `strict`, `filename.description`, explicit `location`, explicit
-  `type`, and `tags` because those are core authoring surfaces for real
-  templates rather than optional decoration
+- it includes `filename.description`, explicit `location`, explicit `type`,
+  and `tags` because those are core authoring surfaces for real templates
+  rather than optional decoration
 - it includes both `description` and `type` in the schema/create surface so the
   new template starts from a realistic note-family contract rather than a bare
   text stub

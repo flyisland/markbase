@@ -88,7 +88,6 @@ The active template vocabulary uses these `_schema` keys:
 | Key | Meaning | Current markbase role |
 | --- | --- | --- |
 | `description` | Template-level routing prompt | Stored in template; not executed by `note new`; may be consumed by external agents |
-| `strict` | Whether writes should be restricted to declared fields | Declared vocabulary only; not executed by `note new`; not enforced by current `note verify` |
 | `required` | Required field names for template-backed notes | Used by `note verify`; normalized to include `description` |
 | `filename.description` | Natural-language filename guidance | Declared vocabulary only; not executed by current CLI |
 | `location` | Relative directory for created notes | Used by `note new --template`; checked by `note verify` |
@@ -206,7 +205,6 @@ The current implementation does not treat every `_schema` key as executable crea
 ### Keys not executed by `note new --template`
 
 - `_schema.description`
-- `_schema.strict`
 - `_schema.filename`
 - `_schema.properties.<field>.type` for ordinary fields
 - `_schema.properties.<field>.enum`
@@ -281,7 +279,6 @@ This example shows the active shape of a template that uses `_schema`, `_schema.
 ---
 _schema:
   description: 标准客户档案模版。用于建立新客户的基本信息库，记录组织架构、技术栈和关键活动。
-  strict: false
   required: [description, type, industry, size]
   filename:
     description: 使用客户的常用简称作为文件名，如"绿米"而非"绿米联合创新科技有限公司"。
