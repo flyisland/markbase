@@ -147,6 +147,11 @@ markbase note new acme --template company
 markbase note verify acme
 ```
 
+模板也可以声明生成后的文件名。例如原始输入模板可设置
+`_schema.filename.pattern: "{{timestamp}}_{{name}}"`；此时执行
+`markbase note new "客户沟通" --template source_input` 会创建带时间前缀的源文档，
+并在 frontmatter 中写入同一时刻的本地时间。
+
 查看原始 Markdown 中 agent 本来看不到的派生关系：
 
 ```bash

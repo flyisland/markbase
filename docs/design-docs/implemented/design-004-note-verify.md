@@ -26,6 +26,11 @@ module: verifier
 
 The command is read-only. It does not mutate the vault or the index.
 
+For `datetime` properties, verification accepts ISO 8601 values beginning with
+`YYYY-MM-DDTHH:MM`, including optional seconds, fractional seconds, and a `Z`
+or `+/-HH:MM` timezone offset. This preserves older minute-precision values
+while allowing creation-time provenance such as `2026-07-23T14:32:08+08:00`.
+
 This document owns the verification command contract only. Template storage, normalization, and `note new --template` instance-creation semantics are defined in `docs/design-docs/implemented/design-006-template-system.md`.
 
 ## Command Contract

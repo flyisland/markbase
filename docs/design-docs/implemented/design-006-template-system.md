@@ -90,6 +90,7 @@ The active template vocabulary uses these `_schema` keys:
 | `description` | Template-level routing prompt | Stored in template; not executed by `note new`; may be consumed by external agents |
 | `required` | Required field names for template-backed notes | Used by `note verify`; normalized to include `description` |
 | `filename.description` | Natural-language filename guidance | Declared vocabulary only; not executed by current CLI |
+| `filename.pattern` | Machine-executable filename pattern | Used by `note new --template`; supports creation variables and lets templates own filename policy |
 | `location` | Relative directory for created notes | Used by `note new --template`; checked by `note verify` |
 | `properties` | Field constraint definitions | Used partly by normalization and verification |
 | `create` | Literal frontmatter defaults for created notes | Used by `note new --template`; not treated by `note verify` as exact-match constraints |
@@ -117,7 +118,7 @@ Current template field types:
 | `number` | Numeric value |
 | `boolean` | Boolean value |
 | `date` | Date value in `YYYY-MM-DD` form |
-| `datetime` | Date-time value in `YYYY-MM-DDTHH:MM` form |
+| `datetime` | ISO 8601 date-time, accepting `YYYY-MM-DDTHH:MM` and optional seconds/fraction/timezone offset |
 | `list` | Array value |
 
 ## Shared Normalized View
@@ -165,7 +166,8 @@ Current creation flow:
 3. Render the instance frontmatter from `_schema.create`.
 4. Remove `_schema` from the instance frontmatter before writing the file.
 5. Auto-inject `templates: ["[[<template-name>]]"]`.
-6. Replace supported body/frontmatter variables such as `{{name}}`, `{{date}}`, `{{time}}`, and `{{datetime}}`.
+6. Replace supported body/frontmatter variables such as `{{name}}`, `{{date}}`, `{{time}}`, `{{datetime}}`, and `{{timestamp}}`.
+7. When `_schema.filename.pattern` is present, render it with the same creation timestamp and use the result as the instance filename. A collision receives a stable `_02`, `_03`, ... suffix.
 
 ### `note verify`
 
@@ -205,7 +207,7 @@ The current implementation does not treat every `_schema` key as executable crea
 ### Keys not executed by `note new --template`
 
 - `_schema.description`
-- `_schema.filename`
+- `_schema.filename.description`
 - `_schema.properties.<field>.type` for ordinary fields
 - `_schema.properties.<field>.enum`
 - `_schema.properties.<field>.format`
@@ -333,6 +335,7 @@ These are current active behavior notes, not proposals:
 
 - There is no generalized schema-default materialization path; `_schema.properties.<field>.default` remains distinct from `_schema.create.<field>`.
 - `note verify` does not currently reuse `TemplateDocument` normalization, so creation and verification do not share one fully normalized template object.
+- `filename.pattern` is intentionally creation-only. Template authors must ensure its rendered value is a valid path-free, extension-free note name.
 - The legacy MTS reference may describe a broader schema intent than the subset of behavior currently executed by markbase.
 
 ## Boundary With `design-004-note-verify`

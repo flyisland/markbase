@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
+use chrono::{DateTime, Local};
 use regex::Regex;
 
 use crate::name_validator::validate_note_name;
@@ -12,6 +13,8 @@ static RE_DATE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\{\{\s*date\s*\}
 static RE_TIME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\{\{\s*time\s*\}\}").unwrap());
 static RE_DATETIME: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\{\{\s*datetime\s*\}\}").unwrap());
+static RE_TIMESTAMP: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\{\{\s*timestamp\s*\}\}").unwrap());
 
 #[derive(Debug)]
 pub struct CreatedNote {
@@ -24,24 +27,46 @@ pub fn create_note(
     template_name: Option<&str>,
 ) -> Result<CreatedNote, Box<dyn std::error::Error>> {
     validate_note_name(name)?;
+    create_note_at(base_dir, name, template_name, Local::now())
+}
 
-    let (content, location) = match template_name {
-        Some(tmpl) => process_template_document(&TemplateDocument::load(base_dir, tmpl)?, name)?,
-        None => (default_note_content()?, None),
+fn create_note_at(
+    base_dir: &Path,
+    name: &str,
+    template_name: Option<&str>,
+    now: DateTime<Local>,
+) -> Result<CreatedNote, Box<dyn std::error::Error>> {
+    let timestamp = CreationTimestamp::from(now);
+
+    let (content, location, filename_pattern) = match template_name {
+        Some(tmpl) => process_template_document_at(
+            &TemplateDocument::load(base_dir, tmpl)?,
+            name,
+            &timestamp,
+        )?,
+        None => (default_note_content()?, None, None),
+    };
+    let has_filename_pattern = filename_pattern.is_some();
+    let requested_note_name = filename_pattern.unwrap_or_else(|| name.to_string());
+    validate_note_name(&requested_note_name)?;
+    let note_name = if has_filename_pattern {
+        find_available_note_name(base_dir, &requested_note_name)?
+    } else {
+        requested_note_name
     };
 
     let target_path = if let Some(loc) = location {
         let dir = base_dir.join(&loc);
-        let file_name = format!("{}.md", name);
+        let file_name = format!("{}.md", note_name);
         dir.join(&file_name)
     } else {
-        base_dir.join("inbox").join(format!("{}.md", name))
+        base_dir.join("inbox").join(format!("{}.md", note_name))
     };
 
-    if let Some(existing_path) = find_existing_note_path(base_dir, name)? {
+    if let Some(existing_path) = find_existing_note_path(base_dir, &note_name)? {
         return Err(format!(
             "Note '{}' already exists at '{}'",
-            name,
+            note_name,
             existing_path.display()
         )
         .into());
@@ -54,6 +79,24 @@ pub fn create_note(
     fs::write(&target_path, content)?;
 
     Ok(CreatedNote { path: target_path })
+}
+
+fn find_available_note_name(
+    base_dir: &Path,
+    requested_name: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    if find_existing_note_path(base_dir, requested_name)?.is_none() {
+        return Ok(requested_name.to_string());
+    }
+
+    for suffix in 2.. {
+        let candidate = format!("{}_{:02}", requested_name, suffix);
+        if find_existing_note_path(base_dir, &candidate)?.is_none() {
+            return Ok(candidate);
+        }
+    }
+
+    unreachable!("the suffix search is unbounded")
 }
 
 fn find_existing_note_path(
@@ -87,23 +130,28 @@ fn find_existing_note_path(
     Ok(None)
 }
 
-fn replace_template_variables(content: &str, name: &str) -> String {
-    let now = chrono_lite_now();
-
+fn replace_template_variables(content: &str, name: &str, now: &CreationTimestamp) -> String {
     let result = RE_NAME.replace_all(content, name);
     let result = RE_DATE.replace_all(&result, &now.date);
     let result = RE_TIME.replace_all(&result, &now.time);
-    RE_DATETIME.replace_all(&result, &now.datetime).to_string()
+    let result = RE_DATETIME.replace_all(&result, &now.datetime);
+    RE_TIMESTAMP
+        .replace_all(&result, &now.timestamp)
+        .to_string()
 }
 
-fn process_template_document(
+fn process_template_document_at(
     template: &TemplateDocument,
     name: &str,
-) -> Result<(String, Option<String>), Box<dyn std::error::Error>> {
+    now: &CreationTimestamp,
+) -> Result<(String, Option<String>, Option<String>), Box<dyn std::error::Error>> {
     let content = template.render_for_create()?;
     Ok((
-        replace_template_variables(&content, name),
+        replace_template_variables(&content, name, now),
         template.location().map(ToString::to_string),
+        template
+            .filename_pattern()
+            .map(|pattern| replace_template_variables(pattern, name, now)),
     ))
 }
 
@@ -112,70 +160,30 @@ fn process_template(
     content: &str,
     name: &str,
 ) -> Result<(String, Option<String>), Box<dyn std::error::Error>> {
-    process_template_document(&TemplateDocument::from_content(content), name)
+    let (content, location, _) = process_template_document_at(
+        &TemplateDocument::from_content(content),
+        name,
+        &CreationTimestamp::from(Local::now()),
+    )?;
+    Ok((content, location))
 }
 
-fn chrono_lite_now() -> ChronoLite {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    let duration = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
-    let secs = duration.as_secs();
-
-    let days = secs / 86400;
-    let remaining = secs % 86400;
-    let hours = remaining / 3600;
-    let minutes = (remaining % 3600) / 60;
-    let seconds = remaining % 60;
-
-    let mut year = 1970;
-    let mut remaining_days = days as i64;
-
-    loop {
-        let days_in_year = if is_leap_year(year) { 366 } else { 365 };
-        if remaining_days < days_in_year {
-            break;
-        }
-        remaining_days -= days_in_year;
-        year += 1;
-    }
-
-    let days_in_months: [i64; 12] = if is_leap_year(year) {
-        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-    } else {
-        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-    };
-
-    let mut month = 1;
-    for days_in_month in days_in_months.iter() {
-        if remaining_days < *days_in_month {
-            break;
-        }
-        remaining_days -= days_in_month;
-        month += 1;
-    }
-    let day = remaining_days + 1;
-
-    let date = format!("{:04}-{:02}-{:02}", year, month, day);
-    let time = format!("{:02}:{:02}:{:02}", hours, minutes, seconds);
-    let datetime = format!("{} {}", date, time);
-
-    ChronoLite {
-        date,
-        time,
-        datetime,
-    }
-}
-
-fn is_leap_year(year: i64) -> bool {
-    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
-}
-
-struct ChronoLite {
+struct CreationTimestamp {
     date: String,
     time: String,
     datetime: String,
+    timestamp: String,
+}
+
+impl CreationTimestamp {
+    fn from(now: DateTime<Local>) -> Self {
+        Self {
+            date: now.format("%Y-%m-%d").to_string(),
+            time: now.format("%H:%M:%S").to_string(),
+            datetime: now.to_rfc3339(),
+            timestamp: now.format("%Y-%m-%d-%H-%M-%S").to_string(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -185,7 +193,8 @@ mod tests {
     #[test]
     fn test_replace_template_variables() {
         let content = "# {{name}}\n\nDate: {{date}}\nTime: {{time}}\n";
-        let result = replace_template_variables(content, "my-note");
+        let result =
+            replace_template_variables(content, "my-note", &CreationTimestamp::from(Local::now()));
         assert!(result.contains("# my-note"));
         assert!(result.contains("Date: "));
         assert!(result.contains("Time: "));
@@ -194,7 +203,8 @@ mod tests {
     #[test]
     fn test_replace_partial_variables() {
         let content = "Title: {{name}}\nOnly date: {{date}}";
-        let result = replace_template_variables(content, "test");
+        let result =
+            replace_template_variables(content, "test", &CreationTimestamp::from(Local::now()));
         assert!(result.contains("Title: test"));
         assert!(result.contains("Only date: "));
         assert!(!result.contains("{{time}}"));
@@ -203,7 +213,8 @@ mod tests {
     #[test]
     fn test_replace_variables_with_spaces() {
         let content = "# {{ name }}\nDate: {{ date }}\nTime: {{ time }}";
-        let result = replace_template_variables(content, "my-note");
+        let result =
+            replace_template_variables(content, "my-note", &CreationTimestamp::from(Local::now()));
         assert!(result.contains("# my-note"));
         assert!(result.contains("Date: "));
         assert!(result.contains("Time: "));
@@ -213,14 +224,16 @@ mod tests {
     #[test]
     fn test_replace_variables_mixed_format() {
         let content = "{{name}} and {{ name }} and {{date}} and {{ date }}";
-        let result = replace_template_variables(content, "test");
+        let result =
+            replace_template_variables(content, "test", &CreationTimestamp::from(Local::now()));
         assert!(result.contains("test and test and "));
     }
 
     #[test]
     fn test_replace_variables_multiple_spaces() {
         let content = "{{  name  }} {{date}}";
-        let result = replace_template_variables(content, "x");
+        let result =
+            replace_template_variables(content, "x", &CreationTimestamp::from(Local::now()));
         let re = Regex::new(r"\d{4}-\d{2}-\d{2}").unwrap();
         assert!(
             re.is_match(&result),
@@ -439,12 +452,50 @@ _schema:
     }
 
     #[test]
-    fn test_chrono_lite_now() {
-        let now = chrono_lite_now();
+    fn test_creation_timestamp_uses_a_timezone_aware_datetime() {
+        let now = CreationTimestamp::from(Local::now());
         assert!(!now.date.is_empty());
         assert!(!now.time.is_empty());
         assert!(!now.datetime.is_empty());
-        assert!(now.datetime.contains(' '));
+        assert!(now.datetime.contains('T'));
+        assert!(now.datetime.contains('+') || now.datetime.ends_with('Z'));
+    }
+
+    #[test]
+    fn test_template_filename_pattern_uses_the_same_creation_timestamp() {
+        let template = TemplateDocument::from_content(
+            r#"---
+_schema:
+  filename:
+    pattern: "{{timestamp}}_{{name}}"
+  create:
+    captured_at: "{{datetime}}"
+---
+# {{name}}"#,
+        );
+        let now = CreationTimestamp {
+            date: "2026-07-23".to_string(),
+            time: "14:32:08".to_string(),
+            datetime: "2026-07-23T14:32:08+08:00".to_string(),
+            timestamp: "2026-07-23-14-32-08".to_string(),
+        };
+
+        let (content, _, pattern) =
+            process_template_document_at(&template, "富途拜访", &now).unwrap();
+
+        assert_eq!(pattern.as_deref(), Some("2026-07-23-14-32-08_富途拜访"));
+        assert!(content.contains("2026-07-23T14:32:08+08:00"));
+    }
+
+    #[test]
+    fn test_template_filename_pattern_uses_a_stable_suffix_on_collision() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        fs::write(temp_dir.path().join("2026-07-23-14-32-08_富途拜访.md"), "").unwrap();
+
+        let available =
+            find_available_note_name(temp_dir.path(), "2026-07-23-14-32-08_富途拜访").unwrap();
+
+        assert_eq!(available, "2026-07-23-14-32-08_富途拜访_02");
     }
 
     #[test]

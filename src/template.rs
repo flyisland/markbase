@@ -13,6 +13,7 @@ pub struct TemplateDocument {
     create_frontmatter: Map<String, Value>,
     body: String,
     location: Option<String>,
+    filename_pattern: Option<String>,
     name: Option<String>,
 }
 
@@ -31,13 +32,15 @@ impl TemplateDocument {
             Err(_) => (Map::new(), content.to_string()),
         };
 
-        let (frontmatter, create_frontmatter, location) = normalize_frontmatter(frontmatter);
+        let (frontmatter, create_frontmatter, location, filename_pattern) =
+            normalize_frontmatter(frontmatter);
 
         Self {
             frontmatter,
             create_frontmatter,
             body,
             location,
+            filename_pattern,
             name: None,
         }
     }
@@ -56,6 +59,10 @@ impl TemplateDocument {
 
     pub fn location(&self) -> Option<&str> {
         self.location.as_deref()
+    }
+
+    pub fn filename_pattern(&self) -> Option<&str> {
+        self.filename_pattern.as_deref()
     }
 
     pub fn name(&self) -> Option<&str> {
@@ -108,8 +115,13 @@ impl TemplateDocument {
 
 fn normalize_frontmatter(
     mut frontmatter: Map<String, Value>,
-) -> (Map<String, Value>, Map<String, Value>, Option<String>) {
-    let location = {
+) -> (
+    Map<String, Value>,
+    Map<String, Value>,
+    Option<String>,
+    Option<String>,
+) {
+    let (location, filename_pattern) = {
         let schema_value = frontmatter
             .entry("_schema".to_string())
             .or_insert_with(|| Value::Object(Map::new()));
@@ -121,6 +133,12 @@ fn normalize_frontmatter(
 
         let location = schema
             .get("location")
+            .and_then(Value::as_str)
+            .map(String::from);
+        let filename_pattern = schema
+            .get("filename")
+            .and_then(Value::as_object)
+            .and_then(|filename| filename.get("pattern"))
             .and_then(Value::as_str)
             .map(String::from);
 
@@ -166,7 +184,7 @@ fn normalize_frontmatter(
             .entry("description".to_string())
             .or_insert_with(|| Value::String(DESCRIPTION_PROMPT.to_string()));
 
-        location
+        (location, filename_pattern)
     };
 
     let schema_snapshot = frontmatter
@@ -206,7 +224,7 @@ fn normalize_frontmatter(
         frontmatter.remove(&key);
     }
 
-    (frontmatter, create_frontmatter, location)
+    (frontmatter, create_frontmatter, location, filename_pattern)
 }
 
 fn collect_legacy_create_keys(

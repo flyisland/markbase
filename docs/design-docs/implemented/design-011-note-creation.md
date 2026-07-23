@@ -110,7 +110,13 @@ Target directory selection is:
 - `_schema.location` when the normalized template exposes one
 - otherwise `inbox/`
 
-The final written file name is always `<name>.md`.
+Without a filename pattern, the final written file name is `<name>.md`.
+
+When `_schema.filename.pattern` is a string, `note new` renders the pattern
+with the same creation timestamp used for body/frontmatter variables and writes
+`<rendered-pattern>.md` instead. This lets a template own deterministic naming,
+such as `{{timestamp}}_{{name}}` for source documents. Pattern-created notes
+resolve same-second collisions by appending `_02`, `_03`, and so on.
 
 If the parent directory does not exist, `note new` creates it before writing the
 file.
@@ -138,10 +144,14 @@ Current built-in variable replacement supports:
 - `{{date}}`
 - `{{time}}`
 - `{{datetime}}`
+- `{{timestamp}}`
 
 Whitespace inside the braces is tolerated, for example `{{ name }}`.
 
-Replacement happens on the rendered create document before the file is written.
+Replacement happens on the rendered create document and filename pattern before
+the file is written. `{{date}}` and `{{time}}` use local creation time;
+`{{datetime}}` is an ISO 8601 local datetime with its timezone offset; and
+`{{timestamp}}` is a filename-safe `YYYY-MM-DD-HH-MM-SS` value.
 
 ## Output Contract
 

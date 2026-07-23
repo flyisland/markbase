@@ -146,6 +146,12 @@ markbase note new acme --template company
 markbase note verify acme
 ```
 
+Templates can also own a generated filename. For example, a source-input
+template may declare `_schema.filename.pattern: "{{timestamp}}_{{name}}"`;
+then `markbase note new "customer chat" --template source_input` creates a
+timestamp-prefixed source note and materializes the same local timestamp in its
+frontmatter.
+
 Inspect the rendered relationships that an agent would otherwise miss in raw Markdown:
 
 ```bash
