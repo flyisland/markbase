@@ -1,3 +1,4 @@
+mod attachment;
 mod constants;
 mod creator;
 mod db;
@@ -131,6 +132,11 @@ enum Commands {
         #[command(subcommand)]
         command: WebCommands,
     },
+    #[command(about = "Archive and verify source-note evidence attachments")]
+    Source {
+        #[command(subcommand)]
+        command: SourceCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -189,6 +195,29 @@ enum TemplateCommands {
     Describe {
         #[arg(help = "Template name (without .md extension)")]
         name: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum SourceCommands {
+    #[command(about = "Copy a local file into a source note's managed attachment directory")]
+    Attach {
+        #[arg(help = "Source note name only (no directories or .md extension)")]
+        source_note: String,
+        #[arg(help = "Existing readable local file to archive")]
+        input_path: PathBuf,
+        #[arg(long, help = "Required description of this evidence attachment")]
+        description: String,
+    },
+    #[command(about = "List managed attachment records for a source note")]
+    Attachments {
+        #[arg(help = "Source note name only (no directories or .md extension)")]
+        source_note: String,
+    },
+    #[command(about = "Verify managed files and metadata for a source note")]
+    VerifyAttachments {
+        #[arg(help = "Source note name only (no directories or .md extension)")]
+        source_note: String,
     },
 }
 
@@ -531,6 +560,31 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     web::init_docsify(&base_dir, &db_path, compute_backlinks, &homepage, force)?;
                 let relative_path = path.strip_prefix(&base_dir).unwrap_or(path.as_path());
                 println!("{}", relative_path.display());
+            }
+        },
+        Commands::Source { command } => match command {
+            SourceCommands::Attach {
+                source_note,
+                input_path,
+                description,
+            } => {
+                validate_note_name(&source_note)?;
+                let result =
+                    attachment::attach(&base_dir, &source_note, &input_path, &description)?;
+                println!("{}", serde_json::to_string(&result)?);
+            }
+            SourceCommands::Attachments { source_note } => {
+                validate_note_name(&source_note)?;
+                let records = attachment::list(&base_dir, &source_note)?;
+                println!("{}", serde_json::to_string(&records)?);
+            }
+            SourceCommands::VerifyAttachments { source_note } => {
+                validate_note_name(&source_note)?;
+                let result = attachment::verify(&base_dir, &source_note);
+                println!("{}", serde_json::to_string(&result)?);
+                if !result.ok {
+                    return Err("source attachment verification failed".into());
+                }
             }
         },
     }

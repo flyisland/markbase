@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-07-24
+
+### Added
+
+- **Source evidence attachments** - Added the JSON-first `markbase source`
+  command group: `attach` archives a readable local file alongside a
+  `type: source` note, `attachments` lists managed records, and
+  `verify-attachments` rehashes and validates archived evidence.
+- **Safe source attachment records** - Attachments are copied atomically into
+  source-local directories with SHA-256, byte count, MIME type, original path,
+  and description recorded in an explicit machine-managed Markdown region.
+  Repeated content is idempotent and same-name different-content files receive
+  stable suffixes without overwriting evidence.
+
 ## [0.9.6] - 2026-04-06
 
 ### Added

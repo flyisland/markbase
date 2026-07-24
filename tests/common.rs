@@ -28,6 +28,18 @@ fn get_unique_id() -> u64 {
     TEST_COUNTER.fetch_add(1, Ordering::SeqCst)
 }
 
+fn markbase_binary_path() -> PathBuf {
+    std::env::var_os("CARGO_BIN_EXE_markbase")
+        .map(PathBuf::from)
+        .or_else(|| option_env!("CARGO_BIN_EXE_markbase").map(PathBuf::from))
+        .unwrap_or_else(|| {
+            std::env::current_exe()
+                .ok()
+                .and_then(|path| path.parent().map(|parent| parent.join("markbase")))
+                .unwrap_or_else(|| PathBuf::from("target/debug/markbase"))
+        })
+}
+
 pub struct TestVault {
     _temp_dir: TempDir,
     pub path: PathBuf,
@@ -90,16 +102,7 @@ impl TestVault {
     }
 
     pub fn run_cli(&self, args: &[&str]) -> Output {
-        let binary_path = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.join("markbase")))
-            .unwrap_or_else(|| PathBuf::from("target/release/markbase"));
-
-        let cmd_path = if binary_path.exists() {
-            binary_path
-        } else {
-            PathBuf::from("target/debug/markbase")
-        };
+        let cmd_path = markbase_binary_path();
 
         let mut cmd = Command::new(&cmd_path);
         cmd.args(["--base-dir", &self.path.to_string_lossy()])
@@ -236,16 +239,7 @@ impl TestVault {
         cache_control: Option<&str>,
         homepage: Option<&str>,
     ) -> TestServer {
-        let binary_path = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.join("markbase")))
-            .unwrap_or_else(|| PathBuf::from("target/release/markbase"));
-
-        let cmd_path = if binary_path.exists() {
-            binary_path
-        } else {
-            PathBuf::from("target/debug/markbase")
-        };
+        let cmd_path = markbase_binary_path();
 
         let mut command = Command::new(&cmd_path);
         command.args([

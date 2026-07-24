@@ -158,6 +158,29 @@ Inspect the rendered relationships that an agent would otherwise miss in raw Mar
 markbase note render acme
 ```
 
+Archive a local evidence file for a `type: source` note:
+
+```bash
+markbase source attach customer-call ~/Downloads/notes.txt --description "Meeting notes exported by the customer"
+markbase source attachments customer-call
+markbase source verify-attachments customer-call
+```
+
+`source attach` copies (never moves) a readable regular file to the source
+note's `attachments/<source-stem>/` directory and writes a JSON-backed,
+machine-managed record. Source notes must contain the following markers inside
+their evidence-attachment area; this explicit migration step avoids guessing
+from headings or callouts:
+
+```markdown
+<!-- markbase:source-attachments:start -->
+<!-- markbase:source-attachments:end -->
+```
+
+The three source commands emit JSON to stdout. They do not index the vault;
+attachment metadata is kept in Markdown and can be verified against the copied
+files at any time.
+
 Serve the vault in the browser:
 
 ```bash
@@ -184,6 +207,9 @@ markbase web get /entities/person/alice.md?fields=properties,links
 | `note render` | Expand note embeds and `.base` views into agent-readable output |
 | `template list` | List available templates |
 | `template describe` | Show normalized template content |
+| `source attach` | Archive a local evidence file for a source note |
+| `source attachments` | List managed source evidence records |
+| `source verify-attachments` | Validate source evidence files and metadata |
 | `web serve` | Serve the vault in the browser |
 | `web get` | Print the final web Markdown for one canonical route |
 

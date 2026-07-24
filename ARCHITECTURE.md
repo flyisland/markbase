@@ -46,6 +46,7 @@ Write paths
   -> scanner.rs    refreshes the derived index
   -> creator.rs    creates note files
   -> renamer.rs    renames files and rewrites links
+  -> attachment.rs archives source-note evidence and writes managed Markdown records
 ```
 
 ## 4. Architectural Layers
@@ -87,6 +88,9 @@ This layer exists so user query ergonomics can evolve without leaking raw schema
 
 - `src/creator.rs` creates note files from defaults or templates.
 - `src/renamer.rs` performs rename operations and rewrites wiki-links and embeds across the vault.
+- `src/attachment.rs` owns streaming archive copies, SHA-256 validation, and the
+  machine-managed source-attachment region. Attachment records and bytes remain
+  in the vault; they are deliberately not DuckDB business state.
 - `src/resolver.rs` resolves names and aliases against the indexed vault.
 - `src/name_validator.rs` centralizes path-free naming rules used by note-facing commands.
 
