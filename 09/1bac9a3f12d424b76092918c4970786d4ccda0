@@ -1,0 +1,62 @@
+tests/cli_attachment.rs
+  s_9de7cc73c71eb7::t_78e389f66979e7 44
+  s_9de7cc73c71eb7::t_285afa4aa933d7 42-43,45
+  s_9de7cc73c71eb7::t_748d748b5d8161 34-38
+  s_9de7cc73c71eb7::t_b0bd79355671ef 1-33,39-41,46-83,85-116,118-141,143-203
+  s_9de7cc73c71eb7::t_fdd04e49a6ef66 84
+  s_9de7cc73c71eb7::t_64058aa38f9cfc 117
+  s_9de7cc73c71eb7::t_4add751a17a595 142
+src/attachment.rs
+  s_9de7cc73c71eb7::t_285afa4aa933d7 362-372
+  s_9de7cc73c71eb7::t_0e2f9a9cf037bc 3-17
+  s_9de7cc73c71eb7::t_1e331db88c66d8 25,32,40,47,49-361,373,375-658
+  s_9de7cc73c71eb7::t_73f5ddf3a3dcf1 1-2
+  s_9de7cc73c71eb7::t_38434b5415b9ea 18-20,22-24
+  s_9de7cc73c71eb7::t_4b9dc2725b4f34 26-31
+  s_9de7cc73c71eb7::t_f020c4932585e5 33-35,37-39
+  s_9de7cc73c71eb7::t_4c4a0bf24b6f8e 41-46
+  s_9de7cc73c71eb7::t_ebfdc2dbdb4f1e 48
+  s_9de7cc73c71eb7::t_3d83f56b56d4bc 374
+tests/common.rs
+  s_9de7cc73c71eb7::t_fd2af71774862a 31-42
+  s_9de7cc73c71eb7::t_7f4329dad6f4c4 105,242
+src/main.rs
+  s_9de7cc73c71eb7::t_1e331db88c66d8 566-570,572-573,585-587
+  s_9de7cc73c71eb7::t_617f6f1390a2c1 1,135-139,201-223,565,571,574-584,588
+  s_9de7cc73c71eb7::t_9faa171e55f514 589
+Cargo.toml
+  s_9de7cc73c71eb7::t_713b295c964bde 5
+CHANGELOG.md
+  s_9de7cc73c71eb7::t_713b295c964bde 8-21
+docs/design-docs/draft/design-015-source-attachments.md
+  s_9de7cc73c71eb7::t_90c2a15200bac8 1-57
+ARCHITECTURE.md
+  s_9de7cc73c71eb7::t_90c2a15200bac8 49,91-93
+specs/archived/task-0028-source-attachment-command.md
+  s_9de7cc73c71eb7::t_df474dbfd73713 1-226
+README.md
+  s_9de7cc73c71eb7::t_90c2a15200bac8 161-183,210-212
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "tlab_version": "0.7.0",
+  "base_commit_sha": "091bac9a3f12d424b76092918c4970786d4ccda0",
+  "prompts": {},
+  "sessions": {
+    "s_9de7cc73c71eb7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f91f0-86de-7b82-a72c-ad3249299679",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "flyisland <island.chen@outlook.com>",
+      "custom_attributes": {
+        "tlab.token_usage.cache_read_tokens": "5357824",
+        "tlab.token_usage.cache_creation_tokens": "0",
+        "tlab.session_started_at": "2026-07-24T02:39:37Z",
+        "tlab.token_usage.output_tokens": "24758",
+        "tlab.token_usage.input_tokens": "138841"
+      }
+    }
+  }
+}
